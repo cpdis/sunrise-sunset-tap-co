@@ -95,7 +95,7 @@ export function runOwnerRules(ctx: OwnerCtx, text: string, prev: AgentState): Ag
   const reply = text.match(/^\s*(?:reply to|tell|text|message)\s+(.+?)\s*[:\-–]\s*(.+)$/i);
   if (reply) {
     const r = replyToCustomer(ctx, reply[1], reply[2]);
-    return out(r.ok ? `Sent to ${r.to} by ${r.channel}: "${r.body}". You have that chat now; text "hand back ${r.to.split(" ")[0]}" when you're done.` : r.reason);
+    return out(r.ok ? `Sent to ${r.to} by ${r.channel}. You have that chat now; text "hand back ${r.to.split(" ")[0]}" when you're done.` : r.reason);
   }
   const back = text.match(/^\s*hand\s+(?:back\s+(?:to\s+the\s+agent\s+)?(.+)|(.+?)\s+back(?:\s+to\s+the\s+agent)?)\s*$/i);
   if (back) {

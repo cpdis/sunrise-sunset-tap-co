@@ -121,7 +121,7 @@ export default function Inbox() {
                 <strong style={{ fontSize: 18 }}>{conv.name}</strong>{" "}
                 <span className="muted">{CHANNEL_LABEL[conv.channel]} · {conv.contact}</span>
               </div>
-              {conv.agentActive ? (
+              {conv.ownerId ? null : conv.agentActive ? (
                 <button className="btn small ghost" onClick={() => a.setAgentActive(conv.id, false)}>Take over</button>
               ) : (
                 <button className="btn small" onClick={() => a.setAgentActive(conv.id, true)}>Hand back to agent</button>
@@ -148,11 +148,15 @@ export default function Inbox() {
                 </div>
               ))}
             </div>
-            <form className="row" onSubmit={(e) => { e.preventDefault(); if (!reply.trim()) return; a.ownerReply(conv.id, reply.trim()); setReply(""); }}>
-              <input className="input" aria-label="Reply" style={{ flex: 1 }} placeholder={`Reply by ${CHANNEL_LABEL[conv.channel].toLowerCase()} as ${owner(a.ownerId ?? undefined)}`} value={reply} onChange={(e) => setReply(e.target.value)} />
-              <button className="btn primary">Send</button>
-            </form>
-            <span className="muted" style={{ fontSize: 13 }}>Replying takes the conversation off the agent until you hand it back.</span>
+            {!conv.ownerId && (
+              <>
+                <form className="row" onSubmit={(e) => { e.preventDefault(); if (!reply.trim()) return; a.ownerReply(conv.id, reply.trim()); setReply(""); }}>
+                  <input className="input" aria-label="Reply" style={{ flex: 1 }} placeholder={`Reply by ${CHANNEL_LABEL[conv.channel].toLowerCase()} as ${owner(a.ownerId ?? undefined)}`} value={reply} onChange={(e) => setReply(e.target.value)} />
+                  <button className="btn primary">Send</button>
+                </form>
+                <span className="muted" style={{ fontSize: 13 }}>Replying takes the conversation off the agent until you hand it back.</span>
+              </>
+            )}
           </div>
         ) : (
           <div className="card muted">Pick a conversation.</div>

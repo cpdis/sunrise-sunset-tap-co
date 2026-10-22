@@ -42,7 +42,7 @@ describe("low stakes run at once", () => {
     const d = seed();
     const [r] = ownerChat(d, COLIN, ["tell Harbour: Happy to talk festival rates, I'll call you Monday."]);
     const c = d.conversations.find((x) => x.name.startsWith("Harbour"))!;
-    expect(r.reply).toMatch(/Sent to Harbour/);
+    expect(r.reply).toMatch(/^Sent to Harbour Collective \(events\) by email\. You have that chat now/);
     expect(c.agentActive).toBe(false);
     expect(c.messages.at(-1)).toMatchObject({ from: "owner", ownerId: COLIN });
     ownerChat(d, COLIN, ["hand back Harbour"]);

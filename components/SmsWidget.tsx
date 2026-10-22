@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { BUSINESS } from "@/lib/config";
 import { nextFreeDates } from "@/lib/domain";
 import { useApp } from "@/lib/store";
 import { fmtDate, todayISO } from "@/lib/util";
@@ -96,7 +95,7 @@ export function SmsWidget({ as: initialAs = "customer" }: { as?: string }) {
             <div className="stack" style={{ gap: 0 }}>
               <span className="label" style={{ fontSize: 13 }}>Sunrise Sunset</span>
               <label className="sms-as muted">
-                {BUSINESS.sms} · from
+                From
                 <select value={as} onChange={(e) => { setAs(e.target.value); setConvId(null); }} aria-label="Text as">
                   <option value="customer">{customerPhone} (customer)</option>
                   {data?.owners.map((o) => <option key={o.id} value={o.id}>{o.name}, owner</option>)}

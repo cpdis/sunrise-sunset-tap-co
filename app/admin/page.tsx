@@ -65,7 +65,7 @@ export default function Today() {
           ))}
           {awaiting.map((d) => (
             <Link key={d.id} href="/admin/payouts" className="notice info" style={{ textDecoration: "none", display: "block" }}>
-              <strong>{quarterLabel(d.quarter)} payout</strong>: {money(d.distributable)} ready, {d.approvals.length} of {data.settings.approvalsRequired} approvals.
+              <strong>{quarterLabel(d.quarter)} payout</strong>: {money(d.lines.reduce((s, l) => s + l.amount + l.runnerFees, 0))} ready, {d.approvals.length} of {data.settings.approvalsRequired} approvals.
               {ownerId && !d.approvals.includes(ownerId) && " Yours is needed."}
             </Link>
           ))}

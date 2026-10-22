@@ -1,6 +1,6 @@
 // Owner operations on a mutable draft of Data. The admin buttons and the owner SMS agent both call these,
 // so an action means the same thing whichever way an owner takes it.
-import { payDistribution, post } from "./domain";
+import { ACCOUNT_LABEL, payDistribution, post } from "./domain";
 import type { Account, AgentAction, Data, KbPage, Settings, TruckLog } from "./types";
 import { uid } from "./util";
 
@@ -117,7 +117,7 @@ export function applyOwnerAction(d: Data, a: AgentAction, ownerId: string) {
       break;
     case "expense":
       addExpense(d, a.date, a.account, a.amount, a.memo);
-      log(d, `${who} added a $${a.amount} ${a.account} expense by SMS`);
+      log(d, `${who} added a $${a.amount} ${ACCOUNT_LABEL[a.account]} expense by SMS`);
       break;
     case "approve_payout":
       approveDistribution(d, a.distId, ownerId);
