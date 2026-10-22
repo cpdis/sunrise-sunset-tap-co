@@ -34,40 +34,42 @@ export default function Bookings() {
     .sort((a, b) => (f === "Upcoming" || f === "Held" ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date)));
 
   return (
-    <div className="stack" style={{ gap: 20 }}>
+    <div className="page">
       <div className="admin-top">
         <h1>Bookings</h1>
         <input className="input" aria-label="Search bookings" style={{ maxWidth: 280 }} placeholder="Search name, ref, suburb" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
-      <div className="seg">
-        {FILTERS.map((x) => <button key={x} className={cls(f === x && "on")} aria-pressed={f === x} onClick={() => setF(x)}>{x}</button>)}
-      </div>
-      <div className="table-wrap">
-        <table className="t">
-          <thead>
-            <tr><th>Date</th><th>Ref</th><th>Customer</th><th>Event</th><th>Where</th><th>Via</th><th className="num">Total</th><th className="num">Paid</th><th>Runs</th><th>Status</th></tr>
-          </thead>
-          <tbody>
-            {rows.map((b) => {
-              const c = cust(b.customerId);
-              return (
-                <tr key={b.id} className="click" onClick={() => router.push(`/admin/bookings/${b.id}`)}>
-                  <td style={{ whiteSpace: "nowrap" }}>{fmtDate(b.date, { dow: true, year: true })}<br /><span className="muted">{b.block}h</span></td>
-                  <td className="mono"><Link href={`/admin/bookings/${b.id}`} onClick={(e) => e.stopPropagation()}>{b.ref}</Link></td>
-                  <td>{b.kind === "personal" ? `${owner(b.ownerId)} (owner)` : c?.name}</td>
-                  <td>{b.eventType}</td>
-                  <td>{b.suburb}</td>
-                  <td>{CHANNEL_LABEL[b.createdVia]}</td>
-                  <td className="num">{b.kind === "paid" ? money(b.total) : "—"}</td>
-                  <td className="num">{b.kind === "paid" ? money(paidSoFar(data, b.id)) : "—"}</td>
-                  <td style={{ whiteSpace: "nowrap" }}>{owner(b.deliver.ownerId) ?? "?"} / {owner(b.collect.ownerId) ?? "?"}</td>
-                  <td><StatePill b={b} /></td>
-                </tr>
-              );
-            })}
-            {rows.length === 0 && <tr><td colSpan={10} className="muted">Nothing here.</td></tr>}
-          </tbody>
-        </table>
+      <div className="stack">
+        <div className="seg">
+          {FILTERS.map((x) => <button key={x} className={cls(f === x && "on")} aria-pressed={f === x} onClick={() => setF(x)}>{x}</button>)}
+        </div>
+        <div className="table-wrap">
+          <table className="t">
+            <thead>
+              <tr><th>Date</th><th>Ref</th><th>Customer</th><th>Event</th><th>Where</th><th>Via</th><th className="num">Total</th><th className="num">Paid</th><th>Runs</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              {rows.map((b) => {
+                const c = cust(b.customerId);
+                return (
+                  <tr key={b.id} className="click" onClick={() => router.push(`/admin/bookings/${b.id}`)}>
+                    <td style={{ whiteSpace: "nowrap" }}>{fmtDate(b.date, { dow: true, year: true })}<br /><span className="muted">{b.block}h</span></td>
+                    <td className="mono"><Link href={`/admin/bookings/${b.id}`} onClick={(e) => e.stopPropagation()}>{b.ref}</Link></td>
+                    <td>{b.kind === "personal" ? `${owner(b.ownerId)} (owner)` : c?.name}</td>
+                    <td>{b.eventType}</td>
+                    <td>{b.suburb}</td>
+                    <td>{CHANNEL_LABEL[b.createdVia]}</td>
+                    <td className="num">{b.kind === "paid" ? money(b.total) : "—"}</td>
+                    <td className="num">{b.kind === "paid" ? money(paidSoFar(data, b.id)) : "—"}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>{owner(b.deliver.ownerId) ?? "?"} / {owner(b.collect.ownerId) ?? "?"}</td>
+                    <td><StatePill b={b} /></td>
+                  </tr>
+                );
+              })}
+              {rows.length === 0 && <tr><td colSpan={10} className="muted">Nothing here.</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

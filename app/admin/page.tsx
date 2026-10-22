@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { CHANNEL_LABEL, Loading, Stat, StatePill, useData } from "@/components/ui";
-import { BALANCE_RETRIES, RELEASE_UNPAID_DAYS, balance, balanceStuck, cashAt, liveBookings, periodTotals, reserveTarget } from "@/lib/domain";
+import { CHANNEL_LABEL, Loading, Section, Stat, StatePill, useData } from "@/components/ui";
+import { BALANCE_RETRIES, RELEASE_UNPAID_DAYS, balanceStuck, cashAt, liveBookings, periodTotals } from "@/lib/domain";
 import { SCENARIOS } from "@/lib/seed";
 import { useApp } from "@/lib/store";
 import { addDays, daysBetween, fmtDate, fmtDateTime, fmtTime, money, perthHour, quarterLabel, todayISO } from "@/lib/util";
@@ -22,16 +22,14 @@ export default function Today() {
   const awaiting = data.distributions.filter((d) => d.status === "awaiting");
   const t30 = periodTotals(data, addDays(today, -30), today);
   const cash = cashAt(data);
-  const reserve = reserveTarget(data, today);
   const confirmedAhead = upcoming.filter((b) => b.kind === "paid" && b.state !== "held");
   const myRuns = next30.filter((b) => b.deliver.ownerId === ownerId || b.collect.ownerId === ownerId);
-  const owedToMe = ownerId ? balance(data, "owed_runners", undefined, ownerId) : 0;
   const stuck = data.bookings.filter(balanceStuck);
   const h = perthHour();
   const greeting = h < 12 ? "Morning" : h < 17 ? "Afternoon" : "Evening";
 
   return (
-    <div className="stack" style={{ gap: 28 }}>
+    <div className="page">
       <div className="admin-top">
         <div>
           <span className="eyebrow muted">{fmtDate(today, { dow: true, year: true })}</span>
@@ -43,16 +41,16 @@ export default function Today() {
         </div>
       </div>
 
-      <div className="grid cols-4">
-        <Stat k="Cash in the bank" v={money(cash)} sub={`Reserve target ${money(reserve)}`} />
-        <Stat k="Revenue, last 30 days" v={money(t30.revenue)} sub={`Profit ${money(t30.profit)}`} />
-        <Stat k="Booked ahead" v={confirmedAhead.length} sub={`${money(confirmedAhead.reduce((s, b) => s + b.total, 0))} contracted`} />
-        <Stat k="Your runs, next 30 days" v={myRuns.length} sub={`${money(owedToMe)} in runner fees owed to you, paid with the next payout`} />
+      {/* the day's four numbers get extra air above and below */}
+      <div className="grid cols-4" style={{ margin: "8px 0" }}>
+        <Stat k="Cash in the bank" v={money(cash)} />
+        <Stat k="Revenue, last 30 days" v={money(t30.revenue)} />
+        <Stat k="Booked ahead" v={confirmedAhead.length} />
+        <Stat k="Your runs, next 30 days" v={myRuns.length} />
       </div>
 
       {(attention.length > 0 || awaiting.length > 0 || stuck.length > 0) && (
-        <div className="stack" style={{ gap: 10 }}>
-          <span className="eyebrow muted">Needs a person</span>
+        <Section title="Needs a person">
           {attention.map((c) => (
             <Link key={c.id} href={`/admin/inbox?c=${c.id}`} className="notice" style={{ textDecoration: "none", display: "block" }}>
               <strong>{CHANNEL_LABEL[c.channel]} · {c.name}</strong>: {c.escalated ?? "Waiting on an owner reply"}
@@ -69,11 +67,10 @@ export default function Today() {
               {ownerId && !d.approvals.includes(ownerId) && " Yours is needed."}
             </Link>
           ))}
-        </div>
+        </Section>
       )}
 
-      <div className="stack" style={{ gap: 10 }}>
-        <span className="eyebrow muted">Runs nobody has claimed (next 30 days)</span>
+      <Section title="Runs nobody has claimed (next 30 days)">
         {unclaimed.length === 0 ? (
           <div className="card muted">All runs are covered.</div>
         ) : (
@@ -97,11 +94,10 @@ export default function Today() {
             </table>
           </div>
         )}
-      </div>
+      </Section>
 
       <div className="grid cols-2" style={{ alignItems: "start" }}>
-        <div className="stack" style={{ gap: 10 }}>
-          <span className="eyebrow muted">Coming up</span>
+        <Section title="Coming up">
           <div className="table-wrap">
             <table className="t">
               <tbody>
@@ -118,18 +114,17 @@ export default function Today() {
               </tbody>
             </table>
           </div>
-        </div>
-        <div className="stack" style={{ gap: 10 }}>
-          <span className="eyebrow muted">What the system did</span>
+        </Section>
+        <Section title="What the system did">
           <div className="card stack" style={{ gap: 8, fontSize: 14 }}>
             {data.jobs.slice(0, 12).map((j, i) => (
               <div key={i} className="row between" style={{ flexWrap: "nowrap", alignItems: "flex-start" }}>
                 <span>{j.text}</span>
-                <span className="mono muted" style={{ fontSize: 11, whiteSpace: "nowrap" }}>{fmtDateTime(j.at)}</span>
+                <span className="meta" style={{ whiteSpace: "nowrap" }}>{fmtDateTime(j.at)}</span>
               </div>
             ))}
           </div>
-        </div>
+        </Section>
       </div>
     </div>
   );

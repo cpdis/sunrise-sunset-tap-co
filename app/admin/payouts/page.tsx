@@ -1,6 +1,6 @@
 "use client";
 
-import { Loading, useData } from "@/components/ui";
+import { Loading, Section, useData } from "@/components/ui";
 import { useApp } from "@/lib/store";
 import { fmtDate, fmtDateTime, money, quarterLabel } from "@/lib/util";
 
@@ -15,7 +15,7 @@ export default function Payouts() {
   const dists = [...data.distributions].sort((a, b) => b.quarter.localeCompare(a.quarter));
 
   return (
-    <div className="stack" style={{ gap: 24 }}>
+    <div className="page">
       <div className="admin-top">
         <h1>Payouts</h1>
       </div>
@@ -33,56 +33,55 @@ export default function Payouts() {
         const total = d.lines.reduce((sum, l) => sum + l.amount + (l.runnerFees ?? 0), 0);
         const director = !!ownerId && !!owner(ownerId)?.isDirector;
         return (
-          <div key={d.id} className="card stack" style={{ gap: 16 }}>
-            <div className="row between">
-              <div>
-                <strong style={{ fontSize: 20 }}>{quarterLabel(d.quarter)}</strong>
-                <div className="muted" style={{ fontSize: 14 }}>{fmtDate(d.start, { year: true })} to {fmtDate(d.end, { year: true })}</div>
+          <Section
+            key={d.id}
+            title={`${quarterLabel(d.quarter)} · ${fmtDate(d.start)} to ${fmtDate(d.end, { year: true })}`}
+            aside={d.status === "paid" ? <span className="pill good">Paid {d.paidAt ? fmtDateTime(d.paidAt) : ""}</span> : <span className="pill warn">{d.approvals.length} of {s.approvalsRequired} approvals</span>}
+          >
+            <div className="card stack" style={{ gap: 16 }}>
+              <div className="grid cols-2">
+                <div>
+                  <div className="summary-row"><span>Revenue</span><span>{money(d.revenue)}</span></div>
+                  <div className="summary-row"><span>Operating costs</span><span>−{money(d.expenses)}</span></div>
+                  <div className="summary-row"><strong>Profit</strong><strong>{money(d.profit)}</strong></div>
+                  <div className="summary-row"><span>Tax provision</span><span>−{money(d.taxProvision)}</span></div>
+                  <div className="summary-row"><span>Cash at quarter end</span><span>{money(d.cash)}</span></div>
+                  <div className="summary-row"><span>Reserve kept</span><span>{money(d.reserve)}</span></div>
+                  <div className="summary-row"><span>Customer money held for hires ahead</span><span>{money(d.deposits ?? 0)}</span></div>
+                  <div className="summary-row"><span>Runner fees owed</span><span>{money(d.owedRunners ?? 0)}</span></div>
+                  <div className="summary-row"><strong>To distribute</strong><strong>{money(d.distributable)}</strong></div>
+                </div>
+                <div className="table-wrap" style={{ background: "var(--paper)" }}>
+                  <table className="t cards wide tight">
+                    <thead><tr><th>Owner</th><th className="num">Shares</th><th className="num">Dividend</th><th className="num">Runner fees</th><th>Transfer</th></tr></thead>
+                    <tbody>
+                      {d.lines.map((l) => (
+                        <tr key={l.ownerId}>
+                          <td>{owner(l.ownerId)?.name}<br /><span className="meta" style={{ whiteSpace: "nowrap" }}>{owner(l.ownerId)?.payoutAccount}</span></td>
+                          <td className="num" data-label="Shares">{l.shares}</td>
+                          <td className="num" data-label="Dividend">{money(l.amount)}</td>
+                          <td className="num" data-label="Runner fees">{money(l.runnerFees ?? 0)}</td>
+                          <td className="meta" style={{ overflowWrap: "anywhere" }} data-label="Transfer">{l.payoutId ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-              {d.status === "paid" ? <span className="pill good">Paid {d.paidAt ? fmtDateTime(d.paidAt) : ""}</span> : <span className="pill warn">{d.approvals.length} of {s.approvalsRequired} approvals</span>}
+              {d.status === "awaiting" && (
+                <div className="row">
+                  <span className="note">
+                    Approved by {d.approvals.length ? d.approvals.map((a) => owner(a)?.name).join(", ") : "nobody yet"}.
+                  </span>
+                  {!mine && director && <button className="btn small" onClick={() => approve(d.id)}>Approve</button>}
+                  <button className="btn small primary" disabled={!ready || total <= 0} onClick={() => payOut(d.id)}>
+                    Pay {money(total)}
+                  </button>
+                  {mine && !ready && <span className="note">Switch owner (top bar) to add a second approval.</span>}
+                </div>
+              )}
             </div>
-            <div className="grid cols-2">
-              <div>
-                <div className="summary-row"><span>Revenue</span><span>{money(d.revenue)}</span></div>
-                <div className="summary-row"><span>Operating costs</span><span>−{money(d.expenses)}</span></div>
-                <div className="summary-row"><strong>Profit</strong><strong>{money(d.profit)}</strong></div>
-                <div className="summary-row"><span>Tax provision</span><span>−{money(d.taxProvision)}</span></div>
-                <div className="summary-row"><span>Cash at quarter end</span><span>{money(d.cash)}</span></div>
-                <div className="summary-row"><span>Reserve kept</span><span>{money(d.reserve)}</span></div>
-                <div className="summary-row"><span>Customer money held for hires ahead</span><span>{money(d.deposits ?? 0)}</span></div>
-                <div className="summary-row"><span>Runner fees owed</span><span>{money(d.owedRunners ?? 0)}</span></div>
-                <div className="summary-row"><strong>To distribute</strong><strong>{money(d.distributable)}</strong></div>
-              </div>
-              <div className="table-wrap" style={{ background: "var(--paper)" }}>
-                <table className="t cards wide tight">
-                  <thead><tr><th>Owner</th><th className="num">Shares</th><th className="num">Dividend</th><th className="num">Runner fees</th><th>Transfer</th></tr></thead>
-                  <tbody>
-                    {d.lines.map((l) => (
-                      <tr key={l.ownerId}>
-                        <td>{owner(l.ownerId)?.name}<br /><span className="mono muted" style={{ fontSize: 11, whiteSpace: "nowrap" }}>{owner(l.ownerId)?.payoutAccount}</span></td>
-                        <td className="num" data-label="Shares">{l.shares}</td>
-                        <td className="num" data-label="Dividend">{money(l.amount)}</td>
-                        <td className="num" data-label="Runner fees">{money(l.runnerFees ?? 0)}</td>
-                        <td className="mono muted" style={{ fontSize: 11, overflowWrap: "anywhere" }} data-label="Transfer">{l.payoutId ?? "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            {d.status === "awaiting" && (
-              <div className="row">
-                <span className="muted" style={{ fontSize: 14 }}>
-                  Approved by {d.approvals.length ? d.approvals.map((a) => owner(a)?.name).join(", ") : "nobody yet"}.
-                </span>
-                {!mine && director && <button className="btn small" onClick={() => approve(d.id)}>Approve</button>}
-                <button className="btn small primary" disabled={!ready || total <= 0} onClick={() => payOut(d.id)}>
-                  Pay {money(total)}
-                </button>
-                {mine && !ready && <span className="muted" style={{ fontSize: 13 }}>Switch owner (top bar) to add a second approval.</span>}
-              </div>
-            )}
-          </div>
+          </Section>
         );
       })}
     </div>

@@ -59,12 +59,24 @@ export function Linkify({ text }: { text: string }) {
   );
 }
 
-export function Stat({ k, v, sub }: { k: string; v: React.ReactNode; sub?: React.ReactNode }) {
+export function Stat({ k, v }: { k: string; v: React.ReactNode }) {
   return (
     <div className="card stat">
       <span className="k">{k}</span>
       <span className="v">{v}</span>
-      {sub && <span className="k">{sub}</span>}
     </div>
+  );
+}
+
+// An admin section: its label (and any control, such as a filter) sits above the card, not inside it.
+export function Section({ title, aside, children }: { title: React.ReactNode; aside?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="block">
+      <div className="block-head">
+        <h2 className="eyebrow muted">{title}</h2>
+        {aside}
+      </div>
+      {children}
+    </section>
   );
 }

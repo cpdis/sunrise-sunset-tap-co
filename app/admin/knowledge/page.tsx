@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loading, useData } from "@/components/ui";
+import { Loading, Section, useData } from "@/components/ui";
 import { snapshot, useApp } from "@/lib/store";
 import type { AgentResult, AgentState, Msg } from "@/lib/types";
 import { cls, uid } from "@/lib/util";
@@ -45,41 +45,44 @@ export default function Knowledge() {
   }
 
   return (
-    <div className="stack" style={{ gap: 20 }}>
+    <div className="page">
       <div className="admin-top">
         <h1>Agent knowledge</h1>
-        <span className="muted" style={{ fontSize: 14 }}>What the agent knows. Numbers in {"{{braces}}"} come from Settings, so prices stay in one place.</span>
+        <span className="note">What the agent knows. Numbers in {"{{braces}}"} come from Settings, so prices stay in one place.</span>
       </div>
-      <div className="seg">
-        {data.kb.map((p) => <button key={p.slug} className={cls(p.slug === slug && "on")} aria-pressed={p.slug === slug} onClick={() => setSlug(p.slug)}>{p.title}</button>)}
-      </div>
-      <div className="grid cols-2" style={{ alignItems: "start" }}>
-        <div className="card stack" style={{ gap: 10 }}>
-          <div className="field"><label htmlFor="kb-1">Title</label><input id="kb-1" className="input" value={title} onChange={(e) => { setTitle(e.target.value); setSaved(false); }} /></div>
-          <div className="field"><label htmlFor="kb-2">Content</label><textarea id="kb-2" className="input" style={{ minHeight: 360 }} value={body} onChange={(e) => { setBody(e.target.value); setSaved(false); }} /></div>
-          <div className="row">
-            <button className="btn small primary" onClick={() => { saveKb({ slug, title, body }); setSaved(true); }}>Save</button>
-            {saved && <span className="pill good">Saved. The agent uses it from the next message.</span>}
-          </div>
+      <div className="stack">
+        <div className="seg">
+          {data.kb.map((p) => <button key={p.slug} className={cls(p.slug === slug && "on")} aria-pressed={p.slug === slug} onClick={() => setSlug(p.slug)}>{p.title}</button>)}
         </div>
-        <div className="stack" style={{ gap: 10 }}>
-          <span className="eyebrow muted">Test the agent against this draft</span>
-          <div className="thread" style={{ minHeight: 240 }}>
-            {msgs.length === 0 && <span className="muted">Ask something a customer would.</span>}
-            {msgs.map((m) => (
-              <div key={m.id} style={{ display: "contents" }}>
-                <div className={cls("bubble", m.from === "customer" ? "me" : "them")}>{m.body}</div>
-                {m.tools && <span className="tools">{m.tools.join(", ")}</span>}
+        <div className="grid cols-2" style={{ alignItems: "start" }}>
+          <Section title="Edit page">
+            <div className="card stack">
+              <div className="field"><label htmlFor="kb-1">Title</label><input id="kb-1" className="input" value={title} onChange={(e) => { setTitle(e.target.value); setSaved(false); }} /></div>
+              <div className="field"><label htmlFor="kb-2">Content</label><textarea id="kb-2" className="input" style={{ minHeight: 360 }} value={body} onChange={(e) => { setBody(e.target.value); setSaved(false); }} /></div>
+              <div className="row">
+                <button className="btn small primary" onClick={() => { saveKb({ slug, title, body }); setSaved(true); }}>Save</button>
+                {saved && <span className="pill good">Saved. The agent uses it from the next message.</span>}
               </div>
-            ))}
-            {busy && <span className="muted mono" style={{ fontSize: 12 }}>thinking…</span>}
-          </div>
-          <form className="row" onSubmit={(e) => { e.preventDefault(); ask(); }}>
-            <input className="input" aria-label="Test message" style={{ flex: 1 }} value={test} onChange={(e) => setTest(e.target.value)} />
-            <button className="btn small" disabled={busy}>Ask</button>
-            <button type="button" className="btn small ghost" onClick={() => { setMsgs([]); setState({}); }}>Clear</button>
-          </form>
-          <span className="muted" style={{ fontSize: 13 }}>Test bookings aren&apos;t saved. Without an API key the rules engine answers from fixed FAQ matches, so edits show fully only once Claude is switched on.</span>
+            </div>
+          </Section>
+          <Section title="Test the agent against this draft">
+            <div className="thread" style={{ minHeight: 240 }}>
+              {msgs.length === 0 && <span className="muted">Ask something a customer would.</span>}
+              {msgs.map((m) => (
+                <div key={m.id} style={{ display: "contents" }}>
+                  <div className={cls("bubble", m.from === "customer" ? "me" : "them")}>{m.body}</div>
+                  {m.tools && <span className="tools">{m.tools.join(", ")}</span>}
+                </div>
+              ))}
+              {busy && <span className="meta">thinking…</span>}
+            </div>
+            <form className="row" onSubmit={(e) => { e.preventDefault(); ask(); }}>
+              <input className="input" aria-label="Test message" style={{ flex: 1 }} value={test} onChange={(e) => setTest(e.target.value)} />
+              <button className="btn small" disabled={busy}>Ask</button>
+              <button type="button" className="btn small ghost" onClick={() => { setMsgs([]); setState({}); }}>Clear</button>
+            </form>
+            <span className="note">Test bookings aren&apos;t saved. Without an API key the rules engine answers from fixed FAQ matches, so edits show fully only once Claude is switched on.</span>
+          </Section>
         </div>
       </div>
     </div>
