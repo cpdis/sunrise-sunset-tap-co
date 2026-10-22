@@ -8,7 +8,7 @@ export const DEFAULT_KB: KbPage[] = [
     title: "Pricing and what's included",
     body: `- Half day (4 hours): {{price4}}. Full day (8 hours): {{price8}}.
 - Includes delivery, setup, line test, pickup, glassware (120 pint and 60 schooner glasses), glass rinser, hand-wash sink with hot water, and the awning.
-- Delivery is free within {{travelThresholdMin}} minutes of North Perth. Further out (e.g. Mandurah, Two Rocks) adds {{travelFee}}.
+- Delivery is free within {{travelThresholdMin}} minutes of the Perth CBD. Further out (e.g. Mandurah, Two Rocks) adds {{travelFee}}.
 - A {{deposit}} deposit holds the date. The balance is charged automatically to the same card {{balanceDaysBefore}} days before the event.
 - A {{bond}} bond is held on the card {{bondHoldDaysBefore}} days before and released after the truck comes back clean and undamaged.
 - No hourly extensions on the day. If you need longer than 4 hours, book the 8-hour block.`,
@@ -18,8 +18,8 @@ export const DEFAULT_KB: KbPage[] = [
     title: "How dry hire works",
     body: `- We are a dry hire. You supply the drinks, we supply the truck.
 - You buy kegs from any brewery, distributor or bottle shop that sells kegs, at wholesale prices. We can recommend suppliers.
-- On the day, an owner drives the truck to you, connects your kegs, sets the gas pressure, pours a test from every line, and shows a host how to change a keg. They come back at the end to collect.
-- No staff stay for the event. If your venue needs a bartender with an RSA certificate, you organise one. We can recommend local bartenders.`,
+- On the day, we drive the truck to you, connect your kegs, set the gas pressure, pour a test from every line, and show a host how to change a keg. We come back at the end to collect.
+- No staff stay for the event. If your venue needs a bartender with an RSA certificate, you organise one.`,
   },
   {
     slug: "keg-guide",
@@ -61,7 +61,7 @@ export const DEFAULT_KB: KbPage[] = [
     slug: "service-area",
     title: "Where we go",
     body: `- Perth metro, the Swan Valley and Perth Hills, north to Two Rocks and south to Mandurah.
-- Free delivery within {{travelThresholdMin}} minutes of North Perth. Further out costs {{travelFee}}.
+- Free delivery within {{travelThresholdMin}} minutes of the Perth CBD. Further out costs {{travelFee}}.
 - Not Margaret River, Busselton, Bunbury, Northam or York for now.`,
   },
   {

@@ -120,7 +120,7 @@ export default function Home() {
           </div>
           <p className="muted" style={{ marginTop: 20, maxWidth: 760 }}>
             Includes delivery, setup, line test, collection and glassware. Free delivery within {s.travelThresholdMin} minutes
-            of North Perth; further out ({far.slice(0, 3).join(", ")}) adds {money(s.travelFee)}. {money(s.bond)} bond held on your card,
+            of the Perth CBD; further out ({far.slice(0, 3).join(", ")}) adds {money(s.travelFee)}. {money(s.bond)} bond held on your card,
             released after pickup. Full refund if you cancel more than {s.cancelDays} days out.
           </p>
         </div>
