@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { StepChart } from "@/components/StepChart";
 import { Loading, Stat, useData } from "@/components/ui";
 import { ACCOUNT_LABEL, balance, cashAt, liveBookings, periodTotals, reserveTarget } from "@/lib/domain";
@@ -21,14 +21,21 @@ export default function Money() {
   const [period, setPeriod] = useState(quarterOf(today).key);
   const [acct, setAcct] = useState<Account | "all">("all");
   const [ex, setEx] = useState({ date: today, account: "maintenance" as Account, amount: "", memo: "" });
-  const [compact, setCompact] = useState(false);
+  // The chart picks its layout from the panel's own width, not the viewport: the admin nav takes a
+  // column on tablets, so a 1000 px window can leave the panel under 700 px. Below 720 px the full
+  // 960-wide drawing would shrink its labels past legible, so it switches to the narrow layout,
+  // drawn at the panel's width so its type stays the same size.
+  const panel = useRef<HTMLDivElement>(null);
+  const [panelW, setPanelW] = useState(960);
+  const compact = panelW < 720;
+  const loaded = !!data;
   useEffect(() => {
-    const mq = window.matchMedia("(max-width: 640px)");
-    const on = () => setCompact(mq.matches);
-    on();
-    mq.addEventListener("change", on);
-    return () => mq.removeEventListener("change", on);
-  }, []);
+    const el = panel.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setPanelW(Math.round(e.contentRect.width)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [loaded]);
   if (!data) return <Loading />;
 
   // last 12 months, by month
@@ -75,26 +82,24 @@ export default function Money() {
         <Stat k="Profit, last 12 months" v={money(year.profit)} sub={`${margin}% margin`} />
       </div>
 
-      <div className="chart-panel">
-        <div className="scroll">
-          <StepChart
-            compact={compact}
-            eyebrow="Payback · cumulative"
-            title={Number.isFinite(payback) ? `Owners' ${money(capital)} back in ${payback.toFixed(1)} years at this pace` : "At this pace the owners don't get their capital back"}
-            sub="Operating profit after depreciation, AUD, cumulative by month, against capital paid in. Revenue counts when the hire happens."
-            periods={series.map((x) => MON3[Number(x.m.slice(5, 7)) - 1])}
-            fmt={(n) => money(n)}
-            series={[
-              { name: "Capital in", values: series.map(() => capital), color: "azure", note: "five owners" },
-              { name: "Profit", values: cum(series.map((x) => x.profit)), color: "ink", note: `best month ${MON3[Number(best.m.slice(5, 7)) - 1]}` },
-            ]}
-            strip={{
-              label: "Profit, last 12 months",
-              lines: [`${hires} hires`, `${margin}% margin · avg ${money(year.revenue / Math.max(1, hires))} a hire`, `Illustrative ${scenario} case · source: ledger`],
-              hero: money(year.profit),
-            }}
-          />
-        </div>
+      <div className="chart-panel" ref={panel}>
+        <StepChart
+          compact={compact ? Math.max(360, panelW) : undefined}
+          eyebrow="Payback · cumulative"
+          title={Number.isFinite(payback) ? `Owners' ${money(capital)} back in ${payback.toFixed(1)} years at this pace` : "At this pace the owners don't get their capital back"}
+          sub="Operating profit after depreciation, AUD, cumulative by month, against capital paid in. Revenue counts when the hire happens."
+          periods={series.map((x) => MON3[Number(x.m.slice(5, 7)) - 1])}
+          fmt={(n) => money(n)}
+          series={[
+            { name: "Capital in", values: series.map(() => capital), color: "azure", note: "five owners" },
+            { name: "Profit", values: cum(series.map((x) => x.profit)), color: "ink", note: `best month ${MON3[Number(best.m.slice(5, 7)) - 1]}` },
+          ]}
+          strip={{
+            label: "Profit, last 12 months",
+            lines: [`${hires} hires`, `${margin}% margin · avg ${money(year.revenue / Math.max(1, hires))} a hire`, `Illustrative ${scenario} case · source: ledger`],
+            hero: money(year.profit),
+          }}
+        />
       </div>
 
       <div className="grid cols-2" style={{ alignItems: "start" }}>
