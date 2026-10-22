@@ -1,0 +1,122 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { BUSINESS } from "@/lib/config";
+import { nextFreeDates } from "@/lib/domain";
+import { useApp } from "@/lib/store";
+import { fmtDate, todayISO } from "@/lib/util";
+import { Linkify, useData } from "./ui";
+
+const DEMO_PHONE_KEY = "sst-demo-phone";
+
+function demoPhone() {
+  try {
+    const saved = localStorage.getItem(DEMO_PHONE_KEY);
+    if (saved) return saved;
+    const n = `04${Math.floor(10 + Math.random() * 89)} ${Math.floor(100 + Math.random() * 899)} ${Math.floor(100 + Math.random() * 899)}`;
+    localStorage.setItem(DEMO_PHONE_KEY, n);
+    return n;
+  } catch {
+    return "0412 000 000";
+  }
+}
+
+// A phone-shaped simulator for texting the business. Messages go through the same
+// agent and inbox the owners see in /admin/inbox.
+export function SmsWidget() {
+  const data = useData();
+  const startConversation = useApp((s) => s.startConversation);
+  const sendCustomer = useApp((s) => s.sendCustomer);
+  const [open, setOpen] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [convId, setConvId] = useState<string | null>(null);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [engine, setEngine] = useState<string>("");
+  const body = useRef<HTMLDivElement>(null);
+
+  useEffect(() => setPhone(demoPhone()), []);
+  useEffect(() => {
+    if (!open || engine) return;
+    fetch("/api/agent").then((r) => r.json()).then((j) => setEngine(j.engine)).catch(() => {});
+  }, [open, engine]);
+
+  const conv = data?.conversations.find((c) => c.id === convId) ?? data?.conversations.find((c) => c.channel === "sms" && c.contact === phone);
+  const msgs = conv?.messages ?? [];
+
+  useEffect(() => {
+    body.current?.scrollTo({ top: body.current.scrollHeight, behavior: "smooth" });
+  }, [msgs.length, busy, open]);
+
+  async function send(t: string) {
+    const msg = t.trim();
+    if (!msg || busy || !data) return;
+    setText("");
+    setBusy(true);
+    const id = conv?.id ?? startConversation({ channel: "sms", contact: phone, name: "New contact" });
+    setConvId(id);
+    try {
+      await sendCustomer(id, msg);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const sat = data ? nextFreeDates(data, todayISO(), 1, true)[0] : undefined;
+  const chips = [
+    sat ? `Is ${fmtDate(sat, { dow: true })} free?` : "Is next Saturday free?",
+    "How much for 8 hours in Fremantle?",
+    "How many kegs fit?",
+    "Do we need an RSA?",
+  ];
+
+  return (
+    <>
+      {open && (
+        <div className="sms-panel" role="dialog" aria-label="Text us">
+          <div className="sms-head">
+            <div className="stack" style={{ gap: 0 }}>
+              <strong>Sunrise Sunset</strong>
+              <span className="mono" style={{ fontSize: 11, color: "#a6aec0" }}>{BUSINESS.sms} · you are {phone}</span>
+            </div>
+            <button className="chip" onClick={() => setOpen(false)} aria-label="Close">Close</button>
+          </div>
+          <div className="sms-body" ref={body}>
+            {msgs.length === 0 && (
+              <div className="bubble them">
+                G&apos;day! Text us like you would a mate. Ask about dates, prices or kegs, and we can book you in right here.
+              </div>
+            )}
+            {msgs.map((m) => (
+              <div key={m.id} className={`bubble ${m.from === "customer" ? "me" : m.from === "owner" ? "owner" : m.from === "system" ? "sys" : "them"}`}>
+                {m.from === "owner" && <span className="mono" style={{ fontSize: 10, display: "block", opacity: 0.8 }}>{data?.owners.find((o) => o.id === m.ownerId)?.name ?? "Owner"}</span>}
+                <Linkify text={m.body} />
+              </div>
+            ))}
+            {busy && <div className="typing">typing…</div>}
+            {conv && !conv.agentActive && !busy && (
+              <div className="bubble sys">An owner is looking at this and will reply here.</div>
+            )}
+          </div>
+          {msgs.length < 2 && (
+            <div className="chips">
+              {chips.map((c) => (
+                <button key={c} className="chip" onClick={() => send(c)}>{c}</button>
+              ))}
+            </div>
+          )}
+          <form className="sms-foot" onSubmit={(e) => { e.preventDefault(); send(text); }}>
+            <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Text message" aria-label="Message" />
+            <button className="btn gold small" disabled={busy || !text.trim()}>Send</button>
+          </form>
+          <div className="mono" style={{ fontSize: 10, color: "#a6aec0", padding: "0 14px 8px" }}>
+            Demo SMS · agent: {engine === "claude" ? "Claude" : engine ? "rules engine (add ANTHROPIC_API_KEY for Claude)" : "…"}
+          </div>
+        </div>
+      )}
+      <button className="btn gold sms-fab" onClick={() => setOpen(!open)}>
+        {open ? "Close" : "Text us"}
+      </button>
+    </>
+  );
+}
