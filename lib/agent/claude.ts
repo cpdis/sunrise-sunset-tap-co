@@ -16,10 +16,10 @@ import {
 
 const MODEL = "claude-opus-5-5";
 
-type Tool = Anthropic.Beta.Messages.BetaTool;
-type MessageParam = Anthropic.Beta.Messages.BetaMessageParam;
+export type Tool = Anthropic.Beta.Messages.BetaTool;
+export type MessageParam = Anthropic.Beta.Messages.BetaMessageParam;
 
-const obj = (properties: Record<string, unknown>, required: string[]) => ({
+export const obj = (properties: Record<string, unknown>, required: string[]) => ({
   type: "object" as const,
   properties,
   required,
@@ -96,7 +96,7 @@ ${renderKb(ctx.data.kb, ctx.data.settings)}`;
   ];
 }
 
-function toMessages(history: Msg[]): MessageParam[] {
+export function toMessages(history: Msg[]): MessageParam[] {
   const out: MessageParam[] = [];
   for (const m of history) {
     if (m.from === "system") continue;
@@ -129,9 +129,15 @@ function exec(ctx: ToolCtx, name: string, input: Record<string, unknown>): unkno
   }
 }
 
-export async function runClaude(ctx: ToolCtx, history: Msg[], state: AgentState): Promise<AgentResult> {
+// The tool-use loop both agents share. Returns the final text, or undefined if the model refused or ran too long.
+export async function toolLoop(opts: {
+  system: Anthropic.Beta.Messages.BetaTextBlockParam[];
+  tools: Tool[];
+  messages: MessageParam[];
+  exec: (name: string, input: Record<string, unknown>) => unknown;
+}): Promise<{ reply?: string; stop: "done" | "refusal" | "too_long" }> {
   const client = new Anthropic();
-  const messages = toMessages(history);
+  const { messages } = opts;
   for (let turn = 0; turn < 6; turn++) {
     const res = await client.beta.messages.create({
       model: MODEL,
@@ -139,14 +145,11 @@ export async function runClaude(ctx: ToolCtx, history: Msg[], state: AgentState)
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
       output_config: { effort: "low" },
-      system: system(ctx),
-      tools: ctx.handover ? TOOLS.filter((x) => !["hold_and_send_deposit_link", "cancel_booking"].includes(x.name)) : TOOLS,
+      system: opts.system,
+      tools: opts.tools,
       messages,
     });
-    if (res.stop_reason === "refusal") {
-      escalate(ctx, "Agent declined to answer; needs a person");
-      return { reply: "I'll get one of the owners to pick this up.", actions: ctx.actions, tools: ctx.used, state, engine: "claude" };
-    }
+    if (res.stop_reason === "refusal") return { stop: "refusal" };
     const uses = res.content.filter((b): b is Anthropic.Beta.Messages.BetaToolUseBlock => b.type === "tool_use");
     if (res.stop_reason !== "tool_use" || !uses.length) {
       const reply = res.content
@@ -154,7 +157,7 @@ export async function runClaude(ctx: ToolCtx, history: Msg[], state: AgentState)
         .map((b) => b.text)
         .join("\n")
         .trim();
-      return { reply: reply || "Sorry, could you say that again?", actions: ctx.actions, tools: ctx.used, state, engine: "claude" };
+      return { reply, stop: "done" };
     }
     messages.push({ role: "assistant", content: res.content });
     messages.push({
@@ -162,10 +165,28 @@ export async function runClaude(ctx: ToolCtx, history: Msg[], state: AgentState)
       content: uses.map((u) => ({
         type: "tool_result" as const,
         tool_use_id: u.id,
-        content: JSON.stringify(exec(ctx, u.name, (u.input ?? {}) as Record<string, unknown>)),
+        content: JSON.stringify(opts.exec(u.name, (u.input ?? {}) as Record<string, unknown>)),
       })),
     });
   }
-  escalate(ctx, "Agent loop ran too long");
-  return { reply: "Let me get one of the owners to confirm that for you.", actions: ctx.actions, tools: ctx.used, state, engine: "claude" };
+  return { stop: "too_long" };
+}
+
+export async function runClaude(ctx: ToolCtx, history: Msg[], state: AgentState): Promise<AgentResult> {
+  const r = await toolLoop({
+    system: system(ctx),
+    tools: ctx.handover ? TOOLS.filter((x) => !["hold_and_send_deposit_link", "cancel_booking"].includes(x.name)) : TOOLS,
+    messages: toMessages(history),
+    exec: (name, input) => exec(ctx, name, input),
+  });
+  const done = (reply: string) => ({ reply, actions: ctx.actions, tools: ctx.used, state, engine: "claude" as const });
+  if (r.stop === "refusal") {
+    escalate(ctx, "Agent declined to answer; needs a person");
+    return done("I'll get one of the owners to pick this up.");
+  }
+  if (r.stop === "too_long") {
+    escalate(ctx, "Agent loop ran too long");
+    return done("Let me get one of the owners to confirm that for you.");
+  }
+  return done(r.reply || "Sorry, could you say that again?");
 }

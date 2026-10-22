@@ -52,7 +52,7 @@ function nthWeekday(text: string, now: Date): string | undefined {
 // Without this, "extend by an hour on the day" reads as tomorrow.
 const DATEISH = /\b(mon|tue|wed|thu|fri|sat|sun)[a-z]*\b|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b|\d|\b(today|tomorrow|tonight|weekend|week|fortnight)\b/i;
 
-function parseDate(text: string, now: Date, refDate?: string): string | undefined {
+export function parseDate(text: string, now: Date, refDate?: string): string | undefined {
   if (!DATEISH.test(text)) return undefined;
   const nth = nthWeekday(text, now);
   if (nth) return nth;
@@ -103,7 +103,7 @@ function parseBlock(t: string): Block | undefined {
   return undefined;
 }
 
-function parseSuburb(t: string): string | undefined {
+export function parseSuburb(t: string): string | undefined {
   const hit = [...SUBURBS].sort((a, b) => b.name.length - a.name.length).find((s) => t.includes(s.name.toLowerCase()));
   if (hit) return hit.name;
   if (t.includes("swan valley")) return "Henley Brook";

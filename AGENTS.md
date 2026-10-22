@@ -11,12 +11,13 @@ Colin's general rules load from his global setup on his machines and from the pr
 ## Commands
 - Install: `npm ci`.
 - Run: `npm run dev` (http://localhost:3000).
-- Verify: `npm run typecheck && npm run build`. Run it before every push. There are no tests yet.
+- Verify: `npm run typecheck && npm test && npm run build`. Run it before every push.
 
 ## Where things live
 - Business rules and prices: `lib/config.ts` (`DEFAULT_SETTINGS`). The site, checkout, and agent read them from there. Never hard-code a price, fee, or notice period in a page or in agent copy.
 - Domain logic and scheduled jobs: `lib/domain.ts` (`runJobs`, ledger `post` and `pay`).
 - Agent: `app/api/agent`, tools in `lib/agent/tools.ts`, Claude path in `lib/agent/claude.ts`, no-key fallback in `lib/agent/rules.ts`. Keep both paths in step when a tool changes.
+- Owner agent: a text from an owner's phone gets it. Tools in `lib/agent/owner-tools.ts`, Claude path `lib/agent/owner-claude.ts`, fallback `lib/agent/owner-rules.ts`. The changes themselves live in `lib/ops.ts`, which the admin buttons call too. Money, settings and knowledge edits are staged and need a YES.
 - Design tokens: `app/globals.css`. The source design language is `/mnt/project-files/design-language/tokens.css` in the project folder (Golden Hour). Use the tokens. Do not add new colours or fonts without asking.
 
 ## Rules for changes

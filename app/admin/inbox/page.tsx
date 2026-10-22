@@ -100,6 +100,7 @@ export default function Inbox() {
                       </div>
                       <div className="muted" style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{last?.body}</div>
                       <div className="row" style={{ gap: 6, marginTop: 4 }}>
+                        {c.ownerId && <span className="pill">Owner line</span>}
                         {c.escalated && <span className="pill bad">Needs a person</span>}
                         {!c.agentActive && !c.escalated && <span className="pill warn">Owner handling</span>}
                         {last && <span className="mono muted" style={{ fontSize: 11 }}>{fmtDateTime(last.at)}</span>}
@@ -147,7 +148,7 @@ export default function Inbox() {
                 </div>
               ))}
             </div>
-            <form className="row" onSubmit={(e) => { e.preventDefault(); if (!reply.trim()) return; if (conv.agentActive) a.setAgentActive(conv.id, false); a.ownerReply(conv.id, reply.trim()); setReply(""); }}>
+            <form className="row" onSubmit={(e) => { e.preventDefault(); if (!reply.trim()) return; a.ownerReply(conv.id, reply.trim()); setReply(""); }}>
               <input className="input" aria-label="Reply" style={{ flex: 1 }} placeholder={`Reply by ${CHANNEL_LABEL[conv.channel].toLowerCase()} as ${owner(a.ownerId ?? undefined)}`} value={reply} onChange={(e) => setReply(e.target.value)} />
               <button className="btn primary">Send</button>
             </form>

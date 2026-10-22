@@ -168,6 +168,14 @@ export interface AgentState {
   awaiting?: "date" | "name" | "suburb" | "confirm_hold" | "confirm_cancel";
   bookingId?: string;
   refDate?: string;
+  // Owner agent: a staged change that runs only if the owner's next text is YES.
+  pending?: PendingOwnerAction;
+}
+
+export interface PendingOwnerAction {
+  tool: string;
+  args: Record<string, unknown>;
+  summary: string;
 }
 
 export interface Conversation {
@@ -176,6 +184,8 @@ export interface Conversation {
   contact: string;
   name: string;
   customerId?: string;
+  // Set when the sender is an owner texting the business line; their texts are stored as "customer" (inbound).
+  ownerId?: string;
   agentActive: boolean;
   escalated?: string;
   unread: boolean;
@@ -269,7 +279,19 @@ export type AgentAction =
     }
   | { type: "cancel"; bookingId: string }
   // keepAgent: flag it for an owner but let the agent carry on (short notice, date changes, unknown suburbs).
-  | { type: "escalate"; reason: string; keepAgent?: boolean };
+  | { type: "escalate"; reason: string; keepAgent?: boolean }
+  // Owner agent actions, applied as the owner who texted (lib/ops.ts).
+  | { type: "claim_run"; bookingId: string; which: ("deliver" | "collect")[] }
+  | { type: "truck_log"; log: Omit<TruckLog, "id"> }
+  | { type: "expense"; date: string; account: Account; amount: number; memo: string }
+  | { type: "approve_payout"; distId: string }
+  | { type: "pay_payout"; distId: string }
+  | { type: "settings"; patch: Partial<Settings> }
+  | { type: "kb_append"; slug: string; line: string }
+  | { type: "blackout"; date: string; on: boolean }
+  | { type: "own_use"; date: string; note: string }
+  | { type: "owner_reply"; convId: string; body: string }
+  | { type: "hand_back"; convId: string };
 
 export interface AgentResult {
   reply: string;
