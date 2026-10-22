@@ -17,7 +17,7 @@ export function SiteHeader() {
           <Link href="/#truck">The truck</Link>
           <Link href="/#pricing">Pricing</Link>
           <Link href="/#faq">FAQ</Link>
-          <Link href="/book" className="btn small">Check a date</Link>
+          <Link href="/book" className="btn small">Book</Link>
         </nav>
       </div>
     </header>
