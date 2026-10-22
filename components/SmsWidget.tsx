@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { BUSINESS } from "@/lib/config";
 import { nextFreeDates } from "@/lib/domain";
 import { useApp } from "@/lib/store";
 import { fmtDate, todayISO } from "@/lib/util";
@@ -23,13 +22,15 @@ function demoPhone() {
 }
 
 // A phone-shaped simulator for texting the business. Messages go through the same
-// agent and inbox the owners see in /admin/inbox.
-export function SmsWidget() {
+// agent and inbox the owners see in /admin/inbox. "Text as" switches to an owner's number,
+// which gets the owner agent instead of the customer one.
+export function SmsWidget({ as: initialAs = "customer" }: { as?: string }) {
   const data = useData();
   const startConversation = useApp((s) => s.startConversation);
   const sendCustomer = useApp((s) => s.sendCustomer);
   const [open, setOpen] = useState(false);
-  const [phone, setPhone] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [as, setAs] = useState(initialAs);
   const [convId, setConvId] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -37,7 +38,10 @@ export function SmsWidget() {
   const input = useRef<HTMLInputElement>(null);
   const fab = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => setPhone(demoPhone()), []);
+  useEffect(() => setCustomerPhone(demoPhone()), []);
+  useEffect(() => setAs(initialAs), [initialAs]);
+  const owner = data?.owners.find((o) => o.id === as);
+  const phone = owner?.phone ?? customerPhone;
   // Focus the message box on open; Escape closes and returns focus to the button.
   useEffect(() => {
     if (!open) return;
@@ -52,7 +56,7 @@ export function SmsWidget() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  const conv = data?.conversations.find((c) => c.id === convId) ?? data?.conversations.find((c) => c.channel === "sms" && c.contact === phone);
+  const conv = data?.conversations.find((c) => c.id === convId && c.contact === phone) ?? data?.conversations.find((c) => c.channel === "sms" && c.contact === phone);
   const msgs = conv?.messages ?? [];
 
   useEffect(() => {
@@ -74,12 +78,14 @@ export function SmsWidget() {
   }
 
   const sat = data ? nextFreeDates(data, todayISO(), 1, true)[0] : undefined;
-  const chips = [
-    sat ? `Is ${fmtDate(sat, { dow: true })} free?` : "Is next Saturday free?",
-    "How much for 8 hours in Fremantle?",
-    "How many kegs fit?",
-    "Do we need an RSA?",
-  ];
+  const chips = owner
+    ? ["What's on?", "I'll take the Fremantle delivery", "Log 115,900 km", "$42 CO2 refill", "Approve the payout"]
+    : [
+        sat ? `Is ${fmtDate(sat, { dow: true })} free?` : "Is next Saturday free?",
+        "How much for 8 hours in Fremantle?",
+        "How many kegs fit?",
+        "Do we need an RSA?",
+      ];
 
   return (
     <>
@@ -88,14 +94,22 @@ export function SmsWidget() {
           <div className="sms-head">
             <div className="stack" style={{ gap: 0 }}>
               <span className="label" style={{ fontSize: 13 }}>Sunrise Sunset</span>
-              <span className="muted" style={{ fontSize: 12 }}>{BUSINESS.sms} · you are {phone}</span>
+              <label className="sms-as muted">
+                From
+                <select value={as} onChange={(e) => { setAs(e.target.value); setConvId(null); }} aria-label="Text as">
+                  <option value="customer">{customerPhone} (customer)</option>
+                  {data?.owners.map((o) => <option key={o.id} value={o.id}>{o.name}, owner</option>)}
+                </select>
+              </label>
             </div>
             <button className="chip" onClick={() => { setOpen(false); fab.current?.focus(); }}>Close</button>
           </div>
           <div className="sms-body" ref={body} aria-live="polite" aria-relevant="additions">
             {msgs.length === 0 && (
               <div className="bubble them">
-                G&apos;day! Text us like you would a mate. Ask about dates, prices or kegs, and we can book you in right here.
+                {owner
+                  ? `G'day ${owner.name}. You're texting from your own number, so you get the owner agent: runs, truck log, expenses, payouts and the inbox.`
+                  : "G'day! Text us like you would a mate. Ask about dates, prices or kegs, and we can book you in right here."}
               </div>
             )}
             {msgs.map((m) => (

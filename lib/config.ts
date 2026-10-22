@@ -32,6 +32,48 @@ export const DEFAULT_SETTINGS: Settings = {
   approvalsRequired: 2,
 };
 
+// The settings an owner can edit, grouped as on /admin/settings. The owner SMS agent uses the same labels.
+export const SETTING_GROUPS: { title: string; fields: { k: keyof Settings; label: string; unit?: string }[] }[] = [
+  {
+    title: "Prices",
+    fields: [
+      { k: "price4", label: "4-hour block", unit: "$" },
+      { k: "price8", label: "8-hour block", unit: "$" },
+      { k: "deposit", label: "Deposit", unit: "$" },
+      { k: "bond", label: "Bond", unit: "$" },
+      { k: "travelFee", label: "Travel fee", unit: "$" },
+      { k: "travelThresholdMin", label: "Travel fee applies beyond", unit: "min" },
+    ],
+  },
+  {
+    title: "Booking rules",
+    fields: [
+      { k: "bookAheadMonths", label: "Book ahead up to", unit: "months" },
+      { k: "holdMinutes", label: "Unpaid holds expire after", unit: "min" },
+      { k: "minNoticeDays", label: "Online bookings need at least", unit: "days notice" },
+      { k: "balanceDaysBefore", label: "Charge balance", unit: "days before" },
+      { k: "bondHoldDaysBefore", label: "Hold bond", unit: "days before" },
+      { k: "cancelDays", label: "Full refund if cancelled more than", unit: "days out" },
+      { k: "refundLimit", label: "Agent can refund up to", unit: "$" },
+    ],
+  },
+  {
+    title: "Owners and payouts",
+    fields: [
+      { k: "runnerFee", label: "Runner fee per delivery or pickup", unit: "$" },
+      { k: "approvalsRequired", label: "Approvals to pay a distribution", unit: "owners" },
+      { k: "taxRate", label: "Tax provision", unit: "0–1" },
+      { k: "reserveMonths", label: "Reserve: fixed costs", unit: "months" },
+      { k: "fixedMonthly", label: "Fixed costs per month", unit: "$" },
+      { k: "maintPerKm", label: "Maintenance reserve", unit: "$/km" },
+    ],
+  },
+];
+
+// Guardrails stay in the logged-in admin: over SMS, one owner could otherwise lower the approvals needed or raise the
+// agent's refund limit and then act alone.
+export const ADMIN_ONLY_SETTINGS: (keyof Settings)[] = ["approvalsRequired", "refundLimit"];
+
 // Approximate one-way drive time from the Perth CBD at weekend traffic.
 // Anything not listed is assumed to be outside the service area.
 export const SUBURBS: { name: string; minutes: number; km: number }[] = [

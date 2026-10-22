@@ -3,18 +3,22 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import {
+  balance,
   cancelBooking,
+  cashAt,
   chargeBalance,
   computeDistribution,
   createHold,
   type NewBooking,
   pay,
   payDeposit,
-  payDistribution,
-  post,
+  periodTotals,
+  reserveTarget,
   runJobs,
 } from "./domain";
+import * as ops from "./ops";
 import { DATA_VERSION, buildSeed } from "./seed";
+import type { OwnerSnapshot } from "./agent/owner-tools";
 import type { Snapshot } from "./agent/tools";
 import type {
   Account,
@@ -68,10 +72,7 @@ function clone<T>(x: T): T {
   return structuredClone(x);
 }
 
-function log(d: Data, text: string) {
-  d.jobs.unshift({ at: new Date().toISOString(), text });
-  d.jobs = d.jobs.slice(0, 60);
-}
+const log = ops.log;
 
 // Keeps a distribution record for the most recent completed quarter.
 function ensureDistributions(d: Data) {
@@ -89,10 +90,44 @@ function ensureDistributions(d: Data) {
 
 // What the agent endpoint sees: availability for every date, but only the sender's own contact details.
 export function snapshot(d: Data, contact?: string): Snapshot {
-  const norm = (x?: string) => (x ?? "").replace(/\s+/g, "").toLowerCase();
   const customers = d.customers.filter((c) => contact && (norm(c.phone) === norm(contact) || norm(c.email) === norm(contact)));
   const bookings = d.bookings.map(({ notes, condition, guests, eventType, ...b }) => b) as Data["bookings"];
   return { settings: d.settings, bookings, customers, kb: d.kb, blackouts: d.blackouts, seq: d.seq };
+}
+
+const norm = (x?: string) => (x ?? "").replace(/\s+/g, "").toLowerCase();
+
+// An owner texting (or emailing) the business line from their own number gets the owner agent.
+export function ownerByContact(d: Data, contact: string) {
+  return d.owners.find((o) => norm(o.phone) === norm(contact) || norm(o.email) === norm(contact));
+}
+
+// What the owner agent sees: everything an owner sees in the admin, with ledger totals in place of the ledger.
+export function ownerSnapshot(d: Data, now = new Date()): OwnerSnapshot {
+  const today = todayISO(now);
+  const t30 = periodTotals(d, addDays(today, -30), today);
+  return {
+    settings: d.settings,
+    owners: d.owners,
+    bookings: d.bookings,
+    customers: d.customers,
+    distributions: d.distributions,
+    truck: d.truck,
+    kb: d.kb,
+    blackouts: d.blackouts,
+    seq: d.seq,
+    inbox: d.conversations
+      .filter((c) => !c.ownerId)
+      .map((c) => ({ id: c.id, name: c.name, channel: c.channel, escalated: c.escalated, agentActive: c.agentActive, last: c.messages.at(-1)?.body.slice(0, 140) })),
+    money: {
+      cash: Math.round(cashAt(d)),
+      reserve: reserveTarget(d, today),
+      revenue30: Math.round(t30.revenue),
+      profit30: Math.round(t30.profit),
+      held: Math.round(balance(d, "deposits")),
+      owedRunners: Object.fromEntries(d.owners.map((o) => [o.id, Math.round(balance(d, "owed_runners", undefined, o.id))])),
+    },
+  };
 }
 
 export const useApp = create<AppState>()(
@@ -174,7 +209,8 @@ export const useApp = create<AppState>()(
         if (existing) return existing.id;
         const id = uid("conv");
         get().mutate((d) => {
-          d.conversations.unshift({ ...c, id, agentActive: true, unread: true, state: {}, messages: [] });
+          const owner = ownerByContact(d, c.contact);
+          d.conversations.unshift({ ...c, ...(owner && { name: owner.name, ownerId: owner.id }), id, agentActive: true, unread: !owner, state: {}, messages: [] });
         });
         return id;
       },
@@ -185,7 +221,7 @@ export const useApp = create<AppState>()(
           const c = d.conversations.find((x) => x.id === convId);
           if (c) {
             c.messages.push(msg);
-            c.unread = true;
+            c.unread = !c.ownerId;
           }
         });
         const d0 = get().data;
@@ -195,7 +231,7 @@ export const useApp = create<AppState>()(
         const res = await fetch("/api/agent", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ snapshot: snapshot(d0, conv.contact), conversation: conv }),
+          body: JSON.stringify({ snapshot: conv.ownerId ? ownerSnapshot(d0) : snapshot(d0, conv.contact), conversation: conv }),
         });
         if (!res.ok) return null;
         const result = (await res.json()) as AgentResult;
@@ -224,12 +260,14 @@ export const useApp = create<AppState>()(
             } else if (a.type === "cancel") {
               const b = d.bookings.find((x) => x.id === a.bookingId);
               const pol = cancelBooking(d, a.bookingId);
-              if (b && pol) log(d, `Agent cancelled ${b.ref}; refunded $${pol.refund}`);
+              if (b && pol) log(d, `${c.ownerId ? `${c.name} cancelled ${b.ref} by SMS` : `Agent cancelled ${b.ref}`}; refunded $${pol.refund}`);
             } else if (a.type === "escalate") {
               if (c.escalated && !c.agentActive) continue;
               c.escalated = a.reason;
               if (!a.keepAgent) c.agentActive = false;
               log(d, `Escalated to owners: ${a.reason}`);
+            } else if (c.ownerId) {
+              ops.applyOwnerAction(d, a, c.ownerId);
             }
           }
           c.state = result.state;
@@ -238,28 +276,12 @@ export const useApp = create<AppState>()(
         return result;
       },
 
-      ownerReply: (convId, body) =>
-        get().mutate((d) => {
-          const c = d.conversations.find((x) => x.id === convId);
-          if (!c) return;
-          c.messages.push({ id: uid("m"), from: "owner", body, at: new Date().toISOString(), ownerId: get().ownerId ?? undefined });
-          c.unread = false;
-          c.escalated = undefined;
-        }),
+      ownerReply: (convId, body) => {
+        const me = get().ownerId;
+        if (me) get().mutate((d) => ops.ownerReply(d, convId, body, me));
+      },
 
-      setAgentActive: (convId, active) =>
-        get().mutate((d) => {
-          const c = d.conversations.find((x) => x.id === convId);
-          if (!c) return;
-          c.agentActive = active;
-          if (active) c.escalated = undefined;
-          c.messages.push({
-            id: uid("m"),
-            from: "system",
-            body: active ? "Handed back to the agent" : "An owner took over this conversation",
-            at: new Date().toISOString(),
-          });
-        }),
+      setAgentActive: (convId, active) => get().mutate((d) => ops.setAgentActive(d, convId, active)),
 
       markRead: (convId) =>
         get().mutate((d) => {
@@ -267,15 +289,10 @@ export const useApp = create<AppState>()(
           if (c) c.unread = false;
         }),
 
-      claimRun: (bookingId, which) =>
-        get().mutate((d) => {
-          const b = d.bookings.find((x) => x.id === bookingId);
-          const me = get().ownerId;
-          if (b && me) {
-            b[which].ownerId = me;
-            log(d, `${d.owners.find((o) => o.id === me)?.name} claimed the ${which} run for ${b.ref}`);
-          }
-        }),
+      claimRun: (bookingId, which) => {
+        const me = get().ownerId;
+        if (me) get().mutate((d) => ops.claimRun(d, bookingId, which, me));
+      },
 
       captureBond: (bookingId, amount, note) =>
         get().mutate((d) => {
@@ -317,77 +334,24 @@ export const useApp = create<AppState>()(
           log(d, `${b.ref} balance paid with a new card`);
         }),
 
-      addExpense: (date, account, amount, memo) =>
-        get().mutate((d) => {
-          post(d, date, account, -Math.abs(amount), memo);
-        }),
+      addExpense: (date, account, amount, memo) => get().mutate((d) => ops.addExpense(d, date, account, amount, memo)),
 
-      approveDistribution: (distId) =>
-        get().mutate((d) => {
-          const dist = d.distributions.find((x) => x.id === distId);
-          const me = get().ownerId;
-          const director = d.owners.find((o) => o.id === me)?.isDirector;
-          if (dist && me && director && !dist.approvals.includes(me)) dist.approvals.push(me);
-        }),
+      approveDistribution: (distId) => {
+        const me = get().ownerId;
+        if (me) get().mutate((d) => ops.approveDistribution(d, distId, me));
+      },
 
-      payDistribution: (distId) =>
-        get().mutate((d) => {
-          payDistribution(d, distId);
-          log(d, `Paid ${distId.replace("dist_", "")} dividends via bank API (simulated)`);
-        }),
+      payDistribution: (distId) => get().mutate((d) => ops.payOut(d, distId)),
 
-      updateSettings: (s) =>
-        get().mutate((d) => {
-          d.settings = { ...d.settings, ...s };
-        }),
+      updateSettings: (s) => get().mutate((d) => ops.updateSettings(d, s)),
 
-      saveKb: (page) =>
-        get().mutate((d) => {
-          const i = d.kb.findIndex((p) => p.slug === page.slug);
-          if (i >= 0) d.kb[i] = page;
-          else d.kb.push(page);
-        }),
+      saveKb: (page) => get().mutate((d) => ops.saveKb(d, page)),
 
-      toggleBlackout: (date) =>
-        get().mutate((d) => {
-          d.blackouts = d.blackouts.includes(date) ? d.blackouts.filter((x) => x !== date) : [...d.blackouts, date];
-        }),
+      toggleBlackout: (date) => get().mutate((d) => ops.toggleBlackout(d, date)),
 
-      addPersonalUse: (date, note) =>
-        get().mutate((d) => {
-          const me = get().ownerId ?? d.owners[0].id;
-          d.bookings.push({
-            id: uid("bk"),
-            ref: `OWN-${date.slice(5).replace("-", "")}`,
-            kind: "personal",
-            ownerId: me,
-            date,
-            block: 8,
-            startTime: "06:00",
-            suburb: "Mount Lawley",
-            travelMinutes: 8,
-            km: 4,
-            price: 0,
-            travelFee: 0,
-            total: 0,
-            deposit: 0,
-            bond: 0,
-            state: "confirmed",
-            bondStatus: "none",
-            createdAt: new Date().toISOString(),
-            createdVia: "admin",
-            eventType: "Owner use",
-            notes: note,
-            agreementSigned: true,
-            deliver: { ownerId: me, done: false },
-            collect: { ownerId: me, done: false },
-          });
-        }),
+      addPersonalUse: (date, note) => get().mutate((d) => ops.addPersonalUse(d, date, note, get().ownerId ?? d.owners[0].id)),
 
-      addTruckLog: (l) =>
-        get().mutate((d) => {
-          d.truck.push({ ...l, id: uid("tl") });
-        }),
+      addTruckLog: (l) => get().mutate((d) => ops.addTruckLog(d, l)),
 
       transferShares: (fromId, toId, shares) =>
         get().mutate((d) => {

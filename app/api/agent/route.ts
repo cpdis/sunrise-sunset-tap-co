@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { runClaude } from "@/lib/agent/claude";
+import { runOwnerClaude } from "@/lib/agent/owner-claude";
+import { runOwnerRules } from "@/lib/agent/owner-rules";
+import type { OwnerCtx, OwnerSnapshot } from "@/lib/agent/owner-tools";
 import { runRules } from "@/lib/agent/rules";
 import type { Snapshot, ToolCtx } from "@/lib/agent/tools";
 import type { AgentState, Conversation, Msg } from "@/lib/types";
@@ -7,7 +10,7 @@ import type { AgentState, Conversation, Msg } from "@/lib/types";
 export const runtime = "nodejs";
 
 interface Body {
-  snapshot: Snapshot;
+  snapshot: Snapshot | OwnerSnapshot;
   conversation: Pick<Conversation, "channel" | "contact" | "name" | "state" | "escalated" | "agentActive"> & { messages: Msg[] };
 }
 
@@ -50,6 +53,26 @@ export async function POST(req: Request) {
   const last = [...messages].reverse().find((m) => m.from === "customer");
   if (!last) return NextResponse.json({ error: "No customer message" }, { status: 400 });
 
+  const state: AgentState = conversation.state ?? {};
+
+  // A text from an owner's own number goes to the owner agent. In production the number alone isn't enough for
+  // anything that moves money (caller ID can be spoofed); here the whole demo runs in one browser.
+  const norm = (x: string) => x.replace(/\s+/g, "").toLowerCase();
+  const owner = "owners" in snapshot ? snapshot.owners.find((o) => norm(o.phone) === norm(conversation.contact) || norm(o.email) === norm(conversation.contact)) : undefined;
+  if (owner && "owners" in snapshot) {
+    const octx: OwnerCtx = { data: snapshot, owner, now: new Date(), actions: [], used: [] };
+    if (process.env.ANTHROPIC_API_KEY) {
+      try {
+        return NextResponse.json(await runOwnerClaude(octx, messages, state));
+      } catch (err) {
+        console.error("Claude owner agent failed, falling back to rules", err);
+        Object.assign(octx, { actions: [], used: [], staged: undefined });
+      }
+    }
+    return NextResponse.json(runOwnerRules(octx, last.body, state));
+  }
+  if ("owners" in snapshot) return NextResponse.json({ error: "Not an owner number" }, { status: 400 });
+
   const ctx: ToolCtx = {
     data: snapshot,
     contact: conversation.contact,
@@ -61,8 +84,6 @@ export async function POST(req: Request) {
     origin: new URL(req.url).origin,
     handover: !!conversation.escalated && conversation.agentActive === false,
   };
-  const state: AgentState = conversation.state ?? {};
-
   if (process.env.ANTHROPIC_API_KEY) {
     try {
       return NextResponse.json(await runClaude(ctx, messages, state));

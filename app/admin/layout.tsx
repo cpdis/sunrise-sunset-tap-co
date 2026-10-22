@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { Logo } from "@/components/Logo";
+import { SmsWidget } from "@/components/SmsWidget";
 import { Loading, useData } from "@/components/ui";
 import { useApp } from "@/lib/store";
 
@@ -58,6 +59,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </nav>
         <main className="admin-main">{children}</main>
       </div>
+      <SmsWidget as={ownerId} />
     </>
   );
 }
