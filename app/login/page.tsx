@@ -18,14 +18,14 @@ export default function Login() {
   return (
     <div style={{ minHeight: "100vh", background: "var(--paper)", display: "grid", placeItems: "center", padding: 16 }}>
       <div className="card stack" style={{ width: "min(440px, 100%)", gap: 20 }}>
-        <div className="row"><Logo size={44} /><span className="display" style={{ fontSize: 34 }}>Owners</span></div>
+        <div className="row"><Logo size={44} /><h1 className="display" style={{ fontSize: 34, margin: 0 }}>Owners</h1></div>
         {!owner ? (
           <>
             <span className="muted">Pick who you are. We&apos;ll email you a sign-in link.</span>
             <div className="stack" style={{ gap: 8 }}>
               {data.owners.map((o) => (
                 <button key={o.id} className="btn ghost" style={{ justifyContent: "space-between" }} onClick={() => setSent(o.id)}>
-                  <span>{o.name}</span><span className="mono muted" style={{ fontSize: 12 }}>{o.email}</span>
+                  <span>{o.name}</span><span className="mono muted login-email" style={{ fontSize: 12 }}>{o.email}</span>
                 </button>
               ))}
             </div>

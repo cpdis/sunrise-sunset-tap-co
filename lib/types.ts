@@ -21,6 +21,7 @@ export interface Settings {
   bondHoldDaysBefore: number;
   cancelDays: number;
   holdMinutes: number;
+  minNoticeDays: number;
   bookAheadMonths: number;
   reserveMonths: number;
   fixedMonthly: number;
@@ -80,6 +81,10 @@ export interface Booking {
   guests?: number;
   notes?: string;
   agreementSigned: boolean;
+  // Simulated card trouble: the saved card declines off-session charges until the customer updates it.
+  cardDeclines?: boolean;
+  balanceAttempts?: number;
+  balanceFailedAt?: string;
   deliver: Run;
   collect: Run;
   condition?: string;
@@ -121,7 +126,15 @@ export type Account =
   | "maintenance"
   | "software"
   | "dividends"
-  | "bond";
+  | "bond"
+  // Balance-sheet accounts. Customer payments sit in deposits until the hire happens or the deposit is forfeited;
+  // runner fees sit in owed_runners until the quarterly payout.
+  | "deposits"
+  | "owed_runners"
+  | "depreciation"
+  | "accounting"
+  | "marketing"
+  | "breakage";
 
 export interface LedgerEntry {
   id: string;
@@ -130,6 +143,7 @@ export interface LedgerEntry {
   amount: number;
   memo: string;
   ref?: string;
+  ownerId?: string;
 }
 
 export interface Msg {
@@ -146,6 +160,11 @@ export interface AgentState {
   block?: Block;
   suburb?: string;
   name?: string;
+  startTime?: string;
+  // The customer has said yes to booking; the hold goes through once the details are complete.
+  agreed?: boolean;
+  // Consecutive replies that didn't give the thing the agent asked for.
+  misses?: number;
   awaiting?: "date" | "name" | "suburb" | "confirm_hold" | "confirm_cancel";
   bookingId?: string;
   refDate?: string;
@@ -168,6 +187,8 @@ export interface DistributionLine {
   ownerId: string;
   shares: number;
   amount: number;
+  // Runner fees owed to this owner at quarter end, paid in the same transfer.
+  runnerFees: number;
   payoutId?: string;
 }
 
@@ -182,6 +203,9 @@ export interface Distribution {
   taxProvision: number;
   cash: number;
   reserve: number;
+  // Customer money for hires that haven't happened yet, and runner fees owed; both are kept back.
+  deposits: number;
+  owedRunners: number;
   distributable: number;
   lines: DistributionLine[];
   approvals: string[];
@@ -224,7 +248,10 @@ export interface Data {
   blackouts: string[];
   jobs: JobLog[];
   seq: number;
+  scenario: Scenario;
 }
+
+export type Scenario = "bear" | "base" | "bull";
 
 // Commands the agent (server) returns for the client store to apply.
 export type AgentAction =
@@ -234,13 +261,15 @@ export type AgentAction =
       ref: string;
       date: string;
       block: Block;
+      startTime?: string;
       suburb: string;
       name: string;
       contact: string;
       channel: Channel;
     }
   | { type: "cancel"; bookingId: string }
-  | { type: "escalate"; reason: string };
+  // keepAgent: flag it for an owner but let the agent carry on (short notice, date changes, unknown suburbs).
+  | { type: "escalate"; reason: string; keepAgent?: boolean };
 
 export interface AgentResult {
   reply: string;

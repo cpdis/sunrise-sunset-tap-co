@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { CHANNEL_LABEL, Loading, StatePill, useData } from "@/components/ui";
-import { ACCOUNT_LABEL, balanceDueDate, cancelPolicy, paidSoFar } from "@/lib/domain";
+import { ACCOUNT_LABEL, BALANCE_RETRIES, RELEASE_UNPAID_DAYS, balanceDueDate, cancelPolicy, paidSoFar } from "@/lib/domain";
 import { useApp } from "@/lib/store";
-import { fmtDate, fmtDateTime, fmtTime, money, todayISO } from "@/lib/util";
+import { addDays, fmtDate, fmtDateTime, fmtTime, money, todayISO } from "@/lib/util";
 
 const PAY_LABEL: Record<string, string> = {
   deposit: "Deposit",
@@ -72,7 +72,8 @@ export default function BookingDetail() {
           <div className="summary-row"><strong>Total</strong><strong>{money(b.total)}</strong></div>
           <div className="summary-row"><span>Collected</span><span>{money(paidSoFar(data, b.id))}</span></div>
           <div className="summary-row"><span>Net to the business</span><span>{money(net)}</span></div>
-          {b.state === "confirmed" && <span className="muted" style={{ fontSize: 14 }}>Balance auto-charges {fmtDate(balanceDueDate(s, b), { dow: true })}.</span>}
+          {b.state === "confirmed" && !b.balanceFailedAt && <span className="muted" style={{ fontSize: 14 }}>Balance auto-charges {fmtDate(balanceDueDate(s, b), { dow: true })}.</span>}
+          {b.state === "confirmed" && b.balanceFailedAt && <span style={{ fontSize: 14 }}>Balance declined {b.balanceAttempts} of {BALANCE_RETRIES} tries. Released {fmtDate(addDays(b.date, -RELEASE_UNPAID_DAYS), { dow: true })} if still unpaid.</span>}
           <span style={{ fontSize: 14 }}>Bond: {b.bondStatus === "none" ? `not yet held (${money(b.bond)})` : b.bondStatus === "captured" ? `captured ${money(b.bondCaptured ?? 0)}` : b.bondStatus}</span>
         </div>
 
@@ -105,8 +106,8 @@ export default function BookingDetail() {
           </div>
           {(b.bondStatus === "held" || (b.state === "completed" && b.bondStatus !== "captured")) && (
             <div className="row" style={{ alignItems: "flex-end" }}>
-              <div className="field" style={{ width: 120 }}><label>Capture</label><input className="input" inputMode="numeric" placeholder={String(b.bond)} value={capAmt} onChange={(e) => setCapAmt(e.target.value)} /></div>
-              <div className="field" style={{ flex: 1, minWidth: 220 }}><label>Why (shown to customer)</label><input className="input" placeholder="e.g. Broken tap handle, $85 part + fitting" value={capNote} onChange={(e) => setCapNote(e.target.value)} /></div>
+              <div className="field" style={{ width: 120 }}><label htmlFor="cap-1">Capture</label><input id="cap-1" className="input" inputMode="numeric" placeholder={String(b.bond)} value={capAmt} onChange={(e) => setCapAmt(e.target.value)} /></div>
+              <div className="field" style={{ flex: 1, minWidth: 220 }}><label htmlFor="cap-2">Why (shown to customer)</label><input id="cap-2" className="input" placeholder="e.g. Broken tap handle, $85 part + fitting" value={capNote} onChange={(e) => setCapNote(e.target.value)} /></div>
               <button className="btn small danger" disabled={!capNote || !(Number(capAmt) > 0) || Number(capAmt) > b.bond} onClick={() => { a.captureBond(b.id, Number(capAmt), capNote); setCapAmt(""); setCapNote(""); }}>Capture from bond</button>
             </div>
           )}
@@ -124,7 +125,7 @@ export default function BookingDetail() {
                 {pays.map((p) => (
                   <tr key={p.id}>
                     <td>{fmtDateTime(p.at)}</td>
-                    <td>{PAY_LABEL[p.type]}<br /><span className="muted">{p.card}</span></td>
+                    <td>{PAY_LABEL[p.type]}{p.status === "failed" && <span className="pill bad" style={{ marginLeft: 6 }}>Declined</span>}<br /><span className="muted">{p.card}</span></td>
                     <td className="num">{money(p.amount, true)}</td>
                     <td className="num muted">{p.fee ? money(p.fee, true) : ""}</td>
                     <td className="mono muted" style={{ fontSize: 11 }}>{p.id}</td>

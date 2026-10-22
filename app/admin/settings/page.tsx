@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { Loading, useData } from "@/components/ui";
 import { useApp } from "@/lib/store";
-import type { Settings } from "@/lib/types";
+import { SCENARIOS } from "@/lib/seed";
+import type { Scenario, Settings } from "@/lib/types";
+import { cls } from "@/lib/util";
 
 const GROUPS: { title: string; fields: { k: keyof Settings; label: string; unit?: string }[] }[] = [
   {
@@ -22,6 +24,7 @@ const GROUPS: { title: string; fields: { k: keyof Settings; label: string; unit?
     fields: [
       { k: "bookAheadMonths", label: "Book ahead up to", unit: "months" },
       { k: "holdMinutes", label: "Unpaid holds expire after", unit: "min" },
+      { k: "minNoticeDays", label: "Online bookings need at least", unit: "days notice" },
       { k: "balanceDaysBefore", label: "Charge balance", unit: "days before" },
       { k: "bondHoldDaysBefore", label: "Hold bond", unit: "days before" },
       { k: "cancelDays", label: "Full refund if cancelled more than", unit: "days out" },
@@ -90,8 +93,8 @@ export default function SettingsPage() {
           <div className="grid cols-3">
             {g.fields.map((f) => (
               <div key={f.k} className="field">
-                <label>{f.label} <span className="muted mono" style={{ fontSize: 11 }}>{f.unit}</span></label>
-                <input className="input" inputMode="decimal" value={form[f.k] ?? ""} onChange={(e) => { setForm({ ...form, [f.k]: e.target.value }); setSaved(false); }} />
+                <label htmlFor={`set-${f.k}`}>{f.label} <span className="muted mono" style={{ fontSize: 11 }}>{f.unit}</span></label>
+                <input id={`set-${f.k}`} className="input" inputMode="decimal" value={form[f.k] ?? ""} onChange={(e) => { setForm({ ...form, [f.k]: e.target.value }); setSaved(false); }} />
               </div>
             ))}
           </div>
@@ -104,6 +107,19 @@ export default function SettingsPage() {
             <thead><tr><th>Service</th><th>In this demo</th><th>In production</th></tr></thead>
             <tbody>{integrations.map((i) => <tr key={i.name}><td><strong>{i.name}</strong></td><td>{i.now}</td><td className="muted">{i.prod}</td></tr>)}</tbody>
           </table>
+        </div>
+      </div>
+      <div className="card stack" style={{ gap: 10 }}>
+        <strong>Demo scenario</strong>
+        <span className="muted" style={{ fontSize: 14 }}>
+          Every figure in the admin is illustrative. Base is the one to plan on; bear has fewer hires, a fridge repair and two late cancellations; bull is the optimistic year. Switching regenerates the demo data.
+        </span>
+        <div className="seg" role="group" aria-label="Demo scenario">
+          {(Object.keys(SCENARIOS) as Scenario[]).map((k) => (
+            <button key={k} className={cls(data.scenario === k && "on")} aria-pressed={data.scenario === k} onClick={() => { if (data.scenario !== k && confirm(`Switch to the ${SCENARIOS[k].label.toLowerCase()} case? This regenerates the demo data.`)) { reset(k); useApp.getState().ensure(); } }}>
+              {SCENARIOS[k].label}
+            </button>
+          ))}
         </div>
       </div>
       <div className="card stack" style={{ gap: 10 }}>

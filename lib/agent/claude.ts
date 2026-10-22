@@ -43,8 +43,14 @@ const TOOLS: Tool[] = [
     name: "hold_and_send_deposit_link",
     description: "Hold a free date for the customer and get a deposit payment link to send them. Only call after the customer has agreed to book and you know date, block, suburb and their name.",
     input_schema: obj(
-      { date: { type: "string" }, block: { type: "integer", enum: [4, 8] }, suburb: { type: "string" }, name: { type: "string" } },
-      ["date", "block", "suburb", "name"],
+      {
+        date: { type: "string" },
+        block: { type: "integer", enum: [4, 8] },
+        start_time: { type: "string", description: "When the taps open, HH:MM 24-hour. Use the customer's time if they gave one, else 14:00 for 4 hours or 12:00 for 8." },
+        suburb: { type: "string" },
+        name: { type: "string" },
+      },
+      ["date", "block", "start_time", "suburb", "name"],
     ),
     strict: true,
   },
@@ -83,7 +89,7 @@ Rules:
 
 Knowledge base:
 ${renderKb(ctx.data.kb, ctx.data.settings)}`;
-  const volatile = `Today is ${fmtDate(todayISO(ctx.now), { dow: true, year: true })} (${todayISO(ctx.now)}), Perth time. Channel: ${ctx.channel}. Sender: ${ctx.contact}${ctx.customerName ? ` (${ctx.customerName})` : ""}.`;
+  const volatile = `Today is ${fmtDate(todayISO(ctx.now), { dow: true, year: true })} (${todayISO(ctx.now)}), Perth time. Channel: ${ctx.channel}. Sender: ${ctx.contact}${ctx.customerName ? ` (${ctx.customerName})` : ""}.${ctx.handover ? " This conversation has been handed to an owner. Answer general questions, but don't book, cancel or change anything; say an owner will reply here." : ""}`;
   return [
     { type: "text", text: stable, cache_control: { type: "ephemeral" } },
     { type: "text", text: volatile },
@@ -111,7 +117,7 @@ function exec(ctx: ToolCtx, name: string, input: Record<string, unknown>): unkno
     case "get_quote":
       return getQuote(ctx, Number(input.block) as Block, String(input.suburb));
     case "hold_and_send_deposit_link":
-      return holdAndLink(ctx, String(input.date), Number(input.block) as Block, String(input.suburb), String(input.name));
+      return holdAndLink(ctx, String(input.date), Number(input.block) as Block, String(input.suburb), String(input.name), String(input.start_time));
     case "lookup_booking":
       return lookupBooking(ctx);
     case "cancel_booking":
@@ -129,12 +135,12 @@ export async function runClaude(ctx: ToolCtx, history: Msg[], state: AgentState)
   for (let turn = 0; turn < 6; turn++) {
     const res = await client.beta.messages.create({
       model: MODEL,
-      max_tokens: 4000,
+      max_tokens: 1000,
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
       output_config: { effort: "low" },
       system: system(ctx),
-      tools: TOOLS,
+      tools: ctx.handover ? TOOLS.filter((x) => !["hold_and_send_deposit_link", "cancel_booking"].includes(x.name)) : TOOLS,
       messages,
     });
     if (res.stop_reason === "refusal") {

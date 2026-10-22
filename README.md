@@ -9,9 +9,12 @@ Everything external is simulated. No accounts, keys or payments are needed to ru
 ```bash
 npm install
 npm run dev        # http://localhost:3000
+npm test           # domain rules and agent routing (vitest)
 ```
 
 Optional: set `ANTHROPIC_API_KEY` and the agent switches from the built-in rules engine to Claude, using the same tools.
+`/api/agent` only accepts same-origin requests and is rate limited per IP (20/min), so a public deploy can't be used
+as a free Claude proxy.
 
 ## What to try
 
@@ -26,22 +29,27 @@ Optional: set `ANTHROPIC_API_KEY` and the agent switches from the built-in rules
 | `/admin/payouts` | Quarterly distribution. Approve as one owner, "Switch owner", approve as a second, then pay (mock bank transfer). |
 | `/admin/money` | 12-month revenue vs costs, quarterly P&L, GST threshold watch, ledger, add expense. |
 | `/admin/knowledge` | Edit what the agent knows and test it against the draft. |
-| `/admin/settings` | Prices and rules. Changes flow to the site, checkout and agent immediately. "Reset demo data" regenerates the year. |
+| `/admin/settings` | Prices and rules. Changes flow to the site, checkout and agent immediately. "Reset demo data" regenerates the year. "Demo scenario" switches between bear, base and bull seeds; every KPI is labelled illustrative. |
 
 ## How it works
 
 - **Data**: one simulated year of trading is generated on first load (`lib/seed.ts`, deterministic) and kept in
   `localStorage`. Every browser has its own copy. Scheduled jobs (`runJobs` in `lib/domain.ts`) run on load and every
-  minute: expire unpaid holds after 30 minutes, charge balances 14 days out, place bond holds 2 days out, close past
-  bookings and post their costs.
-- **Money**: every payment posts to a simple ledger (`post`, `pay`). Distributions take quarterly profit, set aside a tax
-  provision and a reserve (3 months fixed costs + $/km driven + $500 buffer), split by shareholding rounded down to $10,
-  and need 2 owner approvals before paying out.
+  minute: expire unpaid holds after 30 minutes, charge balances 14 days out (a declined card retries daily for 3 days,
+  then flags an owner; still unpaid 7 days out releases the date and keeps the deposit), place bond holds 2 days out,
+  close past bookings and post their costs, post monthly truck depreciation (8-year straight line). Open the demo in
+  one tab at a time; other tabs reload from storage when it changes.
+- **Money**: every payment posts to a simple ledger (`post`, `pay`). Customer payments sit in a deposits liability and
+  become revenue when the hire happens or the deposit is forfeited. Runner fees are an expense owed to the owner who
+  ran it and go out with the quarterly payout. Distributions take quarterly profit, set aside a tax
+  provision and a reserve (3 months fixed costs + $/km driven + $500 buffer), keep back customer money and runner fees owed,
+  split by shareholding rounded down to $10, and need 2 director approvals before paying out.
 - **Agent**: `/api/agent` receives a snapshot of availability plus the conversation, runs tools
   (`check_availability`, `get_quote`, `hold_and_send_deposit_link`, `lookup_booking`, `cancel_booking`,
   `escalate_to_owner`) and returns a reply plus actions the client applies. With an API key it's Claude
   (`lib/agent/claude.ts`); without, a deterministic intent matcher (`lib/agent/rules.ts`). Refunds above the configured
-  limit, discounts, multi-day and sponsor requests always go to an owner.
+  limit, discounts, multi-day and sponsor requests, dates inside 7 days' notice and anything it can't pin down after two
+  re-asks go to an owner. After a hand-over it keeps answering FAQs but won't hold or cancel until handed back.
 
 ## Production path
 

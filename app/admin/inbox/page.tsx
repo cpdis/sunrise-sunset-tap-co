@@ -64,12 +64,12 @@ export default function Inbox() {
         <span className="muted" style={{ fontSize: 14 }}>SMS, email, phone and web form land here. The agent answers; anything it hands over is flagged.</span>
       </div>
 
-      <div className="card stack" style={{ gap: 10 }}>
-        <span className="eyebrow muted">Simulate an inbound message</span>
-        <div className="row" style={{ alignItems: "flex-end" }}>
+      <details className="card stack" style={{ gap: 10 }}>
+        <summary className="eyebrow muted" style={{ cursor: "pointer" }}>Demo controls: simulate an inbound message</summary>
+        <div className="row" style={{ alignItems: "flex-end", marginTop: 12 }}>
           <div className="field" style={{ width: 140 }}>
-            <label>Channel</label>
-            <select className="input" value={sim} onChange={(e) => { const v = e.target.value as Inbound; setSim(v); setSimBody(SAMPLES[v].body); }}>
+            <label htmlFor="sim-channel">Channel</label>
+            <select id="sim-channel" className="input" value={sim} onChange={(e) => { const v = e.target.value as Inbound; setSim(v); setSimBody(SAMPLES[v].body); }}>
               <option value="email">Email</option>
               <option value="phone">Phone (transcribed)</option>
               <option value="web">Web form</option>
@@ -77,12 +77,12 @@ export default function Inbox() {
             </select>
           </div>
           <div className="field" style={{ flex: 1, minWidth: 240 }}>
-            <label>From {SAMPLES[sim].contact}</label>
-            <input className="input" value={simBody} onChange={(e) => setSimBody(e.target.value)} />
+            <label htmlFor="sim-body">From {SAMPLES[sim].contact}</label>
+            <input id="sim-body" className="input" value={simBody} onChange={(e) => setSimBody(e.target.value)} />
           </div>
           <button className="btn small" disabled={busy || !simBody.trim()} onClick={simulate}>{busy ? "Agent replying…" : "Send in"}</button>
         </div>
-      </div>
+      </details>
 
       <div className="split">
         <div className="table-wrap" style={{ maxHeight: "70vh", overflowY: "auto" }}>
@@ -91,8 +91,9 @@ export default function Inbox() {
               {list.map((c) => {
                 const last = c.messages.at(-1);
                 return (
-                  <tr key={c.id} className="click" onClick={() => setSel(c.id)} style={{ background: sel === c.id ? "#faf6ef" : undefined }}>
+                  <tr key={c.id} className="click" style={{ background: sel === c.id ? "#faf6ef" : undefined }}>
                     <td>
+                      <button type="button" className="rowbtn" onClick={() => setSel(c.id)} aria-current={sel === c.id ? "true" : undefined}>
                       <div className="row between" style={{ flexWrap: "nowrap" }}>
                         <strong style={{ fontWeight: c.unread ? 700 : 500 }}>{c.name}</strong>
                         <span className="pill">{CHANNEL_LABEL[c.channel]}</span>
@@ -103,6 +104,7 @@ export default function Inbox() {
                         {!c.agentActive && !c.escalated && <span className="pill warn">Owner handling</span>}
                         {last && <span className="mono muted" style={{ fontSize: 11 }}>{fmtDateTime(last.at)}</span>}
                       </div>
+                      </button>
                     </td>
                   </tr>
                 );
@@ -146,7 +148,7 @@ export default function Inbox() {
               ))}
             </div>
             <form className="row" onSubmit={(e) => { e.preventDefault(); if (!reply.trim()) return; if (conv.agentActive) a.setAgentActive(conv.id, false); a.ownerReply(conv.id, reply.trim()); setReply(""); }}>
-              <input className="input" style={{ flex: 1 }} placeholder={`Reply by ${CHANNEL_LABEL[conv.channel].toLowerCase()} as ${owner(a.ownerId ?? undefined)}`} value={reply} onChange={(e) => setReply(e.target.value)} />
+              <input className="input" aria-label="Reply" style={{ flex: 1 }} placeholder={`Reply by ${CHANNEL_LABEL[conv.channel].toLowerCase()} as ${owner(a.ownerId ?? undefined)}`} value={reply} onChange={(e) => setReply(e.target.value)} />
               <button className="btn primary">Send</button>
             </form>
             <span className="muted" style={{ fontSize: 13 }}>Replying takes the conversation off the agent until you hand it back.</span>

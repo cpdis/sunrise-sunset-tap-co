@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { LoopVideo } from "@/components/LoopVideo";
 import { SiteShell } from "@/components/SiteChrome";
 import { useData } from "@/components/ui";
 import { DEFAULT_SETTINGS, SUBURBS } from "@/lib/config";
@@ -21,12 +22,11 @@ export default function Home() {
   return (
     <SiteShell>
       <section className="hero">
-        <video
+        <LoopVideo
           className="hero-art"
           src="/video/hero-am-loop.mp4"
           poster="/art/hero-am.jpg"
-          autoPlay muted loop playsInline preload="metadata"
-          aria-label="Lithograph of five runners cresting a hill at dawn, the Perth skyline behind and the tap truck parked at the top"
+          label="Lithograph of five runners cresting a hill at dawn, the Perth skyline behind and the tap truck parked at the top"
         />
         <div className="hero-copy">
           <span className="eyebrow">Self-pour tap truck · Perth</span>
@@ -40,7 +40,7 @@ export default function Home() {
       </section>
 
       {free.length > 0 && (
-        <section style={{ borderBottom: "1.5px solid var(--ink)", background: "var(--white)" }}>
+        <section style={{ borderBottom: "1.5px solid var(--ink)", background: "var(--paper)" }}>
           <div className="wrap row" style={{ padding: "14px max(16px, 3vw)", gap: 10 }}>
             <span className="label" style={{ marginRight: 8 }}>Next free weekends</span>
             {free.map((d) => (
@@ -94,7 +94,7 @@ export default function Home() {
             <li><strong>Glassware included</strong><span className="muted">120 pints, 60 schooners</span></li>
           </ul>
           <figure className="film" style={{ margin: 0 }}>
-            <video src="/video/hero-pm-loop.mp4" poster="/video/hero-pm-poster.jpg" autoPlay muted loop playsInline preload="none" aria-label="Lithograph of the tap truck at a vineyard wedding at dusk" />
+            <LoopVideo src="/video/hero-pm-loop.mp4" poster="/video/hero-pm-poster.jpg" label="Lithograph of the tap truck at a vineyard wedding at dusk" />
             <figcaption>Dusk · a vineyard wedding</figcaption>
           </figure>
         </div>
