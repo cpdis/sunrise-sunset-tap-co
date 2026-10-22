@@ -119,7 +119,7 @@ export default function Book() {
                   <div className="notice">We cover the Perth metro, Swan Valley and Hills, Two Rocks to Mandurah. Text us with the address and we&apos;ll check.</div>
                 )}
                 {q && q.travelFee > 0 && (
-                  <div className="notice info">{suburb} is about {q.minutes} minutes from our base, so there&apos;s a {money(q.travelFee)} travel fee.</div>
+                  <div className="notice info">{suburb} is about {q.minutes} minutes from the Perth CBD, so there&apos;s a {money(q.travelFee)} travel fee.</div>
                 )}
               </div>
 
