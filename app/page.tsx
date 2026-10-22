@@ -41,7 +41,7 @@ export default function Home() {
       </section>
 
       {free.length > 0 && (
-        <section style={{ borderBottom: "1.5px solid var(--ink)", background: "var(--paper)" }}>
+        <section className="strip">
           <div className="wrap row" style={{ padding: "14px max(16px, 3vw)", gap: 10 }}>
             <span className="label" style={{ marginRight: 8 }}>Next free weekends</span>
             {free.map((d) => (

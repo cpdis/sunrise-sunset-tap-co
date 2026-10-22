@@ -24,8 +24,13 @@
   --warn-ink: #8A5A0F;   /* warn as text: 5.9:1 on white, where --warn is 3.6:1 */
   --rule-input: #948B77; /* form borders: 3.4:1 on white */
 
-  /* form: public site is square and ruled (timetable) */
+  /* form: public site is hand-cut (22 Oct 2026). Corners look cut with scissors, rules are drawn,
+     buttons print a second colour 3px off register. --radius stays for anything still square. */
   --radius: 2px;
+  --cut: 255px 15px 225px 15px / 15px 225px 15px 255px;   /* buttons, small chips */
+  --cut-card: 18px 10px 16px 12px / 12px 16px 10px 18px;  /* cards, panels, tickets */
+  --cut-input: 12px 8px 11px 9px / 9px 11px 8px 12px;     /* inputs */
+  --cut-dot: 60% 40% 55% 45% / 45% 55% 40% 60%;           /* the eyebrow and notice dot */
   --rule-strong: 1.5px solid var(--ink);
   --rule-hair: 1px solid var(--rule);
 }

@@ -3,7 +3,6 @@ import { Big_Shoulders, Instrument_Sans, Josefin_Sans } from "next/font/google";
 import { AppProvider } from "@/components/AppProvider";
 import "./tokens.css";
 import "./globals.css";
-import "./forms.css";
 
 const display = Big_Shoulders({ subsets: ["latin"], weight: ["700", "800", "900"], variable: "--font-display", display: "swap" });
 const label = Josefin_Sans({ subsets: ["latin"], weight: ["600", "700"], variable: "--font-label", display: "swap" });
