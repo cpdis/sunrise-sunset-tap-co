@@ -34,6 +34,26 @@ export const CHANNEL_LABEL: Record<Channel, string> = {
   admin: "Admin",
 };
 
+// What the agent did, in the owners' words. Unknown ids fall back to the id itself.
+const TOOL_LABEL: Record<string, string> = {
+  check_availability: "checked availability",
+  lookup_booking: "looked up the booking",
+  find_booking: "found the booking",
+  quote: "quoted",
+  hold_and_send_deposit_link: "held the date and sent the deposit link",
+  cancel_booking: "cancelled the booking",
+  escalate_to_owner: "handed over",
+  "stripe:webhook": "payment received",
+  claude: "",
+  rules: "",
+};
+export function toolWords(tools: string[] | undefined): string {
+  return (tools ?? [])
+    .map((t) => (t in TOOL_LABEL ? TOOL_LABEL[t] : t.startsWith("kb:") ? `read the ${t.slice(3).replace(/-/g, " ")} page` : t))
+    .filter(Boolean)
+    .join(", ");
+}
+
 // Turns URLs in agent messages into links; links to this site stay in the tab.
 export function Linkify({ text }: { text: string }) {
   const parts = text.split(/(https?:\/\/[^\s]+)/g);

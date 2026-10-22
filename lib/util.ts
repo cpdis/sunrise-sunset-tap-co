@@ -50,6 +50,16 @@ export function fmtDateTime(iso: string): string {
   }).format(new Date(iso));
 }
 
+// Short relative time for lists: "now", "12 min", "3 h", "2 d", then the date. The thread keeps absolute times.
+export function fmtAgo(iso: string, now = new Date()): string {
+  const s = Math.max(0, (now.getTime() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return "now";
+  if (s < 3600) return `${Math.floor(s / 60)} min`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h`;
+  if (s < 7 * 86400) return `${Math.floor(s / 86400)} d`;
+  return fmtDate(todayISO(new Date(iso)));
+}
+
 export function fmtTime(t: string): string {
   const [h, m] = t.split(":").map(Number);
   const ap = h >= 12 ? "pm" : "am";

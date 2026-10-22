@@ -265,6 +265,9 @@ export const useApp = create<AppState>()(
               if (c.escalated && !c.agentActive) continue;
               c.escalated = a.reason;
               if (!a.keepAgent) c.agentActive = false;
+              if (a.draft) c.draft = a.draft;
+              // The reason stays in the thread after an owner replies and the flag clears.
+              c.messages.push({ id: uid("m"), from: "system", body: `Agent handed over: ${a.reason}`, at: new Date().toISOString() });
               log(d, `Escalated to owners: ${a.reason}`);
             } else if (c.ownerId) {
               ops.applyOwnerAction(d, a, c.ownerId);
@@ -281,7 +284,7 @@ export const useApp = create<AppState>()(
         if (me) get().mutate((d) => ops.ownerReply(d, convId, body, me));
       },
 
-      setAgentActive: (convId, active) => get().mutate((d) => ops.setAgentActive(d, convId, active)),
+      setAgentActive: (convId, active) => get().mutate((d) => ops.setAgentActive(d, convId, active, get().ownerId ?? undefined)),
 
       markRead: (convId) =>
         get().mutate((d) => {

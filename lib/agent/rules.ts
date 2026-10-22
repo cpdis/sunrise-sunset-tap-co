@@ -17,6 +17,9 @@ import {
   lookupBooking,
 } from "./tools";
 
+// Opening line of a drafted owner reply. The owner edits the rest before sending.
+const hi = (ctx: ToolCtx) => (ctx.customerName ? `Hi ${ctx.customerName.split(" ")[0]},` : "Hi,");
+
 const has = (t: string, ...words: (string | RegExp)[]) =>
   words.some((w) => (typeof w === "string" ? t.includes(w) : w.test(t)));
 
@@ -150,13 +153,13 @@ export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentRes
 
   // 2. A person, please. Only explicit asks: "someone", "staff" and "owner" also turn up in ordinary questions.
   if (PERSON.test(t)) {
-    escalate(ctx, `Customer asked for a person: "${text.slice(0, 120)}"`);
+    escalate(ctx, `Customer asked for a person: "${text.slice(0, 120)}"`, false, `${hi(ctx)} one of the owners here. What can I help with?`);
     return out(`No worries. I've passed this to one of the owners and they'll get back to you ${when}. Anything I can sort in the meantime?`);
   }
 
   // Discounts, multi-day and sponsorship are owner decisions.
   if (OFF_POLICY.test(t)) {
-    escalate(ctx, `Wants something outside standard pricing: "${text.slice(0, 140)}"`);
+    escalate(ctx, `Wants something outside standard pricing: "${text.slice(0, 140)}"`, false, `${hi(ctx)} one of the owners here. Thanks for the message. Tell me a bit more about the event and the dates and I'll let you know what we can do.`);
     return out(`That one's up to the owners, so I've passed it on with your message. Someone will get back to you ${when}.`);
   }
 
@@ -322,7 +325,7 @@ export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentRes
   }
   if (has(t, /\b(thanks|thank you|cheers|legend|ta)\b/)) return out("Cheers! Text any time.");
 
-  escalate(ctx, `Agent couldn't answer: "${text.slice(0, 160)}"`);
+  escalate(ctx, `Agent couldn't answer: "${text.slice(0, 160)}"`, false, `${hi(ctx)} one of the owners here. `);
   return out(`Good question. I'm not sure, so I've asked one of the owners to reply. They usually do within a few hours${when === "today" ? "" : `, so ${when}`}.`);
 }
 

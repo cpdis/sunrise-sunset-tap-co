@@ -1,7 +1,7 @@
 // Owner operations on a mutable draft of Data. The admin buttons and the owner SMS agent both call these,
 // so an action means the same thing whichever way an owner takes it.
 import { ACCOUNT_LABEL, payDistribution, post } from "./domain";
-import type { Account, AgentAction, Data, KbPage, Settings, TruckLog } from "./types";
+import type { Account, AgentAction, Conversation, Data, KbPage, Settings, TruckLog } from "./types";
 import { uid } from "./util";
 
 export function log(d: Data, text: string) {
@@ -81,16 +81,31 @@ export function addPersonalUse(d: Data, date: string, note: string, ownerId: str
   });
 }
 
-export function setAgentActive(d: Data, convId: string, active: boolean) {
+// Where an owner's reply actually goes. A caller gets an SMS to the number they rang from; a web form gets an
+// email to the address on the form. There is no reply "by phone" or "by web form".
+export function replyRoute(c: Pick<Conversation, "contact">): { via: "sms" | "email"; to: string } {
+  return { via: c.contact.includes("@") ? "email" : "sms", to: c.contact };
+}
+
+// A hand-over tells the customer an owner will reply. Until one does (ownerReply clears it), handing the
+// conversation back would leave that promise unkept.
+export function owesReply(c: Pick<Conversation, "escalated">) {
+  return !!c.escalated;
+}
+
+export function setAgentActive(d: Data, convId: string, active: boolean, ownerId?: string) {
   const c = d.conversations.find((x) => x.id === convId);
   if (!c) return;
+  const who = ownerId ? ownerName(d, ownerId) : "An owner";
   c.agentActive = active;
+  c.handledBy = active ? undefined : ownerId;
   if (active) c.escalated = undefined;
   c.messages.push({
     id: uid("m"),
     from: "system",
-    body: active ? "Handed back to the agent" : "An owner took over this conversation",
+    body: active ? `${who} handed back to the agent` : `${who} took over this conversation`,
     at: new Date().toISOString(),
+    ownerId,
   });
 }
 
@@ -98,10 +113,12 @@ export function setAgentActive(d: Data, convId: string, active: boolean) {
 export function ownerReply(d: Data, convId: string, body: string, ownerId: string) {
   const c = d.conversations.find((x) => x.id === convId);
   if (!c) return;
-  if (c.agentActive) setAgentActive(d, convId, false);
-  c.messages.push({ id: uid("m"), from: "owner", body, at: new Date().toISOString(), ownerId });
+  if (c.agentActive) setAgentActive(d, convId, false, ownerId);
+  c.handledBy = ownerId;
+  c.messages.push({ id: uid("m"), from: "owner", body, at: new Date().toISOString(), ownerId, ...replyRoute(c) });
   c.unread = false;
   c.escalated = undefined;
+  c.draft = undefined;
 }
 
 // Applies what the owner agent decided, as the owner who texted. Each op re-checks its own rules.
@@ -150,8 +167,15 @@ export function applyOwnerAction(d: Data, a: AgentAction, ownerId: string) {
     case "owner_reply":
       ownerReply(d, a.convId, a.body, ownerId);
       break;
-    case "hand_back":
-      setAgentActive(d, a.convId, true);
+    case "send_draft": {
+      const c = d.conversations.find((x) => x.id === a.convId);
+      if (c?.draft) ownerReply(d, a.convId, c.draft, ownerId);
       break;
+    }
+    case "hand_back": {
+      const c = d.conversations.find((x) => x.id === a.convId);
+      if (c && (a.force || !owesReply(c))) setAgentActive(d, a.convId, true, ownerId);
+      break;
+    }
   }
 }

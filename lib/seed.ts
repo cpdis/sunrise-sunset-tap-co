@@ -290,11 +290,13 @@ function seedConversations(d: Data, now: Date): Conversation[] {
       name: "Harbour Collective (events)",
       agentActive: false,
       escalated: "Asked for a 3-day festival rate and a sponsor wrap. Outside policy, so handed to a person.",
+      draft: "Hi, thanks for thinking of us for the festival. We can do each of the three days as a standard full-day hire and those dates are free at the moment. We don't put sponsor branding on the truck, sorry. Want me to hold the dates for you?",
       unread: true,
       state: {},
       messages: [
         { id: "m1", from: "customer", body: "Hi team, we're running a 3-day festival in Fremantle in March. Could we hire the truck for all three days, and could a sponsor's logo go on it?", at: t(180) },
         { id: "m2", from: "agent", body: "Thanks! Multi-day hire and sponsor branding need a person to approve. I've passed this to the owners with your dates, and someone will reply by tomorrow.", at: t(179), tools: ["check_availability", "escalate_to_owner"] },
+        { id: "m3", from: "system", body: "Agent handed over: Asked for a 3-day festival rate and a sponsor wrap. Outside policy, so handed to a person.", at: t(179) },
       ],
     },
     {

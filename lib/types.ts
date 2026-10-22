@@ -153,6 +153,9 @@ export interface Msg {
   at: string;
   ownerId?: string;
   tools?: string[];
+  // Owner replies: how the reply actually went out (lib/ops.ts replyRoute).
+  via?: "sms" | "email";
+  to?: string;
 }
 
 export interface AgentState {
@@ -186,8 +189,12 @@ export interface Conversation {
   customerId?: string;
   // Set when the sender is an owner texting the business line; their texts are stored as "customer" (inbound).
   ownerId?: string;
+  // The owner who took the conversation off the agent, while they have it.
+  handledBy?: string;
   agentActive: boolean;
   escalated?: string;
+  // The agent's suggested reply for the hand-over, until an owner sends or replaces it.
+  draft?: string;
   unread: boolean;
   state: AgentState;
   messages: Msg[];
@@ -279,7 +286,8 @@ export type AgentAction =
     }
   | { type: "cancel"; bookingId: string }
   // keepAgent: flag it for an owner but let the agent carry on (short notice, date changes, unknown suburbs).
-  | { type: "escalate"; reason: string; keepAgent?: boolean }
+  // draft: a reply the owner can send as-is (shown in the inbox queue, cleared by ownerReply).
+  | { type: "escalate"; reason: string; keepAgent?: boolean; draft?: string }
   // Owner agent actions, applied as the owner who texted (lib/ops.ts).
   | { type: "claim_run"; bookingId: string; which: ("deliver" | "collect")[] }
   | { type: "truck_log"; log: Omit<TruckLog, "id"> }
@@ -291,7 +299,10 @@ export type AgentAction =
   | { type: "blackout"; date: string; on: boolean }
   | { type: "own_use"; date: string; note: string }
   | { type: "owner_reply"; convId: string; body: string }
-  | { type: "hand_back"; convId: string };
+  // force: hand back although the customer was promised an owner reply that nobody sent.
+  | { type: "hand_back"; convId: string; force?: boolean }
+  // Send the agent's draft reply for a handed-over conversation as the owner.
+  | { type: "send_draft"; convId: string };
 
 export interface AgentResult {
   reply: string;
