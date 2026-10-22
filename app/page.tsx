@@ -27,7 +27,7 @@ export default function Home() {
           src="/video/hero-am-loop.mp4"
           poster="/art/hero-am.jpg"
           rate={0.7}
-          label="Lithograph of five runners cresting a hill at dawn, the Perth skyline behind and the tap truck parked at the top"
+          label="Lithograph of friends pouring from the rear taps of the truck on a hilltop at dawn, the Perth skyline behind"
         />
         <div className="hero-copy">
           <span className="eyebrow">Self-pour tap truck · Perth</span>
@@ -95,7 +95,7 @@ export default function Home() {
             <li><strong>Glassware included</strong><span className="muted">120 pints, 60 schooners</span></li>
           </ul>
           <div className="film">
-            <LoopVideo src="/video/hero-pm-loop.mp4" poster="/video/hero-pm-poster.jpg" label="Lithograph of the tap truck at a vineyard wedding at dusk" />
+            <LoopVideo src="/video/hero-pm-loop.mp4" poster="/video/hero-pm-poster.jpg" label="Lithograph of a guest pouring from the rear taps of the truck at a vineyard wedding at dusk" />
           </div>
         </div>
       </section>
