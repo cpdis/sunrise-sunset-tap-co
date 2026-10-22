@@ -58,7 +58,7 @@ export default function Knowledge() {
           <div className="field"><label>Title</label><input className="input" value={title} onChange={(e) => { setTitle(e.target.value); setSaved(false); }} /></div>
           <div className="field"><label>Content</label><textarea className="input" style={{ minHeight: 360 }} value={body} onChange={(e) => { setBody(e.target.value); setSaved(false); }} /></div>
           <div className="row">
-            <button className="btn small" onClick={() => { saveKb({ slug, title, body }); setSaved(true); }}>Save</button>
+            <button className="btn small primary" onClick={() => { saveKb({ slug, title, body }); setSaved(true); }}>Save</button>
             {saved && <span className="pill good">Saved. The agent uses it from the next message.</span>}
           </div>
         </div>

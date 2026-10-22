@@ -20,7 +20,7 @@ export function DatePicker({ data, value, onChange }: { data: Data; value?: stri
     <div className="stack" style={{ gap: 12 }}>
       <div className="row between">
         <button className="btn ghost small" onClick={() => setMonth(addMonths(month, -1))} disabled={month <= today.slice(0, 7) + "-01"}>←</button>
-        <strong>{MONTHS[Number(month.slice(5, 7)) - 1]} {month.slice(0, 4)}</strong>
+        <strong className="display" style={{ fontSize: 30 }}>{MONTHS[Number(month.slice(5, 7)) - 1]} {month.slice(0, 4)}</strong>
         <button className="btn ghost small" onClick={() => setMonth(addMonths(month, 1))} disabled={month >= lastMonth}>→</button>
       </div>
       <div className="cal">
@@ -44,8 +44,8 @@ export function DatePicker({ data, value, onChange }: { data: Data; value?: stri
         })}
       </div>
       <div className="row muted" style={{ fontSize: 13, gap: 16 }}>
-        <span><span style={{ display: "inline-block", width: 12, height: 12, border: "1.5px solid #e3c06c", borderRadius: 3, marginRight: 6 }} />Weekend</span>
-        <span><span style={{ display: "inline-block", width: 12, height: 12, background: "var(--bone-2)", borderRadius: 3, marginRight: 6 }} />Booked</span>
+        <span><span style={{ display: "inline-block", width: 12, height: 12, borderBottom: "4px solid var(--gold)", background: "var(--white)", marginRight: 6 }} />Weekend</span>
+        <span><span style={{ display: "inline-block", width: 12, height: 12, background: "var(--paper)", border: "1px solid var(--rule)", marginRight: 6 }} />Booked</span>
       </div>
     </div>
   );

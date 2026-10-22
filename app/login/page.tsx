@@ -16,9 +16,9 @@ export default function Login() {
   const owner = data.owners.find((o) => o.id === sent);
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--night)", display: "grid", placeItems: "center", padding: 16 }}>
+    <div style={{ minHeight: "100vh", background: "var(--paper)", display: "grid", placeItems: "center", padding: 16 }}>
       <div className="card stack" style={{ width: "min(440px, 100%)", gap: 20 }}>
-        <div className="row"><Logo size={40} /><span className="display" style={{ fontSize: 24 }}>Owners</span></div>
+        <div className="row"><Logo size={44} /><span className="display" style={{ fontSize: 34 }}>Owners</span></div>
         {!owner ? (
           <>
             <span className="muted">Pick who you are. We&apos;ll email you a sign-in link.</span>

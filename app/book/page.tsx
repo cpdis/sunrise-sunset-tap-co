@@ -54,7 +54,10 @@ export default function Book() {
 
   return (
     <SiteShell>
-      <section className="section" style={{ paddingTop: 48 }}>
+      <div className="banner">
+        <img src="/art/hero-pm.jpg" alt="Lithograph of a Swan Valley wedding table at sunset with the tap truck at the end" />
+      </div>
+      <section className="section" style={{ paddingTop: 40 }}>
         <div className="wrap">
           <span className="eyebrow">Book the truck</span>
           <h2 className="display">Check a date</h2>
@@ -124,25 +127,30 @@ export default function Book() {
               </div>
             </div>
 
-            <aside className="card night stack" style={{ position: "sticky", top: 88 }}>
-              <span className="eyebrow" style={{ color: "var(--gold)" }}>Your booking</span>
-              <div>
-                <div className="summary-row"><span>Date</span><strong>{date ? fmtDate(date, { dow: true, year: true }) : "—"}</strong></div>
-                <div className="summary-row"><span>Block</span><strong>{block} hours from {fmtTime(start)}</strong></div>
-                <div className="summary-row"><span>Delivered to</span><strong>{suburb && suburb !== "other" ? suburb : "—"}</strong></div>
-                <div className="summary-row"><span>Hire</span><strong>{money(block === 4 ? s.price4 : s.price8)}</strong></div>
-                {q && q.travelFee > 0 && <div className="summary-row"><span>Travel</span><strong>{money(q.travelFee)}</strong></div>}
-                <div className="summary-row"><span>Total</span><strong>{q ? money(q.total) : "—"}</strong></div>
+            <aside className="ticket" style={{ position: "sticky", top: 88 }}>
+              <div className="t-top">
+                <span className="eyebrow">Your hire</span>
+                <strong style={{ fontSize: 18 }}>{date ? fmtDate(date, { dow: true, year: true }) : "Pick a date"}</strong>
+                <span className="muted" style={{ fontSize: 14 }}>
+                  {block} hours from {fmtTime(start)}{suburb && suburb !== "other" ? ` · delivered to ${suburb}` : ""}
+                </span>
               </div>
-              {q && date && (
-                <div className="stack" style={{ gap: 4, fontSize: 14, color: "#d9d2c4" }}>
-                  <span><strong style={{ color: "var(--gold)" }}>{money(dueToday)} today</strong>{dueToday < q.total ? " to hold the date" : " (event is within " + s.balanceDaysBefore + " days)"}</span>
-                  {dueToday < q.total && <span>{money(q.total - q.deposit)} charged automatically on {fmtDate(addDays(date, -s.balanceDaysBefore), { dow: true })}</span>}
-                  <span>{money(s.bond)} bond hold from {fmtDate(addDays(date, -s.bondHoldDaysBefore), { dow: true })}, released after pickup</span>
-                </div>
-              )}
-              <button className="btn gold" disabled={!ready} onClick={submit}>Continue to payment</button>
-              <span style={{ fontSize: 13, color: "#a6aec0" }}>Your date is held for {s.holdMinutes} minutes while you pay.</span>
+              <div className="t-row"><span>{block}-hour hire</span><span className="num">{money(block === 4 ? s.price4 : s.price8)}</span></div>
+              {q && q.travelFee > 0 && <div className="t-row"><span>Travel, over {s.travelThresholdMin} min</span><span className="num">{money(q.travelFee)}</span></div>}
+              <div className="t-row"><span>Total</span><strong className="num">{q ? money(q.total) : "—"}</strong></div>
+              <div className="t-row"><span>Bond, held {s.bondHoldDaysBefore} days before</span><span className="num">{money(s.bond)}</span></div>
+              <div className="t-tot">
+                <span className="label">{q && date && dueToday >= q.total ? "Pay in full today" : "Deposit today"}</span>
+                <span className="display">{q && date ? money(dueToday) : money(s.deposit)}</span>
+              </div>
+              <div className="t-foot">
+                {q && date && dueToday < q.total && (
+                  <span className="muted">{money(q.total - q.deposit)} charged automatically on {fmtDate(addDays(date, -s.balanceDaysBefore), { dow: true })}.</span>
+                )}
+                {q && date && dueToday >= q.total && <span className="muted">Your event is within {s.balanceDaysBefore} days, so it&apos;s paid up front.</span>}
+                <button className="btn gold" disabled={!ready} onClick={submit}>Continue to payment</button>
+                <span className="muted" style={{ fontSize: 13 }}>Your date is held for {s.holdMinutes} minutes while you pay.</span>
+              </div>
             </aside>
           </div>
         </div>

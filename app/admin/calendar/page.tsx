@@ -45,7 +45,7 @@ export default function Calendar() {
               key={d}
               className={cls("cell", d.slice(0, 7) !== month.slice(0, 7) && "out", d === today && "today", data.blackouts.includes(d) && "black")}
               onClick={() => { setSel(d); setNote(""); }}
-              style={{ cursor: "pointer", outline: sel === d ? "2px solid var(--night)" : undefined }}
+              style={{ cursor: "pointer", outline: sel === d ? "2px solid var(--ink)" : undefined }}
             >
               <span className="mono">{Number(d.slice(8))}</span>
               {bs.map((b) => (
@@ -58,10 +58,10 @@ export default function Calendar() {
         })}
       </div>
       <div className="legend">
-        <span><i style={{ background: "var(--night)" }} />Paid booking</span>
-        <span><i style={{ background: "#fff1cc" }} />Held, awaiting deposit</span>
-        <span><i style={{ background: "#efe4fb" }} />Owner use</span>
-        <span><i style={{ background: "repeating-linear-gradient(135deg,#fff,#fff 3px,#e5ddd0 3px,#e5ddd0 6px)" }} />Blocked out</span>
+        <span><i style={{ background: "var(--ink)" }} />Paid booking</span>
+        <span><i style={{ background: "var(--gold)" }} />Held, awaiting deposit</span>
+        <span><i style={{ background: "var(--sand)" }} />Owner use</span>
+        <span><i style={{ background: "repeating-linear-gradient(135deg,#fff,#fff 3px,var(--ground) 3px,var(--ground) 6px)" }} />Blocked out</span>
       </div>
 
       {sel && (

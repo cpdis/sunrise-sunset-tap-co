@@ -70,7 +70,7 @@ export default function Owners() {
             <div className="field"><label>To</label><select className="input" value={to} onChange={(e) => setTo(e.target.value)}><option value="">—</option>{data.owners.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></div>
             <div className="field"><label>Shares</label><input className="input" inputMode="numeric" value={n} onChange={(e) => setN(e.target.value)} /></div>
           </div>
-          <button className="btn small" style={{ alignSelf: "flex-start" }} disabled={!from || !to || from === to}>Record transfer</button>
+          <button className="btn small primary" style={{ alignSelf: "flex-start" }} disabled={!from || !to || from === to}>Record transfer</button>
           <span className="muted" style={{ fontSize: 13 }}>Future payouts split on the new holdings. ASIC needs a Form 484 within 28 days.</span>
         </form>
       </div>

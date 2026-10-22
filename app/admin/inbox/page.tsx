@@ -147,7 +147,7 @@ export default function Inbox() {
             </div>
             <form className="row" onSubmit={(e) => { e.preventDefault(); if (!reply.trim()) return; if (conv.agentActive) a.setAgentActive(conv.id, false); a.ownerReply(conv.id, reply.trim()); setReply(""); }}>
               <input className="input" style={{ flex: 1 }} placeholder={`Reply by ${CHANNEL_LABEL[conv.channel].toLowerCase()} as ${owner(a.ownerId ?? undefined)}`} value={reply} onChange={(e) => setReply(e.target.value)} />
-              <button className="btn">Send</button>
+              <button className="btn primary">Send</button>
             </form>
             <span className="muted" style={{ fontSize: 13 }}>Replying takes the conversation off the agent until you hand it back.</span>
           </div>

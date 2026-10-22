@@ -2,15 +2,15 @@
 
 import Link from "next/link";
 import { BUSINESS } from "@/lib/config";
-import { Wordmark } from "./Logo";
+import { Roundel, Wordmark } from "./Logo";
 import { SmsWidget } from "./SmsWidget";
 
 export function SiteHeader() {
   return (
     <header className="site-header">
       <div className="wrap">
-        <Link href="/" className="brand" aria-label="Home">
-          <Wordmark />
+        <Link href="/" className="brand" aria-label="Sunrise Sunset Tap Co., home">
+          <Wordmark height={46} />
         </Link>
         <nav>
           <Link href="/#how">How it works</Link>
@@ -27,17 +27,18 @@ export function SiteHeader() {
 export function Footer() {
   return (
     <footer className="footer">
-      <div className="stripes"><span /><span /><span /></div>
       <div className="wrap">
-        <div className="stack" style={{ gap: 6 }}>
-          <span className="display" style={{ fontSize: 24, color: "var(--bone)" }}>Sunrise Sunset Tap Co.</span>
-          <span>Cold brew at sunrise. Cold beer at sunset.</span>
-          <span className="mono" style={{ fontSize: 12 }}>Perth, Western Australia · ABN pending</span>
+        <div className="row" style={{ gap: 16, alignItems: "center" }}>
+          <Roundel size={56} />
+          <div className="stack" style={{ gap: 2 }}>
+            <span className="display" style={{ fontSize: 30 }}>Cold brew at dawn. Beer at dusk.</span>
+            <span className="label">Self-pour tap truck · Swan Valley to Mandurah</span>
+          </div>
         </div>
-        <div className="stack" style={{ gap: 6 }}>
-          <span>Text <a href={`sms:${BUSINESS.sms.replace(/\s/g, "")}`} style={{ color: "var(--gold)" }}>{BUSINESS.sms}</a></span>
-          <span><a href={`mailto:${BUSINESS.email}`} style={{ color: "var(--gold)" }}>{BUSINESS.email}</a></span>
-          <Link href="/login" style={{ color: "#a6aec0" }}>Owner login</Link>
+        <div className="stack" style={{ gap: 4 }}>
+          <span>Text <a href={`sms:${BUSINESS.sms.replace(/\s/g, "")}`}>{BUSINESS.sms}</a></span>
+          <a href={`mailto:${BUSINESS.email}`}>{BUSINESS.email}</a>
+          <span className="muted" style={{ fontSize: 13 }}>Perth, Western Australia · ABN pending · <Link href="/login">Owner login</Link></span>
         </div>
       </div>
     </footer>

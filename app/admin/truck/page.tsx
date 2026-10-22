@@ -36,7 +36,7 @@ export default function Truck() {
           <div className="field"><label>Odometer</label><input className="input" inputMode="numeric" value={f.odometer} onChange={(e) => setF({ ...f, odometer: e.target.value })} /></div>
           <div className="field"><label>Notes</label><input className="input" value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></div>
         </div>
-        <button className="btn small" style={{ alignSelf: "flex-start" }}>Add</button>
+        <button className="btn small primary" style={{ alignSelf: "flex-start" }}>Add to log</button>
       </form>
       <div className="table-wrap">
         <table className="t">

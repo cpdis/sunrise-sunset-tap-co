@@ -48,7 +48,7 @@ export default function Payouts() {
                 <div className="summary-row"><span>Reserve kept</span><span>{money(d.reserve)}</span></div>
                 <div className="summary-row"><strong>To distribute</strong><strong>{money(d.distributable)}</strong></div>
               </div>
-              <div className="table-wrap" style={{ background: "var(--bone)" }}>
+              <div className="table-wrap" style={{ background: "var(--paper)" }}>
                 <table className="t">
                   <thead><tr><th>Owner</th><th className="num">Shares</th><th className="num">Amount</th><th>Transfer</th></tr></thead>
                   <tbody>
@@ -70,7 +70,7 @@ export default function Payouts() {
                   Approved by {d.approvals.length ? d.approvals.map((a) => owner(a)?.name).join(", ") : "nobody yet"}.
                 </span>
                 {!mine && <button className="btn small" onClick={() => approve(d.id)}>Approve</button>}
-                <button className="btn small gold" disabled={!ready || d.distributable <= 0} onClick={() => payOut(d.id)}>
+                <button className="btn small primary" disabled={!ready || d.distributable <= 0} onClick={() => payOut(d.id)}>
                   Pay {money(d.distributable)}
                 </button>
                 {mine && !ready && <span className="muted" style={{ fontSize: 13 }}>Switch owner (top bar) to add a second approval.</span>}

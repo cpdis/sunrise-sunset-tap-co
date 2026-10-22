@@ -47,9 +47,9 @@ export default function BookingPage() {
         <div className="wrap stack" style={{ gap: 24, maxWidth: 900 }}>
           {paid && b.state !== "held" && (
             <div className="card night stack" style={{ gap: 8 }}>
-              <span className="eyebrow" style={{ color: "var(--gold)" }}>You&apos;re booked</span>
-              <span className="display" style={{ fontSize: 40 }}>See you on {fmtDate(b.date, { dow: true })}.</span>
-              <span style={{ color: "#d9d2c4" }}>Receipt and hire agreement sent to {cust?.email}. We&apos;ll text {cust?.phone} the week before to check kegs and access.</span>
+              <span className="eyebrow">You&apos;re booked</span>
+              <span className="display" style={{ fontSize: 48 }}>See you on {fmtDate(b.date, { dow: true })}.</span>
+              <span>Receipt and hire agreement sent to {cust?.email}. We&apos;ll text {cust?.phone} the week before to check kegs and access.</span>
             </div>
           )}
           <div className="row between">

@@ -81,7 +81,7 @@ export default function SettingsPage() {
         <h1>Settings</h1>
         <div className="row">
           {saved && <span className="pill good">Saved</span>}
-          <button className="btn" onClick={save}>Save changes</button>
+          <button className="btn primary" onClick={save}>Save changes</button>
         </div>
       </div>
       {GROUPS.map((g) => (

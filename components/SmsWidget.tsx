@@ -76,8 +76,8 @@ export function SmsWidget() {
         <div className="sms-panel" role="dialog" aria-label="Text us">
           <div className="sms-head">
             <div className="stack" style={{ gap: 0 }}>
-              <strong>Sunrise Sunset</strong>
-              <span className="mono" style={{ fontSize: 11, color: "#a6aec0" }}>{BUSINESS.sms} · you are {phone}</span>
+              <span className="label" style={{ fontSize: 13 }}>Sunrise Sunset</span>
+              <span className="muted" style={{ fontSize: 12 }}>{BUSINESS.sms} · you are {phone}</span>
             </div>
             <button className="chip" onClick={() => setOpen(false)} aria-label="Close">Close</button>
           </div>
@@ -89,7 +89,7 @@ export function SmsWidget() {
             )}
             {msgs.map((m) => (
               <div key={m.id} className={`bubble ${m.from === "customer" ? "me" : m.from === "owner" ? "owner" : m.from === "system" ? "sys" : "them"}`}>
-                {m.from === "owner" && <span className="mono" style={{ fontSize: 10, display: "block", opacity: 0.8 }}>{data?.owners.find((o) => o.id === m.ownerId)?.name ?? "Owner"}</span>}
+                {m.from === "owner" && <span className="label" style={{ fontSize: 10, display: "block" }}>{data?.owners.find((o) => o.id === m.ownerId)?.name ?? "Owner"}</span>}
                 <Linkify text={m.body} />
               </div>
             ))}
@@ -109,7 +109,7 @@ export function SmsWidget() {
             <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Text message" aria-label="Message" />
             <button className="btn gold small" disabled={busy || !text.trim()}>Send</button>
           </form>
-          <div className="mono" style={{ fontSize: 10, color: "#a6aec0", padding: "0 14px 8px" }}>
+          <div className="muted" style={{ fontSize: 11, padding: "0 14px 8px" }}>
             Demo SMS · agent: {engine === "claude" ? "Claude" : engine ? "rules engine (add ANTHROPIC_API_KEY for Claude)" : "…"}
           </div>
         </div>
