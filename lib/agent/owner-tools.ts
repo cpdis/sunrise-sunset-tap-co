@@ -1,20 +1,24 @@
 // Owner agent tools. An owner texting the business line can do what the admin does, by stakes:
-// - low stakes run at once and are echoed back (claim a run, log the truck, calendar, reply to a customer);
-// - money, settings and knowledge are staged and run only when the owner's next text is YES;
+// - low stakes run at once and are echoed back (claim a run, log the truck, calendar, reply to a customer, hand back);
+// - money, settings, knowledge and sending the agent's draft are staged and run only when the owner's next text is YES;
 // - refunds over the agent limit, bond captures, share transfers and the guardrail settings stay in the admin.
 // Like the customer tools, these run on the server against a snapshot and return actions for the client store.
 import { ADMIN_ONLY_SETTINGS, SETTING_GROUPS } from "../config";
 import { ACCOUNT_LABEL, cancelPolicy, dayStatus } from "../domain";
 import type { Account, AgentAction, AgentState, Channel, Data, Distribution, Owner, PendingOwnerAction, Settings, TruckLog } from "../types";
+import { owesReply, replyRoute } from "../ops";
 import { daysBetween, fmtDate, money, quarterLabel, todayISO } from "../util";
 
 export interface OwnerInboxItem {
   id: string;
   name: string;
   channel: Exclude<Channel, "admin">;
+  contact: string;
   escalated?: string;
   agentActive: boolean;
   last?: string;
+  // The reply the agent drafted when it handed over (sent with send_draft).
+  draft?: string;
 }
 
 // Owners see everything in the admin, so the owner agent does too, except the ledger: the client sends totals instead.
@@ -91,7 +95,7 @@ export function findBookings(ctx: OwnerCtx, q: { ref?: string; date?: string; su
 
 export function inboxList(ctx: OwnerCtx) {
   ctx.used.push("inbox");
-  return ctx.data.inbox.filter((c) => c.escalated || !c.agentActive).map((c) => ({ name: c.name, why: c.escalated ?? "An owner is handling it", last: c.last }));
+  return ctx.data.inbox.filter((c) => c.escalated || !c.agentActive).map((c) => ({ name: c.name, why: c.escalated ?? "An owner is handling it", last: c.last, draft: c.draft }));
 }
 
 // ---------- low stakes: run at once ----------
@@ -165,17 +169,27 @@ export function replyToCustomer(ctx: OwnerCtx, who: string, text: string) {
   if (!c) return { ok: false as const, reason: `No conversation matches "${who}".` };
   if ("ambiguous" in c) return { ok: false as const, reason: `That matches ${c.ambiguous.join(", ")}. Which one?` };
   ctx.actions.push({ type: "owner_reply", convId: c.id, body: text.trim() });
-  return { ok: true as const, to: c.name, channel: c.channel, body: text.trim() };
+  return { ok: true as const, to: c.name, ...route(c), body: text.trim() };
 }
 
-export function handBack(ctx: OwnerCtx, who: string) {
+// "by SMS to 0433 210 877": how a reply to this conversation really goes out.
+function route(c: OwnerInboxItem) {
+  const r = replyRoute(c);
+  return { via: r.via === "sms" ? "SMS" : "email", contact: r.to };
+}
+
+export function handBack(ctx: OwnerCtx, who: string, force = false) {
   ctx.used.push("inbox");
   const c = findConversation(ctx, who);
   if (!c) return { ok: false as const, reason: `No conversation matches "${who}".` };
   if ("ambiguous" in c) return { ok: false as const, reason: `That matches ${c.ambiguous.join(", ")}. Which one?` };
   if (c.agentActive && !c.escalated) return { ok: false as const, reason: `The agent already has ${c.name}.` };
-  ctx.actions.push({ type: "hand_back", convId: c.id });
-  return { ok: true as const, to: c.name };
+  // The agent told the customer an owner would reply. Handing back without one breaks that, so it takes an explicit "anyway".
+  if (owesReply(c) && !force) {
+    return { ok: false as const, owesReply: true, reason: `${c.name} was told an owner would reply, and nobody has yet. Reply first${c.draft ? ", send the agent's draft" : ""}, or text "hand back ${c.name.split(" ")[0]} anyway".` };
+  }
+  ctx.actions.push({ type: "hand_back", convId: c.id, force: force || undefined });
+  return { ok: true as const, to: c.name, withoutReply: owesReply(c) };
 }
 
 // ---------- staged: run only after YES ----------
@@ -267,6 +281,20 @@ export function addKnowledge(ctx: OwnerCtx, q: { page: string; line: string }, c
   return { ok: true as const, done: true, summary };
 }
 
+// Sends a text the owner may not have read, so it is staged: the summary quotes the draft in full.
+export function sendDraft(ctx: OwnerCtx, who: string, commit = false) {
+  ctx.used.push("send_draft");
+  const c = findConversation(ctx, who);
+  if (!c) return { ok: false as const, reason: `No conversation matches "${who}".` };
+  if ("ambiguous" in c) return { ok: false as const, reason: `That matches ${c.ambiguous.join(", ")}. Which one?` };
+  if (!c.draft) return { ok: false as const, reason: `There's no draft reply for ${c.name}. Text "tell ${c.name.split(" ")[0]}: ..." to write one.` };
+  const r = route(c);
+  const summary = `send ${c.name} the agent's draft by ${r.via} to ${r.contact}: "${c.draft}"`;
+  if (!commit) return stage(ctx, "send_draft", { who: c.name }, summary);
+  ctx.actions.push({ type: "send_draft", convId: c.id });
+  return { ok: true as const, done: true, summary };
+}
+
 // ---------- confirmation ----------
 
 const YES = /^(y|yes|yep|yeah|yup|confirm|confirmed|do it|go|go ahead|ok|okay)\b/i;
@@ -288,6 +316,7 @@ export function resolvePending(ctx: OwnerCtx, state: AgentState, text: string): 
     : p.tool === "cancel_booking" ? cancelForCustomer(ctx, (p.args as { ref: string }).ref, true)
     : p.tool === "change_setting" ? changeSetting(ctx, a, true)
     : p.tool === "add_knowledge" ? addKnowledge(ctx, a, true)
+    : p.tool === "send_draft" ? sendDraft(ctx, (p.args as { who: string }).who, true)
     : { ok: false as const, reason: "I've lost track of that one. Send it again?" };
   if (!r.ok) return `I didn't do it: ${r.reason}`;
   const extra = "ready" in r && r.ready ? " It has enough approvals now. Text PAY THE PAYOUT to send it." : "";
@@ -296,5 +325,5 @@ export function resolvePending(ctx: OwnerCtx, state: AgentState, text: string): 
 
 // "add a $42 expense" -> "added a $42 expense"; the summaries all start with one of these verbs.
 function pastTense(summary: string) {
-  return summary.replace(/^(add|approve|pay|cancel|change)\b/, (v) => ({ add: "added", approve: "approved", pay: "paid", cancel: "cancelled", change: "changed" })[v as "add"]);
+  return summary.replace(/^(add|approve|pay|cancel|change|send)\b/, (v) => ({ add: "added", approve: "approved", pay: "paid", cancel: "cancelled", change: "changed", send: "sent" })[v as "add"]);
 }

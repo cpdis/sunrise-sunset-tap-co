@@ -42,11 +42,44 @@ describe("low stakes run at once", () => {
     const d = seed();
     const [r] = ownerChat(d, COLIN, ["tell Harbour: Happy to talk festival rates, I'll call you Monday."]);
     const c = d.conversations.find((x) => x.name.startsWith("Harbour"))!;
-    expect(r.reply).toMatch(/^Sent to Harbour Collective \(events\) by email\. You have that chat now/);
+    expect(r.reply).toMatch(/^Sent to Harbour Collective \(events\) by email to events@harbourcollective\.com\.au\. You have that chat now/);
     expect(c.agentActive).toBe(false);
     expect(c.messages.at(-1)).toMatchObject({ from: "owner", ownerId: COLIN });
     ownerChat(d, COLIN, ["hand back Harbour"]);
     expect(c.agentActive).toBe(true);
+  });
+});
+
+describe("hand back keeps the agent's promise", () => {
+  const harbour = (d: ReturnType<typeof seed>) => d.conversations.find((x) => x.name.startsWith("Harbour"))!;
+
+  test("refused while the customer is owed a reply; 'anyway' forces it", () => {
+    const d = seed();
+    const [refused] = ownerChat(d, COLIN, ["hand back Harbour"]);
+    expect(refused.reply).toMatch(/was told an owner would reply, and nobody has yet/);
+    expect(harbour(d).agentActive).toBe(false);
+    const [forced] = ownerChat(d, COLIN, ["hand back Harbour anyway"]);
+    expect(forced.reply).toMatch(/^Handed Harbour Collective \(events\) back to the agent\. Heads up/);
+    expect(harbour(d).agentActive).toBe(true);
+  });
+
+  test("a phone caller's reply goes by SMS to their number", () => {
+    const d = seed();
+    const caller = d.conversations.find((x) => x.channel === "phone")!;
+    const [r] = ownerChat(d, COLIN, [`tell ${caller.name}: Yes, flat ground is all we need.`]);
+    expect(r.reply).toMatch(new RegExp(`by SMS to ${caller.contact}`));
+    expect(caller.messages.at(-1)).toMatchObject({ from: "owner", via: "sms", to: caller.contact });
+  });
+
+  test("send the draft: staged with the full text, sent on YES", () => {
+    const d = seed();
+    const draft = harbour(d).draft!;
+    expect(draft).toBeTruthy();
+    const [staged, done] = ownerChat(d, COLIN, ["send the draft for Harbour", "yes"]);
+    expect(staged.reply).toContain(`by email to events@harbourcollective.com.au: "${draft}"`);
+    expect(done.reply).toMatch(/^Done\. I sent Harbour/);
+    expect(harbour(d).messages.at(-1)).toMatchObject({ from: "owner", body: draft, ownerId: COLIN, via: "email" });
+    expect(harbour(d).draft).toBeUndefined();
   });
 });
 

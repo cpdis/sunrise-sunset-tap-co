@@ -11,6 +11,7 @@ import {
   claimRun,
   findBookings,
   handBack,
+  sendDraft,
   inboxList,
   logTruck,
   payout,
@@ -95,12 +96,21 @@ export function runOwnerRules(ctx: OwnerCtx, text: string, prev: AgentState): Ag
   const reply = text.match(/^\s*(?:reply to|tell|text|message)\s+(.+?)\s*[:\-–]\s*(.+)$/i);
   if (reply) {
     const r = replyToCustomer(ctx, reply[1], reply[2]);
-    return out(r.ok ? `Sent to ${r.to} by ${r.channel}. You have that chat now; text "hand back ${r.to.split(" ")[0]}" when you're done.` : r.reason);
+    return out(r.ok ? `Sent to ${r.to} by ${r.via} to ${r.contact}. You have that chat now; text "hand back ${r.to.split(" ")[0]}" when you're done.` : r.reason);
+  }
+  // "send the draft for Harbour", "send Harbour the draft".
+  const draft = text.match(/^\s*send\s+(?:the\s+draft\s+(?:for|to)\s+(.+?)|(.+?)\s+the\s+draft)\s*$/i);
+  if (draft) {
+    const r = sendDraft(ctx, (draft[1] ?? draft[2]).trim());
+    return r.ok ? yes(r) : out(r.reason);
   }
   const back = text.match(/^\s*hand\s+(?:back\s+(?:to\s+the\s+agent\s+)?(.+)|(.+?)\s+back(?:\s+to\s+the\s+agent)?)\s*$/i);
   if (back) {
-    const r = handBack(ctx, (back[1] ?? back[2]).trim());
-    return out(r.ok ? `Handed ${r.to} back to the agent.` : r.reason);
+    // "anyway" or "without replying" hands back although the customer is still owed a reply.
+    const raw = (back[1] ?? back[2]).trim();
+    const force = /\b(anyway|without (a )?repl(y|ying))\b/i.test(raw);
+    const r = handBack(ctx, raw.replace(/\s*\b(anyway|without (a )?repl(y|ying))\b\s*/i, " ").trim(), force);
+    return out(r.ok ? `Handed ${r.to} back to the agent.${r.withoutReply ? " Heads up: they were told an owner would reply, and nobody has." : ""}` : r.reason);
   }
 
   // Knowledge: "add to keg guide: we now carry G-type couplers".
