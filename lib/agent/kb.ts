@@ -61,7 +61,7 @@ export const DEFAULT_KB: KbPage[] = [
     slug: "service-area",
     title: "Where we go",
     body: `- Perth metro, the Swan Valley and Perth Hills, north to Two Rocks and south to Mandurah.
-- Free delivery within {{travelThresholdMin}} minutes of North Perth. Further out costs {{travelFee}}.
+- Free delivery within {{travelThresholdMin}} minutes of the Perth CBD. Further out costs {{travelFee}}.
 - Not Margaret River, Busselton, Bunbury, Northam or York for now.`,
   },
   {
