@@ -41,7 +41,7 @@ export default function Home() {
 
       {free.length > 0 && (
         <section className="strip">
-          <div className="wrap row" style={{ padding: "14px max(16px, 3vw)", gap: 10 }}>
+          <div className="wrap row" style={{ padding: "14px var(--gutter)", gap: 10 }}>
             <span className="label" style={{ marginRight: 8 }}>Next free dates</span>
             <div className="free-dates">
               {free.map((d) => (
