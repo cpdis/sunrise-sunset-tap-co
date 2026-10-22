@@ -3,9 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { DatePicker } from "@/components/DatePicker";
+import { HireTermsText } from "@/components/HireTerms";
 import { SiteShell } from "@/components/SiteChrome";
 import { Loading, useData } from "@/components/ui";
-import { SUBURBS, START_TIMES } from "@/lib/config";
+import { SUBURBS, startTimesFor } from "@/lib/config";
 import { isBookable, quote } from "@/lib/domain";
 import { useApp } from "@/lib/store";
 import type { Block } from "@/lib/types";
@@ -40,14 +41,23 @@ export default function Book() {
   const s = data.settings;
   const q = suburb && suburb !== "other" ? quote(s, block, suburb) : null;
   const dateOk = !!date && isBookable(data, date);
-  const ready = dateOk && q && name.trim() && /\S+@\S+\.\S+/.test(email) && phone.replace(/\D/g, "").length >= 8 && agree;
+  const times = startTimesFor(block);
+  const missing = [
+    !dateOk && "a date",
+    !q && "a suburb",
+    !name.trim() && "your name",
+    phone.replace(/\D/g, "").length < 8 && "a mobile number",
+    !/\S+@\S+\.\S+/.test(email) && "an email",
+    !agree && "the hire terms",
+  ].filter(Boolean) as string[];
+  const ready = missing.length === 0;
   const dueToday = q && date ? (daysBetween(todayISO(), date) <= s.balanceDaysBefore ? q.total : q.deposit) : 0;
 
   function submit() {
-    if (!ready || !date) return;
+    if (!ready || !date || !q) return;
     const id = book({
       date, block, startTime: start, suburb, name: name.trim(), email: email.trim(), phone: phone.trim(),
-      eventType, guests: Number(guests) || undefined, notes: notes.trim() || undefined, via: "web",
+      eventType, guests: Number(guests) || undefined, notes: notes.trim() || undefined, via: "web", agreed: true,
     });
     router.push(`/checkout/${id}`);
   }
@@ -60,7 +70,7 @@ export default function Book() {
       <section className="section" style={{ paddingTop: 40 }}>
         <div className="wrap">
           <span className="eyebrow">Book the truck</span>
-          <h2 className="display">Check a date</h2>
+          <h1 className="display" style={{ fontSize: "clamp(36px, 4.6vw, 60px)", margin: "10px 0 28px" }}>Check a date</h1>
           <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))", alignItems: "start", gap: 24 }}>
             <div className="stack" style={{ gap: 24 }}>
               <div className="card">
@@ -70,17 +80,30 @@ export default function Book() {
 
               <div className="card stack">
                 <div className="field">
-                  <label>How long?</label>
-                  <div className="seg">
-                    <button className={block === 4 ? "on" : ""} onClick={() => setBlock(4)}>4 hours · {money(s.price4)}</button>
-                    <button className={block === 8 ? "on" : ""} onClick={() => setBlock(8)}>8 hours · {money(s.price8)}</button>
+                  <span id="block-label" style={{ fontSize: 13, fontWeight: 600 }}>How long?</span>
+                  <div className="seg" role="group" aria-labelledby="block-label">
+                    {([4, 8] as const).map((b) => (
+                      <button
+                        key={b}
+                        className={block === b ? "on" : ""}
+                        aria-pressed={block === b}
+                        onClick={() => {
+                          setBlock(b);
+                          // Taps close by the latest finish, so a long block can't start late.
+                          const ok = startTimesFor(b);
+                          if (!ok.includes(start)) setStart(ok.at(-1)!);
+                        }}
+                      >
+                        {b} hours · {money(b === 4 ? s.price4 : s.price8)}
+                      </button>
+                    ))}
                   </div>
                 </div>
                 <div className="grid cols-2">
                   <div className="field">
                     <label htmlFor="start">Taps open at</label>
                     <select id="start" className="input" value={start} onChange={(e) => setStart(e.target.value)}>
-                      {START_TIMES.map((t) => <option key={t} value={t}>{fmtTime(t)}</option>)}
+                      {times.map((t) => <option key={t} value={t}>{fmtTime(t)}</option>)}
                     </select>
                   </div>
                   <div className="field">
@@ -119,10 +142,7 @@ export default function Book() {
                 </div>
                 <label className="check">
                   <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
-                  <span>
-                    I agree to the hire terms: I&apos;m responsible for responsible service of alcohol and any liquor licence; the truck
-                    needs firm, flat ground; a {money(s.bond)} bond is held on my card {s.bondHoldDaysBefore} days before.
-                  </span>
+                  <span><HireTermsText s={s} /></span>
                 </label>
               </div>
             </div>
@@ -148,7 +168,8 @@ export default function Book() {
                   <span className="muted">{money(q.total - q.deposit)} charged automatically on {fmtDate(addDays(date, -s.balanceDaysBefore), { dow: true })}.</span>
                 )}
                 {q && date && dueToday >= q.total && <span className="muted">Your event is within {s.balanceDaysBefore} days, so it&apos;s paid up front.</span>}
-                <button className="btn gold" disabled={!ready} onClick={submit}>Continue to payment</button>
+                <button className="btn gold" disabled={!ready} onClick={submit} aria-describedby={ready ? undefined : "missing"}>Continue to payment</button>
+                {!ready && <span id="missing" className="muted" style={{ fontSize: 13 }}>Still needed: {missing.join(", ")}.</span>}
                 <span className="muted" style={{ fontSize: 13 }}>Your date is held for {s.holdMinutes} minutes while you pay.</span>
               </div>
             </aside>

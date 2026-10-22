@@ -31,10 +31,10 @@ export default function Truck() {
       <form className="card stack" style={{ gap: 10 }} onSubmit={(e) => { e.preventDefault(); if (!f.notes) return; addLog({ date: f.date, type: f.type, notes: f.notes, odometer: Number(f.odometer) || undefined }); setF({ ...f, notes: "", odometer: "" }); }}>
         <strong>Log something</strong>
         <div className="grid cols-4">
-          <div className="field"><label>Date</label><input type="date" className="input" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></div>
-          <div className="field"><label>Type</label><select className="input" value={f.type} onChange={(e) => setF({ ...f, type: e.target.value as TruckLog["type"] })}>{TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
-          <div className="field"><label>Odometer</label><input className="input" inputMode="numeric" value={f.odometer} onChange={(e) => setF({ ...f, odometer: e.target.value })} /></div>
-          <div className="field"><label>Notes</label><input className="input" value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></div>
+          <div className="field"><label htmlFor="tl-1">Date</label><input id="tl-1" type="date" className="input" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></div>
+          <div className="field"><label htmlFor="tl-2">Type</label><select id="tl-2" className="input" value={f.type} onChange={(e) => setF({ ...f, type: e.target.value as TruckLog["type"] })}>{TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
+          <div className="field"><label htmlFor="tl-3">Odometer</label><input id="tl-3" className="input" inputMode="numeric" value={f.odometer} onChange={(e) => setF({ ...f, odometer: e.target.value })} /></div>
+          <div className="field"><label htmlFor="tl-4">Notes</label><input id="tl-4" className="input" value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></div>
         </div>
         <button className="btn small primary" style={{ alignSelf: "flex-start" }}>Add to log</button>
       </form>

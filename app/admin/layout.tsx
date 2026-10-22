@@ -45,7 +45,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </div>
       <div className="admin">
         <nav className="admin-nav">
-          <Link href="/" style={{ marginBottom: 12, gap: 10, justifyContent: "flex-start" }}><Logo size={34} /><span className="display" style={{ fontSize: 22, color: "var(--paper)", lineHeight: 0.95 }}>Sunrise<br />Sunset</span></Link>
+          <Link href="/" className="nav-home" aria-label="Public site" style={{ marginBottom: 12, gap: 10, justifyContent: "flex-start" }}><Logo size={34} /><span className="display" style={{ fontSize: 22, color: "var(--paper)", lineHeight: 0.95 }}>Sunrise<br />Sunset</span></Link>
           {NAV.map((n) => {
             const on = n.href === "/admin" ? path === "/admin" : path.startsWith(n.href);
             return (

@@ -21,6 +21,7 @@ export const DEFAULT_SETTINGS: Settings = {
   bondHoldDaysBefore: 2,
   cancelDays: 30,
   holdMinutes: 30,
+  minNoticeDays: 7,
   bookAheadMonths: 6,
   reserveMonths: 3,
   fixedMonthly: 295,
@@ -38,6 +39,13 @@ export const SUBURBS: { name: string; minutes: number; km: number }[] = [
   { name: "Leederville", minutes: 8, km: 4 },
   { name: "Mount Lawley", minutes: 8, km: 4 },
   { name: "Highgate", minutes: 6, km: 3 },
+  { name: "West Perth", minutes: 8, km: 4 },
+  { name: "Kings Park", minutes: 12, km: 6 },
+  { name: "Crawley", minutes: 16, km: 9 },
+  { name: "Wembley", minutes: 12, km: 6 },
+  { name: "Floreat", minutes: 16, km: 9 },
+  { name: "Inglewood", minutes: 8, km: 4 },
+  { name: "Morley", minutes: 12, km: 7 },
   { name: "Subiaco", minutes: 14, km: 8 },
   { name: "Nedlands", minutes: 20, km: 12 },
   { name: "Claremont", minutes: 22, km: 14 },
@@ -60,6 +68,7 @@ export const SUBURBS: { name: string; minutes: number; km: number }[] = [
   { name: "Midland", minutes: 25, km: 18 },
   { name: "Caversham", minutes: 26, km: 20 },
   { name: "Henley Brook", minutes: 32, km: 25 },
+  { name: "Swan Valley", minutes: 32, km: 25 },
   { name: "Herne Hill", minutes: 30, km: 23 },
   { name: "Baskerville", minutes: 34, km: 27 },
   { name: "Kalamunda", minutes: 35, km: 26 },
@@ -82,3 +91,18 @@ export function findSuburb(name: string) {
 }
 
 export const START_TIMES = ["06:00", "08:00", "10:00", "12:00", "14:00", "16:00", "18:00"];
+
+// Taps close by this hour (24h clock), so the latest start depends on the block.
+export const LATEST_FINISH = 23;
+
+export function startTimesFor(block: 4 | 8) {
+  return START_TIMES.filter((t) => Number(t.slice(0, 2)) + block <= LATEST_FINISH);
+}
+
+// A requested start time if it fits the block, otherwise the latest one that does.
+export function fitStart(block: 4 | 8, t: string) {
+  const h = Number(t.slice(0, 2));
+  const latest = LATEST_FINISH - block;
+  if (h < 6) return "06:00";
+  return h > latest ? `${String(latest).padStart(2, "0")}:00` : t;
+}

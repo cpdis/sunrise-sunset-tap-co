@@ -1,0 +1,47 @@
+/* Sunrise Sunset Tap Co. design tokens, v2 "Golden Hour" (approved 22 Oct 2026).
+   Copied from the project's design-language/tokens.css. Font families are left out because next/font
+   sets --font-display, --font-label and --font-body (app/layout.tsx).
+   Public site, wrap and imagery: Golden Hour (1930s railway lithograph).
+   Owners' admin: same inks, but Hill Repeats form (rounded white cards, one accent per screen).
+   Reference page: https://claude.ai/artifact/1KtSn4JAKLUBkDmwG2RErE
+   Google Fonts: Big Shoulders Display 700/800/900, Josefin Sans 600/700, Instrument Sans 400/500/600/700 */
+
+:root {
+  /* inks */
+  --paper: #FAF4E6;      /* page ground */
+  --ground: #F3E8CF;     /* panels, secondary bands */
+  --ink: #16264A;        /* type, rules, night sky */
+  --ink-2: #4B5674;      /* secondary text (6.6:1 on paper) */
+  --rule: #DCCFB1;       /* hairlines */
+  --azure: #2B6CB0;      /* sky, river, links; paper text on azure 4.9:1 */
+  --sand: #E9D3A6;       /* land */
+  --sunset: #E2612B;     /* dusk sun; never small text (3.5:1 on white) */
+  --gold: #F2B33D;       /* dawn sun, hero strip, the one CTA (ink on gold 8.0:1) */
+  /* semantic, separate from the inks */
+  --good: #2E7D5B;
+  --warn: #B7791F;
+  --bad: #C2410C;
+  --warn-ink: #8A5A0F;   /* warn as text: 5.9:1 on white, where --warn is 3.6:1 */
+  --rule-input: #948B77; /* form borders: 3.4:1 on white */
+
+  /* form: public site is square and ruled (timetable) */
+  --radius: 2px;
+  --rule-strong: 1.5px solid var(--ink);
+  --rule-hair: 1px solid var(--rule);
+}
+
+/* Owners' admin: B's form in A's inks */
+.admin {
+  --surface: #FFFFFF;    /* cards and chart panels on --paper */
+  --radius: 14px;
+  --action: var(--azure);  /* one primary action per screen */
+}
+
+/* Charts (Shelf Edge structure, both site and admin)
+   - 960x600 base; white panel; title states the finding (display face), eyebrow with a 10px gold square
+   - 1px #E6E1D6 horizontal grid, no y-axis line, 1.5px ink baseline with period ticks
+   - series order: ink, azure, sunset, gold (max 4); step lines 3px square joins; hollow dots r4.5 at changes
+   - direct labels (4x22 colour tab + name + latest value); never a legend box
+   - bottom 130px gold strip with 4px ink top rule: label block, hero number, keg-level tap board panel
+   - bars square (admin may round 3px), 60% of band, value label above
+   - no gradients, shadows or pastel tints; tabular numerals */

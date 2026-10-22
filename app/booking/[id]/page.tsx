@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { SiteShell } from "@/components/SiteChrome";
 import { Loading, StatePill, useData } from "@/components/ui";
 import { BUSINESS } from "@/lib/config";
-import { balanceDueDate, cancelPolicy, paidSoFar } from "@/lib/domain";
+import { RELEASE_UNPAID_DAYS, balanceDueDate, cancelPolicy, paidSoFar } from "@/lib/domain";
 import { useApp } from "@/lib/store";
 import { addDays, fmtDate, fmtTime, money, todayISO } from "@/lib/util";
 
@@ -20,21 +20,25 @@ export default function BookingPage() {
 
   if (!data) return <SiteShell><Loading /></SiteShell>;
   const b = data.bookings.find((x) => x.id === id);
-  if (!b) return <SiteShell><div className="wrap section"><h2 className="display">Booking not found</h2></div></SiteShell>;
+  if (!b) return <SiteShell><div className="wrap section"><h1 className="display">Booking not found</h1></div></SiteShell>;
   const s = data.settings;
   const cust = data.customers.find((c) => c.id === b.customerId);
   const pol = cancelPolicy(s, b);
   const today = todayISO();
   const balDate = balanceDueDate(s, b);
-  const bondDate = addDays(b.date, -s.bondHoldDaysBefore);
+  const created = b.createdAt.slice(0, 10);
+  // A late booking can't have a bond date before the day it was made.
+  const bondDate = [addDays(b.date, -s.bondHoldDaysBefore), created, today].sort().at(-1)!;
   const end = fmtTime(`${String((Number(b.startTime.slice(0, 2)) + b.block) % 24).padStart(2, "0")}:00`);
+  const paidUpFront = balDate <= created;
+  const balancePaid = b.state === "balance_paid" || b.state === "completed";
 
   const steps = [
-    { t: "Date held", d: fmtDate(b.createdAt.slice(0, 10), { dow: true }), done: true },
-    { t: `Deposit paid (${money(b.deposit)})`, d: "Hire agreement signed", done: b.state !== "held" },
-    balDate <= b.createdAt.slice(0, 10)
-      ? { t: `Balance ${money(b.total - b.deposit)} paid at booking`, d: `Inside ${s.balanceDaysBefore} days, so it's paid up front`, done: b.state === "balance_paid" || b.state === "completed" }
-      : { t: `Balance ${money(b.total - b.deposit)} charged automatically`, d: fmtDate(balDate, { dow: true }), done: b.state === "balance_paid" || b.state === "completed" },
+    { t: "Date held", d: fmtDate(created, { dow: true }), done: true },
+    paidUpFront
+      ? { t: `Paid in full (${money(b.total)})`, d: `Inside ${s.balanceDaysBefore} days, so it's paid up front. Hire agreement signed`, done: b.state !== "held" }
+      : { t: `Deposit paid (${money(b.deposit)})`, d: "Hire agreement signed", done: b.state !== "held" },
+    ...(paidUpFront ? [] : [{ t: `Balance ${money(b.total - b.deposit)} charged automatically`, d: fmtDate(balDate, { dow: true }), done: balancePaid }]),
     { t: `${money(b.bond)} bond hold placed`, d: fmtDate(bondDate, { dow: true }), done: b.bondStatus !== "none" },
     { t: `Delivery and setup, taps open ${fmtTime(b.startTime)}`, d: `${fmtDate(b.date, { dow: true })} · ${b.suburb}`, done: b.deliver.done },
     { t: `Collection at ${end}`, d: "Bond released once the truck's back", done: b.collect.done },
@@ -45,17 +49,24 @@ export default function BookingPage() {
     <SiteShell>
       <section className="section" style={{ paddingTop: 48 }}>
         <div className="wrap stack" style={{ gap: 24, maxWidth: 900 }}>
-          {paid && b.state !== "held" && (
+          {paid && b.state !== "held" && b.state !== "cancelled" && (
             <div className="card night stack" style={{ gap: 8 }}>
               <span className="eyebrow">You&apos;re booked</span>
               <span className="display" style={{ fontSize: 48 }}>See you on {fmtDate(b.date, { dow: true })}.</span>
-              <span>Receipt and hire agreement sent to {cust?.email}. We&apos;ll text {cust?.phone} the week before to check kegs and access.</span>
+              <span>Receipt and hire agreement sent to {cust?.email}.</span>
+            </div>
+          )}
+          {b.state === "confirmed" && b.balanceFailedAt && (
+            <div className="notice">
+              <strong>Your card was declined for the {money(b.total - b.deposit)} balance.</strong> Update it by{" "}
+              {fmtDate(addDays(b.date, -RELEASE_UNPAID_DAYS), { dow: true })} to keep your date.{" "}
+              <Link href={`/checkout/${b.id}`}>Update card and pay</Link>
             </div>
           )}
           <div className="row between">
             <div className="stack" style={{ gap: 4 }}>
               <span className="eyebrow">Booking {b.ref}</span>
-              <h2 className="display" style={{ margin: 0 }}>{fmtDate(b.date, { dow: true, year: true })}</h2>
+              <h1 className="display" style={{ margin: 0, fontSize: "clamp(36px, 4.6vw, 60px)" }}>{fmtDate(b.date, { dow: true, year: true })}</h1>
               <span className="muted">{b.block} hours, {fmtTime(b.startTime)} to {end} · {b.suburb}</span>
             </div>
             <StatePill b={b} />

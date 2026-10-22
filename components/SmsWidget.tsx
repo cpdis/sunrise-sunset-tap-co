@@ -5,6 +5,7 @@ import { BUSINESS } from "@/lib/config";
 import { nextFreeDates } from "@/lib/domain";
 import { useApp } from "@/lib/store";
 import { fmtDate, todayISO } from "@/lib/util";
+import { Roundel } from "./Logo";
 import { Linkify, useData } from "./ui";
 
 const DEMO_PHONE_KEY = "sst-demo-phone";
@@ -32,14 +33,24 @@ export function SmsWidget() {
   const [convId, setConvId] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
-  const [engine, setEngine] = useState<string>("");
   const body = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const fab = useRef<HTMLButtonElement>(null);
 
   useEffect(() => setPhone(demoPhone()), []);
+  // Focus the message box on open; Escape closes and returns focus to the button.
   useEffect(() => {
-    if (!open || engine) return;
-    fetch("/api/agent").then((r) => r.json()).then((j) => setEngine(j.engine)).catch(() => {});
-  }, [open, engine]);
+    if (!open) return;
+    input.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        fab.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
 
   const conv = data?.conversations.find((c) => c.id === convId) ?? data?.conversations.find((c) => c.channel === "sms" && c.contact === phone);
   const msgs = conv?.messages ?? [];
@@ -73,15 +84,15 @@ export function SmsWidget() {
   return (
     <>
       {open && (
-        <div className="sms-panel" role="dialog" aria-label="Text us">
+        <div className="sms-panel" role="dialog" aria-label="Text us" id="sms-panel">
           <div className="sms-head">
             <div className="stack" style={{ gap: 0 }}>
               <span className="label" style={{ fontSize: 13 }}>Sunrise Sunset</span>
               <span className="muted" style={{ fontSize: 12 }}>{BUSINESS.sms} · you are {phone}</span>
             </div>
-            <button className="chip" onClick={() => setOpen(false)} aria-label="Close">Close</button>
+            <button className="chip" onClick={() => { setOpen(false); fab.current?.focus(); }}>Close</button>
           </div>
-          <div className="sms-body" ref={body}>
+          <div className="sms-body" ref={body} aria-live="polite" aria-relevant="additions">
             {msgs.length === 0 && (
               <div className="bubble them">
                 G&apos;day! Text us like you would a mate. Ask about dates, prices or kegs, and we can book you in right here.
@@ -94,7 +105,7 @@ export function SmsWidget() {
               </div>
             ))}
             {busy && <div className="typing">typing…</div>}
-            {conv && !conv.agentActive && !busy && (
+            {conv && !conv.agentActive && !conv.escalated && !busy && (
               <div className="bubble sys">An owner is looking at this and will reply here.</div>
             )}
           </div>
@@ -106,15 +117,14 @@ export function SmsWidget() {
             </div>
           )}
           <form className="sms-foot" onSubmit={(e) => { e.preventDefault(); send(text); }}>
-            <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Text message" aria-label="Message" />
+            <input ref={input} value={text} onChange={(e) => setText(e.target.value)} placeholder="Text message" aria-label="Message" />
             <button className="btn gold small" disabled={busy || !text.trim()}>Send</button>
           </form>
-          <div className="muted" style={{ fontSize: 11, padding: "0 14px 8px" }}>
-            Demo SMS · agent: {engine === "claude" ? "Claude" : engine ? "rules engine (add ANTHROPIC_API_KEY for Claude)" : "…"}
-          </div>
+          <div className="muted" style={{ fontSize: 11, padding: "0 14px 8px" }}>Demo SMS</div>
         </div>
       )}
-      <button className="btn gold sms-fab" onClick={() => setOpen(!open)}>
+      <button ref={fab} className="btn sms-fab" onClick={() => setOpen(!open)} aria-expanded={open} aria-controls="sms-panel">
+        <Roundel size={22} />
         {open ? "Close" : "Text us"}
       </button>
     </>

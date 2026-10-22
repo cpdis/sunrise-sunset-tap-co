@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { CHANNEL_LABEL, Loading, Stat, StatePill, useData } from "@/components/ui";
-import { cashAt, liveBookings, periodTotals, reserveTarget } from "@/lib/domain";
+import { BALANCE_RETRIES, RELEASE_UNPAID_DAYS, balance, balanceStuck, cashAt, liveBookings, periodTotals, reserveTarget } from "@/lib/domain";
+import { SCENARIOS } from "@/lib/seed";
 import { useApp } from "@/lib/store";
-import { addDays, daysBetween, fmtDate, fmtDateTime, fmtTime, money, quarterLabel, todayISO } from "@/lib/util";
+import { addDays, daysBetween, fmtDate, fmtDateTime, fmtTime, money, perthHour, quarterLabel, todayISO } from "@/lib/util";
 
 export default function Today() {
   const data = useData();
@@ -24,30 +25,42 @@ export default function Today() {
   const reserve = reserveTarget(data, today);
   const confirmedAhead = upcoming.filter((b) => b.kind === "paid" && b.state !== "held");
   const myRuns = next30.filter((b) => b.deliver.ownerId === ownerId || b.collect.ownerId === ownerId);
+  const owedToMe = ownerId ? balance(data, "owed_runners", undefined, ownerId) : 0;
+  const stuck = data.bookings.filter(balanceStuck);
+  const h = perthHour();
+  const greeting = h < 12 ? "Morning" : h < 17 ? "Afternoon" : "Evening";
 
   return (
     <div className="stack" style={{ gap: 28 }}>
       <div className="admin-top">
         <div>
           <span className="eyebrow muted">{fmtDate(today, { dow: true, year: true })}</span>
-          <h1>Morning, {me?.name}.</h1>
+          <h1>{greeting}, {me?.name}.</h1>
         </div>
-        <Link href="/admin/calendar" className="btn small">Open calendar</Link>
+        <div className="row">
+          <span className="pill">Illustrative · {SCENARIOS[data.scenario].label.toLowerCase()} case</span>
+          <Link href="/admin/calendar" className="btn small">Open calendar</Link>
+        </div>
       </div>
 
       <div className="grid cols-4">
         <Stat k="Cash in the bank" v={money(cash)} sub={`Reserve target ${money(reserve)}`} />
         <Stat k="Revenue, last 30 days" v={money(t30.revenue)} sub={`Profit ${money(t30.profit)}`} />
         <Stat k="Booked ahead" v={confirmedAhead.length} sub={`${money(confirmedAhead.reduce((s, b) => s + b.total, 0))} contracted`} />
-        <Stat k="Your runs, next 30 days" v={myRuns.length} sub={`${money(myRuns.length * data.settings.runnerFee)}+ in runner fees`} />
+        <Stat k="Your runs, next 30 days" v={myRuns.length} sub={`${money(owedToMe)} in runner fees owed to you, paid with the next payout`} />
       </div>
 
-      {(attention.length > 0 || awaiting.length > 0) && (
+      {(attention.length > 0 || awaiting.length > 0 || stuck.length > 0) && (
         <div className="stack" style={{ gap: 10 }}>
           <span className="eyebrow muted">Needs a person</span>
           {attention.map((c) => (
             <Link key={c.id} href={`/admin/inbox?c=${c.id}`} className="notice" style={{ textDecoration: "none", display: "block" }}>
               <strong>{CHANNEL_LABEL[c.channel]} · {c.name}</strong>: {c.escalated ?? "Waiting on an owner reply"}
+            </Link>
+          ))}
+          {stuck.map((b) => (
+            <Link key={b.id} href={`/admin/bookings/${b.id}`} className="notice" style={{ textDecoration: "none", display: "block" }}>
+              <strong>{b.ref} balance declined {BALANCE_RETRIES} times</strong>: {data.customers.find((c) => c.id === b.customerId)?.name}, {fmtDate(b.date, { dow: true })}. The date is released {fmtDate(addDays(b.date, -RELEASE_UNPAID_DAYS), { dow: true })} if it&apos;s still unpaid.
             </Link>
           ))}
           {awaiting.map((d) => (
@@ -75,7 +88,7 @@ export default function Today() {
                     <td>{b.suburb}<br /><span className="muted">{b.travelMinutes} min</span></td>
                     {(["deliver", "collect"] as const).map((w) => (
                       <td key={w}>
-                        {b[w].ownerId ? name(b[w].ownerId) : <button className="btn small gold" onClick={() => claimRun(b.id, w)}>I&apos;ll take it</button>}
+                        {b[w].ownerId ? name(b[w].ownerId) : <button className="btn small action" onClick={() => claimRun(b.id, w)}>I&apos;ll take it</button>}
                       </td>
                     ))}
                   </tr>

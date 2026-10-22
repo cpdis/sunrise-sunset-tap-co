@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import {
   cancelBooking,
+  chargeBalance,
   computeDistribution,
   createHold,
   type NewBooking,
@@ -22,22 +23,25 @@ import type {
   Data,
   KbPage,
   Msg,
+  Scenario,
   Settings,
   TruckLog,
 } from "./types";
 import { addDays, quarterOf, todayISO, uid } from "./util";
+
+export const STORAGE_KEY = "sunrise-sunset-demo";
 
 interface AppState {
   data: Data | null;
   ownerId: string | null;
   hydrated: boolean;
   ensure: () => void;
-  reset: () => void;
+  reset: (scenario?: Scenario) => void;
   login: (ownerId: string) => void;
   logout: () => void;
   mutate: (fn: (d: Data) => void) => void;
   book: (n: NewBooking) => string;
-  payDeposit: (bookingId: string, card: string) => void;
+  payDeposit: (bookingId: string, card: string, checkout?: { email?: string; name?: string; agreed?: boolean }) => void;
   cancel: (bookingId: string) => void;
   startConversation: (c: Pick<Conversation, "channel" | "contact" | "name">) => string;
   sendCustomer: (convId: string, body: string) => Promise<AgentResult | null>;
@@ -48,6 +52,7 @@ interface AppState {
   captureBond: (bookingId: string, amount: number, note: string) => void;
   releaseBond: (bookingId: string) => void;
   chargeBalanceNow: (bookingId: string) => void;
+  payBalance: (bookingId: string, card: string) => void;
   addExpense: (date: string, account: Account, amount: number, memo: string) => void;
   approveDistribution: (distId: string) => void;
   payDistribution: (distId: string) => void;
@@ -82,8 +87,12 @@ function ensureDistributions(d: Data) {
   }
 }
 
-export function snapshot(d: Data): Snapshot {
-  return { settings: d.settings, bookings: d.bookings, customers: d.customers, kb: d.kb, blackouts: d.blackouts, seq: d.seq };
+// What the agent endpoint sees: availability for every date, but only the sender's own contact details.
+export function snapshot(d: Data, contact?: string): Snapshot {
+  const norm = (x?: string) => (x ?? "").replace(/\s+/g, "").toLowerCase();
+  const customers = d.customers.filter((c) => contact && (norm(c.phone) === norm(contact) || norm(c.email) === norm(contact)));
+  const bookings = d.bookings.map(({ notes, condition, guests, eventType, ...b }) => b) as Data["bookings"];
+  return { settings: d.settings, bookings, customers, kb: d.kb, blackouts: d.blackouts, seq: d.seq };
 }
 
 export const useApp = create<AppState>()(
@@ -93,17 +102,21 @@ export const useApp = create<AppState>()(
       ownerId: null,
       hydrated: false,
 
+      // Writes only when a job changed something, so an idle tab never overwrites another tab's bookings.
       ensure: () => {
         const cur = get().data;
-        const d = cur && cur.version === DATA_VERSION ? clone(cur) : buildSeed();
+        const fresh = !cur || cur.version !== DATA_VERSION;
+        const d = fresh ? buildSeed() : clone(cur);
         const ran = runJobs(d);
         ran.forEach((t) => log(d, t));
+        const before = fresh ? "" : JSON.stringify(cur.distributions);
         ensureDistributions(d);
-        set({ data: d, hydrated: true });
+        if (fresh || ran.length > 0 || JSON.stringify(d.distributions) !== before) set({ data: d, hydrated: true });
+        else if (!get().hydrated) set({ hydrated: true });
       },
 
-      reset: () => {
-        const d = buildSeed();
+      reset: (scenario) => {
+        const d = buildSeed(new Date(), scenario ?? get().data?.scenario ?? "base");
         set({ data: d });
       },
 
@@ -128,16 +141,20 @@ export const useApp = create<AppState>()(
         return id;
       },
 
-      payDeposit: (bookingId, card) =>
+      payDeposit: (bookingId, card, checkout = {}) =>
         get().mutate((d) => {
-          const b = payDeposit(d, bookingId, card);
+          const held = d.bookings.find((x) => x.id === bookingId);
+          const cust = d.customers.find((c) => c.id === held?.customerId);
+          if (cust && checkout.email) cust.email = checkout.email;
+          if (cust && checkout.name && !cust.name) cust.name = checkout.name;
+          const b = payDeposit(d, bookingId, card, new Date(), checkout.agreed);
           log(d, `Deposit paid for ${b.ref}`);
           for (const c of d.conversations) {
             if (c.customerId === b.customerId && c.agentActive) {
               c.messages.push({
                 id: uid("m"),
                 from: "agent",
-                body: `Payment received, thanks! ${b.ref} is confirmed. I'll text the keg guide and hire agreement shortly.`,
+                body: `Payment received, thanks! ${b.ref} is confirmed.`,
                 at: new Date().toISOString(),
                 tools: ["stripe:webhook"],
               });
@@ -173,11 +190,12 @@ export const useApp = create<AppState>()(
         });
         const d0 = get().data;
         const conv = d0?.conversations.find((x) => x.id === convId);
-        if (!d0 || !conv || !conv.agentActive) return null;
+        // An owner who took over answers alone; a hand-over the owners haven't picked up yet still gets general answers.
+        if (!d0 || !conv || (!conv.agentActive && !conv.escalated)) return null;
         const res = await fetch("/api/agent", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ snapshot: snapshot(d0), conversation: conv }),
+          body: JSON.stringify({ snapshot: snapshot(d0, conv.contact), conversation: conv }),
         });
         if (!res.ok) return null;
         const result = (await res.json()) as AgentResult;
@@ -192,6 +210,7 @@ export const useApp = create<AppState>()(
                 ref: a.ref,
                 date: a.date,
                 block: a.block,
+                startTime: a.startTime,
                 suburb: a.suburb,
                 name: a.name,
                 phone: isEmail ? undefined : a.contact,
@@ -207,8 +226,9 @@ export const useApp = create<AppState>()(
               const pol = cancelBooking(d, a.bookingId);
               if (b && pol) log(d, `Agent cancelled ${b.ref}; refunded $${pol.refund}`);
             } else if (a.type === "escalate") {
+              if (c.escalated && !c.agentActive) continue;
               c.escalated = a.reason;
-              c.agentActive = false;
+              if (!a.keepAgent) c.agentActive = false;
               log(d, `Escalated to owners: ${a.reason}`);
             }
           }
@@ -224,6 +244,7 @@ export const useApp = create<AppState>()(
           if (!c) return;
           c.messages.push({ id: uid("m"), from: "owner", body, at: new Date().toISOString(), ownerId: get().ownerId ?? undefined });
           c.unread = false;
+          c.escalated = undefined;
         }),
 
       setAgentActive: (convId, active) =>
@@ -278,11 +299,22 @@ export const useApp = create<AppState>()(
       chargeBalanceNow: (bookingId) =>
         get().mutate((d) => {
           const b = d.bookings.find((x) => x.id === bookingId);
-          if (b && b.state === "confirmed") {
-            pay(d, b, "balance", b.total - b.deposit, new Date().toISOString());
-            b.state = "balance_paid";
-            log(d, `Charged balance early for ${b.ref}`);
-          }
+          if (!b) return;
+          const r = chargeBalance(d, b);
+          if (r === "paid") log(d, `Charged balance for ${b.ref}`);
+          else if (r === "declined") log(d, `Balance for ${b.ref} declined again`);
+        }),
+
+      // The customer put in a new card for a balance that kept declining.
+      payBalance: (bookingId, card) =>
+        get().mutate((d) => {
+          const b = d.bookings.find((x) => x.id === bookingId);
+          if (!b || b.state !== "confirmed") return;
+          b.cardDeclines = false;
+          pay(d, b, "balance", b.total - b.deposit, new Date().toISOString(), card);
+          b.state = "balance_paid";
+          b.balanceFailedAt = undefined;
+          log(d, `${b.ref} balance paid with a new card`);
         }),
 
       addExpense: (date, account, amount, memo) =>
@@ -294,7 +326,8 @@ export const useApp = create<AppState>()(
         get().mutate((d) => {
           const dist = d.distributions.find((x) => x.id === distId);
           const me = get().ownerId;
-          if (dist && me && !dist.approvals.includes(me)) dist.approvals.push(me);
+          const director = d.owners.find((o) => o.id === me)?.isDirector;
+          if (dist && me && director && !dist.approvals.includes(me)) dist.approvals.push(me);
         }),
 
       payDistribution: (distId) =>
@@ -367,7 +400,7 @@ export const useApp = create<AppState>()(
         }),
     }),
     {
-      name: "sunrise-sunset-demo",
+      name: STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({ data: s.data, ownerId: s.ownerId }),
       skipHydration: true,

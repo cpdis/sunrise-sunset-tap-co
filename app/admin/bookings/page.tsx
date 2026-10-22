@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { CHANNEL_LABEL, Loading, StatePill, useData } from "@/components/ui";
@@ -36,10 +37,10 @@ export default function Bookings() {
     <div className="stack" style={{ gap: 20 }}>
       <div className="admin-top">
         <h1>Bookings</h1>
-        <input className="input" style={{ maxWidth: 280 }} placeholder="Search name, ref, suburb" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input className="input" aria-label="Search bookings" style={{ maxWidth: 280 }} placeholder="Search name, ref, suburb" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
       <div className="seg">
-        {FILTERS.map((x) => <button key={x} className={cls(f === x && "on")} onClick={() => setF(x)}>{x}</button>)}
+        {FILTERS.map((x) => <button key={x} className={cls(f === x && "on")} aria-pressed={f === x} onClick={() => setF(x)}>{x}</button>)}
       </div>
       <div className="table-wrap">
         <table className="t">
@@ -52,7 +53,7 @@ export default function Bookings() {
               return (
                 <tr key={b.id} className="click" onClick={() => router.push(`/admin/bookings/${b.id}`)}>
                   <td style={{ whiteSpace: "nowrap" }}>{fmtDate(b.date, { dow: true, year: true })}<br /><span className="muted">{b.block}h</span></td>
-                  <td className="mono">{b.ref}</td>
+                  <td className="mono"><Link href={`/admin/bookings/${b.id}`} onClick={(e) => e.stopPropagation()}>{b.ref}</Link></td>
                   <td>{b.kind === "personal" ? `${owner(b.ownerId)} (owner)` : c?.name}</td>
                   <td>{b.eventType}</td>
                   <td>{b.suburb}</td>

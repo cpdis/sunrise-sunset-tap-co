@@ -36,7 +36,7 @@ export default function Knowledge() {
     const res = await fetch("/api/agent", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ snapshot: { ...snapshot(data), kb: draft }, conversation: { channel: "sms", contact: "test", name: "Test", state, messages: next } }),
+      body: JSON.stringify({ snapshot: { ...snapshot(data, "test"), kb: draft }, conversation: { channel: "sms", contact: "test", name: "Test", state, messages: next } }),
     });
     const r = (await res.json()) as AgentResult;
     setState(r.state);
@@ -51,12 +51,12 @@ export default function Knowledge() {
         <span className="muted" style={{ fontSize: 14 }}>What the agent knows. Numbers in {"{{braces}}"} come from Settings, so prices stay in one place.</span>
       </div>
       <div className="seg">
-        {data.kb.map((p) => <button key={p.slug} className={cls(p.slug === slug && "on")} onClick={() => setSlug(p.slug)}>{p.title}</button>)}
+        {data.kb.map((p) => <button key={p.slug} className={cls(p.slug === slug && "on")} aria-pressed={p.slug === slug} onClick={() => setSlug(p.slug)}>{p.title}</button>)}
       </div>
       <div className="grid cols-2" style={{ alignItems: "start" }}>
         <div className="card stack" style={{ gap: 10 }}>
-          <div className="field"><label>Title</label><input className="input" value={title} onChange={(e) => { setTitle(e.target.value); setSaved(false); }} /></div>
-          <div className="field"><label>Content</label><textarea className="input" style={{ minHeight: 360 }} value={body} onChange={(e) => { setBody(e.target.value); setSaved(false); }} /></div>
+          <div className="field"><label htmlFor="kb-1">Title</label><input id="kb-1" className="input" value={title} onChange={(e) => { setTitle(e.target.value); setSaved(false); }} /></div>
+          <div className="field"><label htmlFor="kb-2">Content</label><textarea id="kb-2" className="input" style={{ minHeight: 360 }} value={body} onChange={(e) => { setBody(e.target.value); setSaved(false); }} /></div>
           <div className="row">
             <button className="btn small primary" onClick={() => { saveKb({ slug, title, body }); setSaved(true); }}>Save</button>
             {saved && <span className="pill good">Saved. The agent uses it from the next message.</span>}
@@ -75,7 +75,7 @@ export default function Knowledge() {
             {busy && <span className="muted mono" style={{ fontSize: 12 }}>thinking…</span>}
           </div>
           <form className="row" onSubmit={(e) => { e.preventDefault(); ask(); }}>
-            <input className="input" style={{ flex: 1 }} value={test} onChange={(e) => setTest(e.target.value)} />
+            <input className="input" aria-label="Test message" style={{ flex: 1 }} value={test} onChange={(e) => setTest(e.target.value)} />
             <button className="btn small" disabled={busy}>Ask</button>
             <button type="button" className="btn small ghost" onClick={() => { setMsgs([]); setState({}); }}>Clear</button>
           </form>

@@ -31,9 +31,9 @@ export default function Calendar() {
       <div className="admin-top">
         <h1>{MONTHS[Number(month.slice(5, 7)) - 1]} {month.slice(0, 4)}</h1>
         <div className="row">
-          <button className="btn ghost small" onClick={() => setMonth(addMonths(month, -1))}>←</button>
+          <button className="btn ghost small" aria-label="Previous month" onClick={() => setMonth(addMonths(month, -1))}>←</button>
           <button className="btn ghost small" onClick={() => setMonth(today.slice(0, 7) + "-01")}>Today</button>
-          <button className="btn ghost small" onClick={() => setMonth(addMonths(month, 1))}>→</button>
+          <button className="btn ghost small" aria-label="Next month" onClick={() => setMonth(addMonths(month, 1))}>→</button>
         </div>
       </div>
       <div className="mcal">
@@ -47,7 +47,7 @@ export default function Calendar() {
               onClick={() => { setSel(d); setNote(""); }}
               style={{ cursor: "pointer", outline: sel === d ? "2px solid var(--ink)" : undefined }}
             >
-              <span className="mono">{Number(d.slice(8))}</span>
+              <button type="button" className="day-btn mono" aria-pressed={sel === d} aria-label={fmtDate(d, { dow: true, year: true })} onClick={(e) => { e.stopPropagation(); setSel(d); setNote(""); }}>{Number(d.slice(8))}</button>
               {bs.map((b) => (
                 <Link key={b.id} href={`/admin/bookings/${b.id}`} className={`ev ${b.kind === "personal" ? "personal" : b.state === "held" ? "held" : "paid"}`} onClick={(e) => e.stopPropagation()}>
                   {name(b)}
@@ -74,11 +74,11 @@ export default function Calendar() {
           ) : (
             <>
               <div className="row">
-                <input className="input" style={{ maxWidth: 360 }} placeholder="What for? (e.g. Run club Saturday)" value={note} onChange={(e) => setNote(e.target.value)} />
+                <input className="input" aria-label="What for?" style={{ maxWidth: 360 }} placeholder="What for? (e.g. Run club Saturday)" value={note} onChange={(e) => setNote(e.target.value)} />
                 <button className="btn small" onClick={() => { addPersonalUse(sel, note || "Owner use"); setSel(null); }}>Book for my own use</button>
                 <button className="btn ghost small" onClick={() => toggleBlackout(sel)}>{data.blackouts.includes(sel) ? "Unblock date" : "Block out (service, away)"}</button>
               </div>
-              <span className="muted" style={{ fontSize: 13 }}>Own use stays open to customers: a paid booking on the same day bumps it, and you get a text.</span>
+              <span className="muted" style={{ fontSize: 13 }}>Own use stays open to customers: a paid booking on the same day bumps it.</span>
             </>
           )}
         </div>
