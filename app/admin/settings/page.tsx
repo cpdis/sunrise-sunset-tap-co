@@ -103,9 +103,9 @@ export default function SettingsPage() {
       <div className="stack" style={{ gap: 10 }}>
         <span className="eyebrow muted">Integrations</span>
         <div className="table-wrap">
-          <table className="t">
+          <table className="t cards">
             <thead><tr><th>Service</th><th>In this demo</th><th>In production</th></tr></thead>
-            <tbody>{integrations.map((i) => <tr key={i.name}><td><strong>{i.name}</strong></td><td>{i.now}</td><td className="muted">{i.prod}</td></tr>)}</tbody>
+            <tbody>{integrations.map((i) => <tr key={i.name}><td><strong>{i.name}</strong></td><td data-label="In this demo">{i.now}</td><td className="muted" data-label="In production">{i.prod}</td></tr>)}</tbody>
           </table>
         </div>
       </div>

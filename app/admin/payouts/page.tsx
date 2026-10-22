@@ -54,16 +54,16 @@ export default function Payouts() {
                 <div className="summary-row"><strong>To distribute</strong><strong>{money(d.distributable)}</strong></div>
               </div>
               <div className="table-wrap" style={{ background: "var(--paper)" }}>
-                <table className="t">
+                <table className="t cards wide tight">
                   <thead><tr><th>Owner</th><th className="num">Shares</th><th className="num">Dividend</th><th className="num">Runner fees</th><th>Transfer</th></tr></thead>
                   <tbody>
                     {d.lines.map((l) => (
                       <tr key={l.ownerId}>
-                        <td>{owner(l.ownerId)?.name}<br /><span className="mono muted" style={{ fontSize: 11 }}>{owner(l.ownerId)?.payoutAccount}</span></td>
-                        <td className="num">{l.shares}</td>
-                        <td className="num">{money(l.amount)}</td>
-                        <td className="num">{money(l.runnerFees ?? 0)}</td>
-                        <td className="mono muted" style={{ fontSize: 11 }}>{l.payoutId ?? "—"}</td>
+                        <td>{owner(l.ownerId)?.name}<br /><span className="mono muted" style={{ fontSize: 11, whiteSpace: "nowrap" }}>{owner(l.ownerId)?.payoutAccount}</span></td>
+                        <td className="num" data-label="Shares">{l.shares}</td>
+                        <td className="num" data-label="Dividend">{money(l.amount)}</td>
+                        <td className="num" data-label="Runner fees">{money(l.runnerFees ?? 0)}</td>
+                        <td className="mono muted" style={{ fontSize: 11, overflowWrap: "anywhere" }} data-label="Transfer">{l.payoutId ?? "—"}</td>
                       </tr>
                     ))}
                   </tbody>

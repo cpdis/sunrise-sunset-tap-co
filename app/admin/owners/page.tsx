@@ -34,23 +34,22 @@ export default function Owners() {
     <div className="stack" style={{ gap: 24 }}>
       <div className="admin-top"><h1>Owners</h1></div>
       <div className="table-wrap">
-        <table className="t">
-          <thead><tr><th>Owner</th><th>Role</th><th className="num">Shares</th><th className="num">Stake</th><th className="num">Capital in</th><th className="num">Dividends</th><th className="num">Runs done</th><th className="num">Fees owed</th><th className="num">Own-use days</th><th>Payout account</th></tr></thead>
+        <table className="t cards wide">
+          <thead><tr><th>Owner</th><th>Role</th><th className="num">Shares</th><th className="num">Stake</th><th className="num">Capital in</th><th className="num">Dividends</th><th className="num">Runs done</th><th className="num">Fees owed</th><th className="num">Own-use days</th></tr></thead>
           <tbody>
             {data.owners.map((o) => {
               const st = stats(o.id);
               return (
                 <tr key={o.id}>
-                  <td><strong>{o.name}</strong><br /><span className="muted">{o.email}</span></td>
-                  <td>{o.isDirector ? "Director" : "Shareholder"}</td>
-                  <td className="num">{o.shares}</td>
-                  <td className="num">{Math.round((o.shares / total) * 1000) / 10}%</td>
-                  <td className="num">{money(st.capital)}</td>
-                  <td className="num">{money(st.div)}</td>
-                  <td className="num">{st.runs}</td>
-                  <td className="num">{money(st.fees)}</td>
-                  <td className="num">{st.own}</td>
-                  <td className="mono muted" style={{ fontSize: 12 }}>{o.payoutAccount}</td>
+                  <td><strong>{o.name}</strong><br /><span className="muted">{o.email}</span><br /><span className="mono muted" style={{ fontSize: 12 }}>{o.payoutAccount}</span></td>
+                  <td data-label="Role">{o.isDirector ? "Director" : "Shareholder"}</td>
+                  <td className="num" data-label="Shares">{o.shares}</td>
+                  <td className="num" data-label="Stake">{Math.round((o.shares / total) * 1000) / 10}%</td>
+                  <td className="num" data-label="Capital in">{money(st.capital)}</td>
+                  <td className="num" data-label="Dividends">{money(st.div)}</td>
+                  <td className="num" data-label="Runs done">{st.runs}</td>
+                  <td className="num" data-label="Fees owed">{money(st.fees)}</td>
+                  <td className="num" data-label="Own-use days">{st.own}</td>
                 </tr>
               );
             })}

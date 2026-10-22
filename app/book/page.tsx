@@ -65,7 +65,7 @@ export default function Book() {
   return (
     <SiteShell>
       <div className="banner">
-        <img src="/art/hero-pm.jpg" alt="Lithograph of a Swan Valley wedding table at sunset with the tap truck at the end" />
+        <img src="/art/hero-pm.jpg" alt="Lithograph of a vineyard wedding table at sunset, a guest pouring from the rear taps of the truck" />
       </div>
       <section className="section" style={{ paddingTop: 40 }}>
         <div className="wrap">

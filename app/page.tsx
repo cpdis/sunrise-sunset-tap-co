@@ -16,7 +16,7 @@ export default function Home() {
   const data = useData();
   const s = data?.settings ?? DEFAULT_SETTINGS;
   const kb = data?.kb ?? DEFAULT_KB;
-  const free = data ? nextFreeDates(data, todayISO(), 6, true) : [];
+  const free = data ? nextFreeDates(data, todayISO(), 3) : [];
   const far = SUBURBS.filter((x) => x.minutes > s.travelThresholdMin).map((x) => x.name);
 
   return (
@@ -26,7 +26,8 @@ export default function Home() {
           className="hero-art"
           src="/video/hero-am-loop.mp4"
           poster="/art/hero-am.jpg"
-          label="Lithograph of five runners cresting a hill at dawn, the Perth skyline behind and the tap truck parked at the top"
+          rate={0.7}
+          label="Lithograph of friends pouring from the rear taps of the truck on a hilltop at dawn, the Perth skyline behind"
         />
         <div className="hero-copy">
           <span className="eyebrow">Self-pour tap truck · Perth</span>
@@ -34,18 +35,19 @@ export default function Home() {
           <p>Eight cold taps on a tiny truck. We drive it in, hook up your kegs, test every line and come back for it when the night&apos;s done.</p>
           <div className="row">
             <Link href="/book" className="btn gold">Check a date</Link>
-            <span className="label">From {money(s.price4)} · delivered</span>
           </div>
         </div>
       </section>
 
       {free.length > 0 && (
-        <section style={{ borderBottom: "1.5px solid var(--ink)", background: "var(--paper)" }}>
+        <section className="strip">
           <div className="wrap row" style={{ padding: "14px max(16px, 3vw)", gap: 10 }}>
-            <span className="label" style={{ marginRight: 8 }}>Next free weekends</span>
-            {free.map((d) => (
-              <Link key={d} href={`/book?date=${d}`} className="btn ghost small">{fmtDate(d, { dow: true })}</Link>
-            ))}
+            <span className="label" style={{ marginRight: 8 }}>Next free dates</span>
+            <div className="free-dates">
+              {free.map((d) => (
+                <Link key={d} href={`/book?date=${d}`} className="btn ghost small">{fmtDate(d, { dow: true })}</Link>
+              ))}
+            </div>
           </div>
         </section>
       )}
@@ -93,16 +95,15 @@ export default function Home() {
             <li><strong>2.5 m awning</strong><span className="muted">Shade over the taps</span></li>
             <li><strong>Glassware included</strong><span className="muted">120 pints, 60 schooners</span></li>
           </ul>
-          <figure className="film" style={{ margin: 0 }}>
-            <LoopVideo src="/video/hero-pm-loop.mp4" poster="/video/hero-pm-poster.jpg" label="Lithograph of the tap truck at a vineyard wedding at dusk" />
-            <figcaption>Dusk · a vineyard wedding</figcaption>
-          </figure>
+          <div className="film">
+            <LoopVideo src="/video/hero-pm-loop.mp4" poster="/video/hero-pm-poster.jpg" label="Lithograph of a guest pouring from the rear taps of the truck at a vineyard wedding at dusk" />
+          </div>
         </div>
       </section>
 
       <section className="section" id="pricing">
         <div className="wrap">
-          <span className="eyebrow">Fares</span>
+          <span className="eyebrow">Pricing</span>
           <h2 className="display">Two blocks. No surprises.</h2>
           <div className="fares">
             <div className="fare">
@@ -118,29 +119,17 @@ export default function Home() {
               <Link href="/book?block=8" className="btn" style={{ alignSelf: "flex-start" }}>Book 8 hours</Link>
             </div>
           </div>
-          <p className="muted" style={{ marginTop: 20, maxWidth: 760 }}>
-            Includes delivery, setup, line test, collection and glassware. Free delivery within {s.travelThresholdMin} minutes
-            of the Perth CBD; further out ({far.slice(0, 3).join(", ")}) adds {money(s.travelFee)}. {money(s.bond)} bond held on your card,
-            released after pickup. Full refund if you cancel more than {s.cancelDays} days out.
-          </p>
-        </div>
-      </section>
-
-      <section className="section ground">
-        <div className="wrap" style={{ maxWidth: 820 }}>
-          <span className="eyebrow">Why the name</span>
-          <h2 className="display">There&apos;s a hill we run over on Wednesdays.</h2>
-          <p style={{ fontSize: 19 }}>
-            Some weeks it&apos;s at sunrise, some weeks at sunset. We&apos;re a handful of Perth runners who wanted cold brew after
-            the first one and a beer after the second, so we bought a truck that does both. Text us any time. A real person reads
-            anything the bot can&apos;t answer.
-          </p>
+          <ul className="includes muted">
+            <li>Includes delivery, setup, line test, collection and glassware</li>
+            <li>Free delivery within {s.travelThresholdMin} minutes of the Perth CBD; further out ({far.slice(0, 3).join(", ")}) adds {money(s.travelFee)}</li>
+            <li>{money(s.bond)} bond held on your card, released after pickup</li>
+            <li>Full refund if you cancel more than {s.cancelDays} days out</li>
+          </ul>
         </div>
       </section>
 
       <section className="section" id="faq">
         <div className="wrap" style={{ maxWidth: 880 }}>
-          <span className="eyebrow">Good questions</span>
           <h2 className="display">FAQ</h2>
           <div className="faq-list">
             {FAQ_SLUGS.map((slug) => {

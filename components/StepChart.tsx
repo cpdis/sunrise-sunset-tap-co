@@ -22,13 +22,16 @@ type Props = {
   series: Series[];
   fmt: (n: number) => string;
   strip: { label: string; lines: string[]; hero: string };
-  compact?: boolean;
+  /** draw the narrow layout at this width (px) instead of the 960-wide one */
+  compact?: number;
 };
 
 export function StepChart(props: Props) {
   if (props.compact) return <CompactStepChart {...props} />;
   const { periods, series, fmt } = props;
-  const x0 = 86, x1 = 760, y0 = 150, y1 = 380;
+  // the subtitle wraps to two lines at most; the plot drops by one line when it does
+  const sub = wrap(props.sub, 108);
+  const x0 = 86, x1 = 760, y0 = 150 + (sub.length - 1) * 20, y1 = 380;
   const max = Math.max(1, ...series.flatMap((s) => s.values));
   const step = niceStep(max / 3);
   const top = Math.ceil(max / step) * step;
@@ -46,7 +49,7 @@ export function StepChart(props: Props) {
       <rect x={56} y={36} width={10} height={10} fill={C.gold} stroke={C.ink} strokeWidth={1.5} />
       <text x={74} y={46} fontFamily={LABEL} fontWeight={700} fontSize={12} letterSpacing={2.2} fill={C.ink}>{props.eyebrow.toUpperCase()}</text>
       <text x={56} y={88} fontFamily={DISPLAY} fontWeight={800} fontSize={36} letterSpacing={0.2} fill={C.ink}>{props.title.toUpperCase()}</text>
-      <text x={56} y={114} fontFamily={BODY} fontSize={15} fill={C.ink2}>{props.sub}</text>
+      {sub.map((l, i) => <text key={i} x={56} y={114 + i * 20} fontFamily={BODY} fontSize={15} fill={C.ink2}>{l}</text>)}
 
       {ticks.map((v) => (
         <g key={v}>
@@ -115,20 +118,21 @@ function stepPath(values: number[], X: (i: number) => number, Y: (v: number) => 
   return d;
 }
 
-// Phone layout, drawn at 400 wide rather than scrolled: title wrapped, the gold strip and its number
-// above the plot, and the direct labels under it.
+// Narrow layout, drawn at the panel's width (360 to 720) rather than scrolled or scaled: title
+// wrapped to fit, the gold strip and its number above the plot, and the direct labels under it.
 function CompactStepChart(props: Props) {
   const { periods, series, fmt } = props;
-  const W = 400;
-  const title = wrap(props.title.toUpperCase(), 22);
-  const sub = wrap(props.sub, 52);
+  const W = props.compact ?? 400;
+  // characters per line, from the average glyph width of each face at its size here
+  const title = wrap(props.title.toUpperCase(), Math.floor((W - 40) / 16));
+  const sub = wrap(props.sub, Math.floor((W - 40) / 6.9));
   let y = 40;
   const tTop = y + 34;
   y = tTop + (title.length - 1) * 30 + 22;
   const subTop = y;
   y = subTop + (sub.length - 1) * 17 + 24;
   const stripTop = y;
-  const stripH = 118;
+  const stripH = 126;
   y = stripTop + stripH + 34;
   const y0 = y, y1 = y + 200, x0 = 48, x1 = W - 20;
   const legendTop = y1 + 44;
@@ -141,7 +145,7 @@ function CompactStepChart(props: Props) {
   const ticks = Array.from({ length: Math.round(top / step) + 1 }, (_, i) => i * step);
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${props.title}. ${props.sub}`} style={{ minWidth: 0 }}>
+    <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${props.title}. ${props.sub}`}>
       <rect width={W} height={H} fill={C.white} />
       <rect x={20} y={28} width={10} height={10} fill={C.gold} stroke={C.ink} strokeWidth={1.5} />
       <text x={38} y={38} fontFamily={LABEL} fontWeight={700} fontSize={12} letterSpacing={2} fill={C.ink}>{props.eyebrow.toUpperCase()}</text>
@@ -151,9 +155,9 @@ function CompactStepChart(props: Props) {
       <rect x={0} y={stripTop} width={W} height={stripH} fill={C.gold} />
       <rect x={0} y={stripTop} width={W} height={4} fill={C.ink} />
       <text x={20} y={stripTop + 30} fontFamily={LABEL} fontWeight={700} fontSize={11.5} letterSpacing={2} fill={C.ink}>{props.strip.label.toUpperCase()}</text>
-      <text x={20} y={stripTop + 84} fontFamily={DISPLAY} fontWeight={800} fontSize={60} fill={C.ink} style={{ fontVariantNumeric: "tabular-nums" }}>{props.strip.hero}</text>
-      <text x={W - 20} y={stripTop + 60} textAnchor="end" fontFamily={BODY} fontWeight={700} fontSize={15} fill={C.ink}>{props.strip.lines[0]}</text>
-      <text x={W - 20} y={stripTop + 82} textAnchor="end" fontFamily={BODY} fontSize={12} fill={C.ink}>{props.strip.lines[1]?.split(" · ")[0]}</text>
+      <text x={20} y={stripTop + 100} fontFamily={DISPLAY} fontWeight={800} fontSize={60} fill={C.ink} style={{ fontVariantNumeric: "tabular-nums" }}>{props.strip.hero}</text>
+      <text x={W - 20} y={stripTop + 72} textAnchor="end" fontFamily={BODY} fontWeight={700} fontSize={15} fill={C.ink}>{props.strip.lines[0]}</text>
+      <text x={W - 20} y={stripTop + 94} textAnchor="end" fontFamily={BODY} fontSize={12} fill={C.ink}>{props.strip.lines[1]?.split(" · ")[0]}</text>
 
       {ticks.map((v) => (
         <g key={v}>
@@ -162,7 +166,7 @@ function CompactStepChart(props: Props) {
         </g>
       ))}
       <line x1={x0} x2={x1} y1={y1} y2={y1} stroke={C.ink} strokeWidth={1.5} />
-      {periods.map((p, i) => (i % 2 === 0 ? <text key={i} x={(X(i) + X(i + 1)) / 2} y={y1 + 18} textAnchor="middle" fontFamily={BODY} fontSize={10.5} fontWeight={600} fill={C.ink2}>{p.toUpperCase()}</text> : null))}
+      {periods.map((p, i) => (X(1) - X(0) >= 34 || i % 2 === 0 ? <text key={i} x={(X(i) + X(i + 1)) / 2} y={y1 + 18} textAnchor="middle" fontFamily={BODY} fontSize={10.5} fontWeight={600} fill={C.ink2}>{p.toUpperCase()}</text> : null))}
       {series.map((x) => (
         <path key={x.name} d={stepPath(x.values, X, Y)} fill="none" stroke={C[x.color]} strokeWidth={3} strokeLinecap="square" />
       ))}

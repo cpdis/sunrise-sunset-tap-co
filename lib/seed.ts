@@ -16,7 +16,7 @@ import {
 import type { Block, Conversation, Data, Owner, Scenario } from "./types";
 import { addDays, addMonths, daysBetween, quarterOf, todayISO } from "./util";
 
-export const DATA_VERSION = 5;
+export const DATA_VERSION = 6;
 
 function rng(seed: number) {
   return () => {
@@ -33,12 +33,19 @@ const LAST = ["Nguyen", "Smith", "Taylor", "Brown", "Wilson", "Kelly", "Murphy",
 const EVENTS = ["Wedding", "Wedding", "Wedding", "Birthday", "Engagement", "Corporate", "Run club", "School fete", "Brewery launch", "Christmas party", "Market stall", "Sports club"];
 
 export const OWNERS: Owner[] = [
-  { id: "own_colin", name: "Colin", email: "colin@sunrisesunsettapco.com", phone: "0400 111 201", shares: 1, isDirector: true, payoutAccount: "BSB 016-xxx ••• 1182", joined: "" },
-  { id: "own_aaron", name: "Aaron", email: "aaron@sunrisesunsettapco.com", phone: "0400 111 202", shares: 1, isDirector: true, payoutAccount: "BSB 306-xxx ••• 4410", joined: "" },
-  { id: "own_jo", name: "Jo", email: "jo@sunrisesunsettapco.com", phone: "0400 111 203", shares: 1, isDirector: true, payoutAccount: "BSB 066-xxx ••• 9023", joined: "" },
-  { id: "own_rhys", name: "Rhys", email: "rhys@sunrisesunsettapco.com", phone: "0400 111 204", shares: 1, isDirector: true, payoutAccount: "BSB 086-xxx ••• 3375", joined: "" },
-  { id: "own_adam", name: "Adam", email: "adam@sunrisesunsettapco.com", phone: "0400 111 205", shares: 1, isDirector: true, payoutAccount: "BSB 182-xxx ••• 6651", joined: "" },
+  { id: "own_aaron", name: "Aaron", email: "aaron@sunrisesunsettapco.com", phone: "0400 111 201", shares: 1, isDirector: true, payoutAccount: "BSB 306-xxx ••• 4410", joined: "" },
+  { id: "own_alex", name: "Alex", email: "alex@sunrisesunsettapco.com", phone: "0400 111 202", shares: 1, isDirector: true, payoutAccount: "BSB 016-xxx ••• 2738", joined: "" },
+  { id: "own_joe", name: "Joe", email: "joe@sunrisesunsettapco.com", phone: "0400 111 203", shares: 1, isDirector: true, payoutAccount: "BSB 066-xxx ••• 9023", joined: "" },
+  { id: "own_ming", name: "Ming", email: "ming@sunrisesunsettapco.com", phone: "0400 111 204", shares: 1, isDirector: true, payoutAccount: "BSB 062-xxx ••• 5164", joined: "" },
+  { id: "own_colin", name: "Colin", email: "colin@sunrisesunsettapco.com", phone: "0400 111 205", shares: 1, isDirector: true, payoutAccount: "BSB 016-xxx ••• 1182", joined: "" },
+  { id: "own_rhys", name: "Rhys", email: "rhys@sunrisesunsettapco.com", phone: "0400 111 206", shares: 1, isDirector: true, payoutAccount: "BSB 086-xxx ••• 3375", joined: "" },
+  { id: "own_adam", name: "Adam", email: "adam@sunrisesunsettapco.com", phone: "0400 111 207", shares: 1, isDirector: true, payoutAccount: "BSB 182-xxx ••• 6651", joined: "" },
+  { id: "own_shane", name: "Shane", email: "shane@sunrisesunsettapco.com", phone: "0400 111 208", shares: 1, isDirector: true, payoutAccount: "BSB 033-xxx ••• 8807", joined: "" },
+  { id: "own_grant", name: "Grant", email: "grant@sunrisesunsettapco.com", phone: "0400 111 209", shares: 1, isDirector: true, payoutAccount: "BSB 484-xxx ••• 2096", joined: "" },
 ];
+
+// Each owner puts in the same amount at the start.
+export const CAPITAL_PER_OWNER = 3700;
 
 // Demand and the bad luck that comes with it. Bull is the old optimistic year; base is what to plan on.
 export const SCENARIOS: Record<Scenario, { label: string; demand: number; lateCancels: number; repair?: { amount: number; notes: string }; cardTrouble: number }> = {
@@ -74,7 +81,7 @@ export function buildSeed(now = new Date(), scenario: Scenario = "base"): Data {
   };
 
   // Capital and setup.
-  for (const o of d.owners) post(d, start, "capital", 6500, `Capital contribution · ${o.name}`, undefined, o.id);
+  for (const o of d.owners) post(d, start, "capital", CAPITAL_PER_OWNER, `Capital contribution · ${o.name}`, undefined, o.id);
   post(d, addDays(start, 1), "accounting", -611, "ASIC company registration");
   post(d, addDays(start, 2), "truck", -TRUCK_COST, "2018 Suzuki Carry tap truck (112,215 km)");
   post(d, addDays(start, 9), "setup", -3800, "Box wrap, cab stripe and decals");
