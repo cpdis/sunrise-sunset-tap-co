@@ -16,7 +16,7 @@ export default function Home() {
   const data = useData();
   const s = data?.settings ?? DEFAULT_SETTINGS;
   const kb = data?.kb ?? DEFAULT_KB;
-  const free = data ? nextFreeDates(data, todayISO(), 6, true) : [];
+  const free = data ? nextFreeDates(data, todayISO(), 3) : [];
   const far = SUBURBS.filter((x) => x.minutes > s.travelThresholdMin).map((x) => x.name);
 
   return (
@@ -35,7 +35,6 @@ export default function Home() {
           <p>Eight cold taps on a tiny truck. We drive it in, hook up your kegs, test every line and come back for it when the night&apos;s done.</p>
           <div className="row">
             <Link href="/book" className="btn gold">Check a date</Link>
-            <span className="label">From {money(s.price4)} · delivered</span>
           </div>
         </div>
       </section>
@@ -43,10 +42,12 @@ export default function Home() {
       {free.length > 0 && (
         <section className="strip">
           <div className="wrap row" style={{ padding: "14px max(16px, 3vw)", gap: 10 }}>
-            <span className="label" style={{ marginRight: 8 }}>Next free weekends</span>
-            {free.map((d) => (
-              <Link key={d} href={`/book?date=${d}`} className="btn ghost small">{fmtDate(d, { dow: true })}</Link>
-            ))}
+            <span className="label" style={{ marginRight: 8 }}>Next free dates</span>
+            <div className="free-dates">
+              {free.map((d) => (
+                <Link key={d} href={`/book?date=${d}`} className="btn ghost small">{fmtDate(d, { dow: true })}</Link>
+              ))}
+            </div>
           </div>
         </section>
       )}
@@ -129,7 +130,6 @@ export default function Home() {
 
       <section className="section" id="faq">
         <div className="wrap" style={{ maxWidth: 880 }}>
-          <span className="eyebrow">Good questions</span>
           <h2 className="display">FAQ</h2>
           <div className="faq-list">
             {FAQ_SLUGS.map((slug) => {

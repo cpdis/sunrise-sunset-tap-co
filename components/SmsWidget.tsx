@@ -84,7 +84,7 @@ export function SmsWidget() {
   return (
     <>
       {open && (
-        <div className="sms-panel" role="dialog" aria-label="Text us" id="sms-panel">
+        <div className="sms-panel" role="dialog" aria-label="Chat" id="sms-panel">
           <div className="sms-head">
             <div className="stack" style={{ gap: 0 }}>
               <span className="label" style={{ fontSize: 13 }}>Sunrise Sunset</span>
@@ -125,7 +125,7 @@ export function SmsWidget() {
       )}
       <button ref={fab} className="btn sms-fab" onClick={() => setOpen(!open)} aria-expanded={open} aria-controls="sms-panel">
         <Roundel size={22} />
-        {open ? "Close" : "Text us"}
+        {open ? "Close" : "Chat"}
       </button>
     </>
   );

@@ -8,7 +8,7 @@
   /* drawn rules: one 480px stroke, repeated, in ink and in the hairline colour */
   --wobble: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='8' viewBox='0 0 480 8'%3E%3Cpath d='M0 4C40 2.5 70 5.5 120 4S190 2 240 4s80 2.5 120 1 80-2 120-1' fill='none' stroke='%2316264A' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
   --wobble-hair: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='8' viewBox='0 0 480 8'%3E%3Cpath d='M0 4C40 2.5 70 5.5 120 4S190 2 240 4s80 2.5 120 1 80-2 120-1' fill='none' stroke='%23DCCFB1' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E");
-  --swash: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 10'%3E%3Cpath d='M1 6C20 2 40 7 60 4s26-1 35 2' fill='none' stroke='%23F2B33D' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E");
+  --swash: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 10'%3E%3Cpath d='M2 5.5Q25 2.5 48 5.5T94 5.5' fill='none' stroke='%23F2B33D' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E");
 
   --display: var(--font-display), "Oswald", "Arial Narrow", sans-serif;
   --label: var(--font-label), "Futura", sans-serif;
@@ -38,8 +38,8 @@ h1, h2, h3, h4 { text-wrap: balance; }
 .display { font-family: var(--display); font-weight: 800; text-transform: uppercase; letter-spacing: 0.01em; line-height: 0.92; }
 .label, .eyebrow { font-family: var(--label); font-weight: 700; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; }
 /* the eyebrow is a stamp: a hand-drawn gold dot, set a degree off square on the public site */
-.eyebrow { display: flex; align-items: center; gap: 10px; color: var(--ink-2); transform: rotate(-1.2deg); transform-origin: left center; }
-.eyebrow::before { content: ""; width: 10px; height: 10px; background: var(--gold); outline: 1.5px solid var(--ink); flex: none; border-radius: var(--cut-dot); }
+.eyebrow { display: flex; width: max-content; max-width: 100%; align-items: center; gap: 10px; color: var(--ink-2); transform: rotate(-1.2deg); transform-origin: left center; }
+.eyebrow::before { content: ""; width: 10px; height: 10px; background: var(--gold); outline: 1.5px solid var(--ink); flex: none; border-radius: var(--cut-dot); transform: translateY(-1.5px); /* Josefin caps sit high in the line box */ }
 .mono { font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
 .muted { color: var(--ink-2); }
 .wrap { max-width: 1180px; margin: 0 auto; padding: 0 max(16px, 3vw); }
@@ -167,17 +167,16 @@ table.t tr.click:hover td { background: var(--paper); }
 .section h1.display::after, .section h2::after { content: ""; display: block; width: 96px; height: 10px; margin-top: 10px; background: var(--swash) left / contain no-repeat; }
 .sec-head { display: grid; gap: 4px; max-width: 70ch; }
 
-/* timetable rows, each under a drawn hairline; the numbers sit a few degrees off, alternating */
+/* timetable rows, each under a drawn hairline */
 .timetable { list-style: none; margin: 0; padding: 0; }
 .timetable li { display: grid; grid-template-columns: 5.5em minmax(0, 14em) minmax(0, 1fr); gap: 20px; padding: 20px 0 24px; background: var(--wobble-hair) left bottom / 480px 8px repeat-x; align-items: baseline; }
-.timetable .n { font-family: var(--display); font-weight: 800; font-size: 40px; line-height: .9; display: inline-block; transform: rotate(-3deg); }
-.timetable li:nth-child(even) .n { transform: rotate(2.5deg); }
+.timetable .n { font-family: var(--display); font-weight: 800; font-size: 40px; line-height: .9; display: inline-block; }
 .timetable strong { font-family: var(--label); font-weight: 700; font-size: 14px; letter-spacing: .16em; text-transform: uppercase; }
 @media (max-width: 640px) { .timetable li { grid-template-columns: 3em minmax(0, 1fr); } .timetable li > span:last-child { grid-column: 2; } }
 
 .spec { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
 .spec li { padding: 14px 16px 22px 0; background: var(--wobble-hair) left bottom / 480px 8px repeat-x; }
-.spec strong { display: block; font-family: var(--label); font-size: 13px; letter-spacing: .14em; text-transform: uppercase; }
+.spec strong { display: block; font-family: var(--label); font-size: 15px; letter-spacing: .14em; text-transform: uppercase; }
 
 /* fare cards: one cut card, the gold block printed against the white with a 2px ink join */
 .fares { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); border: var(--rule-strong); background: var(--white); border-radius: var(--cut-card); overflow: hidden; }
@@ -209,15 +208,28 @@ table.t tr.click:hover td { background: var(--paper); }
 .bubble.sys { align-self: center; background: transparent; color: var(--ink-2); font-size: 12px; padding: 2px 8px; }
 
 details.faq { padding: 18px 0 22px; background: var(--wobble-hair) left bottom / 480px 8px repeat-x; }
-details.faq summary { font-family: var(--label); font-weight: 700; font-size: 14px; letter-spacing: .14em; text-transform: uppercase; cursor: pointer; }
+details.faq summary { font-family: var(--label); font-weight: 700; font-size: 14px; letter-spacing: .14em; text-transform: uppercase; cursor: pointer;
+  list-style: none; display: flex; align-items: center; gap: 14px; }
+details.faq summary::-webkit-details-marker { display: none; }
+details.faq summary::before { content: ""; flex: none; width: 0; height: 0; border-left: 8px solid var(--ink); border-top: 5px solid transparent; border-bottom: 5px solid transparent;
+  transform: translateY(-2px); transition: transform 200ms var(--ease-out); }
+details.faq[open] summary::before { transform: translateY(-2px) rotate(90deg); }
 details.faq ul { margin: 12px 0 0; padding-left: 20px; }
 
 .footer { background: var(--sand); color: var(--ink); font-size: 14px; }
-.footer .wrap { display: flex; flex-wrap: wrap; gap: 24px; justify-content: space-between; align-items: center; padding-top: 36px; padding-bottom: 36px; }
+/* the bottom padding keeps the last line clear of the fixed Chat button */
+.footer .wrap { display: flex; flex-wrap: wrap; gap: 24px; justify-content: space-between; align-items: center; padding-top: 36px; padding-bottom: 96px; }
 .footer a { color: var(--ink); }
 
+/* next free dates: three, one row at every width */
+.free-dates { display: flex; gap: 10px; }
+@media (max-width: 520px) {
+  .free-dates { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: 100%; }
+  .free-dates .btn { padding: 0 6px; }
+}
+
 /* sms simulator */
-.sms-fab { position: fixed; right: 20px; bottom: 20px; z-index: 40; border-color: var(--paper); outline: 1.5px solid var(--ink); box-shadow: 3px 3px 0 var(--gold); }
+.sms-fab { position: fixed; right: 20px; bottom: 20px; z-index: 40; }
 .sms-fab svg { flex: none; }
 .sms-panel {
   position: fixed; right: 20px; bottom: 84px; z-index: 40; width: min(380px, calc(100vw - 32px)); height: min(620px, calc(100vh - 120px));
