@@ -46,7 +46,17 @@ export default function Home() {
               </div>
             )}
           </div>
-          <img className="hero-img" src="/hero-wedding-sunset.jpg" alt="The Sunrise Sunset tap truck pouring beers at a garden wedding at sunset" />
+          <video
+            className="hero-img"
+            src="/video/hero-wedding-loop.mp4"
+            poster="/video/hero-wedding-poster.jpg"
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="metadata"
+            aria-label="The Sunrise Sunset tap truck pouring beers at a garden wedding at sunset"
+          />
         </div>
       </section>
       <div className="stripes"><span /><span /><span /></div>
@@ -82,7 +92,17 @@ export default function Home() {
 
       <section className="section" id="truck" style={{ background: "var(--white)" }}>
         <div className="wrap hero-grid">
-          <img className="hero-img" src="/runclub-sunrise.jpg" alt="Runners getting cold brew from the truck at sunrise" />
+          <video
+            className="hero-img"
+            src="/video/hero-runclub-loop.mp4"
+            poster="/video/hero-runclub-poster.jpg"
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="none"
+            aria-label="Runners getting cold brew from the truck at sunrise"
+          />
           <div className="stack" style={{ gap: 20 }}>
             <span className="eyebrow">The truck</span>
             <h2 className="display" style={{ margin: 0 }}>Small enough for the backyard. Cold enough for January.</h2>
