@@ -4,7 +4,7 @@
 // - refunds over the agent limit, bond captures, share transfers and the guardrail settings stay in the admin.
 // Like the customer tools, these run on the server against a snapshot and return actions for the client store.
 import { ADMIN_ONLY_SETTINGS, SETTING_GROUPS } from "../config";
-import { cancelPolicy, dayStatus } from "../domain";
+import { ACCOUNT_LABEL, cancelPolicy, dayStatus } from "../domain";
 import type { Account, AgentAction, AgentState, Channel, Data, Distribution, Owner, PendingOwnerAction, Settings, TruckLog } from "../types";
 import { daysBetween, fmtDate, money, quarterLabel, todayISO } from "../util";
 
@@ -55,7 +55,7 @@ export function whatsOn(ctx: OwnerCtx) {
     myRuns: soon.filter((b) => runsOf(b, (id) => id === me).length).map((b) => ({ ref: b.ref, date: fmtDate(b.date, { dow: true }), suburb: b.suburb, runs: runsOf(b, (id) => id === me) })),
     unclaimed: soon.filter((b) => b.state !== "held" && runsOf(b, (id) => !id).length).map((b) => ({ ref: b.ref, date: fmtDate(b.date, { dow: true }), suburb: b.suburb, runs: runsOf(b, (id) => !id) })),
     needsAPerson: ctx.data.inbox.filter((c) => c.escalated).map((c) => ({ name: c.name, why: c.escalated })),
-    payouts: ctx.data.distributions.filter((x) => x.status === "awaiting").map((x) => ({ quarter: quarterLabel(x.quarter), amount: x.distributable, approvals: x.approvals.length, needsMe: ctx.owner.isDirector && !x.approvals.includes(me) })),
+    payouts: ctx.data.distributions.filter((x) => x.status === "awaiting").map((x) => ({ quarter: quarterLabel(x.quarter), amount: x.lines.reduce((s, l) => s + l.amount + l.runnerFees, 0), approvals: x.approvals.length, needsMe: ctx.owner.isDirector && !x.approvals.includes(me) })),
     owedToMe: ctx.data.money.owedRunners[me] ?? 0,
     cash: ctx.data.money.cash,
     revenue30: ctx.data.money.revenue30,
@@ -189,7 +189,7 @@ export function addExpense(ctx: OwnerCtx, q: { account: Account; amount: number;
   const date = q.date && q.date <= today(ctx) ? q.date : today(ctx);
   const amount = Math.round(q.amount * 100) / 100;
   const memo = `${q.memo.trim() || q.account} (${ctx.owner.name}, by SMS)`;
-  const summary = `add a ${money(amount, amount % 1 !== 0)} ${q.account} expense dated ${fmtDate(date)}: "${q.memo.trim() || q.account}"`;
+  const summary = `add a ${money(amount, amount % 1 !== 0)} ${ACCOUNT_LABEL[q.account]} expense dated ${fmtDate(date)}: "${q.memo.trim() || q.account}"`;
   if (!commit) return stage(ctx, "add_expense", { ...q, amount, date }, summary);
   ctx.actions.push({ type: "expense", date, account: q.account, amount, memo });
   return { ok: true as const, done: true, summary };

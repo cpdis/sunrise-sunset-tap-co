@@ -58,7 +58,7 @@ describe("money and settings wait for YES", () => {
     const [staged, done] = ownerChat(d, COLIN, ["$42 CO2 refill", "yes"]);
     expect(staged.reply).toMatch(/Reply YES/);
     expect(types(staged)).toEqual([]);
-    expect(done.reply).toMatch(/^Done\. I added a \$42 co2 expense/);
+    expect(done.reply).toMatch(/^Done\. I added a \$42 CO2 expense/);
     expect(balance(d, "co2") - co20).toBe(-42);
     expect(cashAt(d) - cash0).toBe(-42);
   });
