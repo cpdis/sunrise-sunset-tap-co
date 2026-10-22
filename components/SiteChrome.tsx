@@ -32,7 +32,7 @@ export function Footer() {
           <Roundel size={56} />
           <div className="stack" style={{ gap: 2 }}>
             <span className="display" style={{ fontSize: 30 }}>Cold brew at dawn. Beer at dusk.</span>
-            <span className="label">Self-pour tap truck · Swan Valley to Mandurah</span>
+            <span className="label">Self-pour tap truck · Perth Metro</span>
           </div>
         </div>
         <div className="stack" style={{ gap: 4 }}>
