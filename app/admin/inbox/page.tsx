@@ -86,7 +86,7 @@ export default function Inbox() {
 
       <div className="split">
         <div className="table-wrap" style={{ maxHeight: "70vh", overflowY: "auto" }}>
-          <table className="t">
+          <table className="t" style={{ tableLayout: "fixed" }}>
             <tbody>
               {list.map((c) => {
                 const last = c.messages.at(-1);
@@ -98,7 +98,7 @@ export default function Inbox() {
                         <strong style={{ fontWeight: c.unread ? 700 : 500 }}>{c.name}</strong>
                         <span className="pill">{CHANNEL_LABEL[c.channel]}</span>
                       </div>
-                      <div className="muted" style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 320 }}>{last?.body}</div>
+                      <div className="muted" style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{last?.body}</div>
                       <div className="row" style={{ gap: 6, marginTop: 4 }}>
                         {c.escalated && <span className="pill bad">Needs a person</span>}
                         {!c.agentActive && !c.escalated && <span className="pill warn">Owner handling</span>}

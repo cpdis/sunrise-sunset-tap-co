@@ -91,7 +91,7 @@ export default function Money() {
           periods={series.map((x) => MON3[Number(x.m.slice(5, 7)) - 1])}
           fmt={(n) => money(n)}
           series={[
-            { name: "Capital in", values: series.map(() => capital), color: "azure", note: "five owners" },
+            { name: "Capital in", values: series.map(() => capital), color: "azure", note: `${data.owners.length} owners` },
             { name: "Profit", values: cum(series.map((x) => x.profit)), color: "ink", note: `best month ${MON3[Number(best.m.slice(5, 7)) - 1]}` },
           ]}
           strip={{
@@ -155,15 +155,15 @@ export default function Money() {
           </select>
         </div>
         <div className="table-wrap">
-          <table className="t">
+          <table className="t cards">
             <thead><tr><th>Date</th><th>Account</th><th>Memo</th><th className="num">Amount</th></tr></thead>
             <tbody>
               {ledger.map((e) => (
                 <tr key={e.id}>
                   <td style={{ whiteSpace: "nowrap" }}>{fmtDate(e.date, { year: true })}</td>
-                  <td>{ACCOUNT_LABEL[e.account]}</td>
-                  <td className="muted">{e.memo}</td>
-                  <td className={`num ${e.amount > 0 ? "pos" : ""}`}>{money(e.amount, true)}</td>
+                  <td data-label="Account">{ACCOUNT_LABEL[e.account]}</td>
+                  <td className="muted" data-label="Memo">{e.memo}</td>
+                  <td className={`num ${e.amount > 0 ? "pos" : ""}`} data-label="Amount">{money(e.amount, true)}</td>
                 </tr>
               ))}
             </tbody>

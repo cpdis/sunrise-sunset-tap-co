@@ -39,15 +39,15 @@ export default function Truck() {
         <button className="btn small primary" style={{ alignSelf: "flex-start" }}>Add to log</button>
       </form>
       <div className="table-wrap">
-        <table className="t">
+        <table className="t cards">
           <thead><tr><th>Date</th><th>Type</th><th>Notes</th><th className="num">Odometer</th></tr></thead>
           <tbody>
             {logs.map((l) => (
               <tr key={l.id}>
                 <td style={{ whiteSpace: "nowrap" }}>{fmtDate(l.date, { year: true })}</td>
-                <td><span className={`pill ${l.type === "incident" ? "bad" : l.type === "service" ? "good" : ""}`}>{l.type}</span></td>
-                <td>{l.notes}</td>
-                <td className="num">{l.odometer?.toLocaleString() ?? ""}</td>
+                <td data-label="Type"><span className={`pill ${l.type === "incident" ? "bad" : l.type === "service" ? "good" : ""}`}>{l.type}</span></td>
+                <td data-label="Notes">{l.notes}</td>
+                <td className="num" data-label="Odometer">{l.odometer?.toLocaleString() ?? ""}</td>
               </tr>
             ))}
           </tbody>

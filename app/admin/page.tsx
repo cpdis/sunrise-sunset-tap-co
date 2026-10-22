@@ -78,16 +78,16 @@ export default function Today() {
           <div className="card muted">All runs are covered.</div>
         ) : (
           <div className="table-wrap">
-            <table className="t">
+            <table className="t cards">
               <thead><tr><th>Date</th><th>Booking</th><th>Where</th><th>Delivery</th><th>Collection</th></tr></thead>
               <tbody>
                 {unclaimed.map((b) => (
                   <tr key={b.id}>
                     <td>{fmtDate(b.date, { dow: true })}<br /><span className="muted">{fmtTime(b.startTime)}, {b.block}h</span></td>
-                    <td><Link href={`/admin/bookings/${b.id}`}>{b.ref}</Link></td>
-                    <td>{b.suburb}<br /><span className="muted">{b.travelMinutes} min</span></td>
+                    <td data-label="Booking"><Link href={`/admin/bookings/${b.id}`}>{b.ref}</Link></td>
+                    <td data-label="Where"><span>{b.suburb}<br /><span className="muted">{b.travelMinutes} min</span></span></td>
                     {(["deliver", "collect"] as const).map((w) => (
-                      <td key={w}>
+                      <td key={w} data-label={w === "deliver" ? "Delivery" : "Collection"}>
                         {b[w].ownerId ? name(b[w].ownerId) : <button className="btn small action" onClick={() => claimRun(b.id, w)}>I&apos;ll take it</button>}
                       </td>
                     ))}
