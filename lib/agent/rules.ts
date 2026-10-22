@@ -350,7 +350,7 @@ function matchFaq(t: string): Faq | null {
   if (has(t, /\b(refund|cancellation) polic(y|ies)\b/))
     return (c) => `Cancel more than ${s(c).cancelDays} days before for a full refund. Within ${s(c).cancelDays} days, the ${money(s(c).deposit)} deposit is kept and anything paid on top is refunded.`;
   if (has(t, /\b(price|cost|how much|rates?|quote|pricing)\b/))
-    return (c) => `Half day (4h) is ${money(s(c).price4)} and full day (8h) is ${money(s(c).price8)}. Both include delivery within an hour of North Perth, setup, glassware and pickup. A ${money(s(c).deposit)} deposit holds the date. Which date are you after?`;
+    return (c) => `Half day (4h) is ${money(s(c).price4)} and full day (8h) is ${money(s(c).price8)}. Both include delivery within an hour of the Perth CBD, setup, glassware and pickup. A ${money(s(c).deposit)} deposit holds the date. Which date are you after?`;
   if (has(t, /\b(supply|provide|bring) (the )?(beer|drinks|alcohol)|do you (sell|supply)/))
     return () => "You bring the drinks. Buy kegs anywhere at wholesale and we hook them up. Happy to recommend breweries or distributors.";
   if (has(t, /\b(power|generator|electricity|plug)\b/))
@@ -362,7 +362,7 @@ function matchFaq(t: string): Faq | null {
   if (has(t, /\b(bond|damage|deposit back)\b/))
     return (c) => `A ${money(s(c).bond)} bond is held on your card ${s(c).bondHoldDaysBefore} days before and released after the truck comes back clean and undamaged.`;
   if (has(t, /\b(how far|travel|deliver|where do you go|service area)\b/))
-    return (c) => `Perth metro, the Hills and the Swan Valley, from Two Rocks down to Mandurah. Free delivery within ${s(c).travelThresholdMin} minutes of North Perth, ${money(s(c).travelFee)} beyond that.`;
+    return (c) => `Perth metro, the Hills and the Swan Valley, from Two Rocks down to Mandurah. Free delivery within ${s(c).travelThresholdMin} minutes of the Perth CBD, ${money(s(c).travelFee)} beyond that.`;
   if (has(t, /\b(serve|stay)\b/))
     return () => "No staff stay. We deliver, connect and test every line, show a host how to swap a keg, then come back to collect.";
   if (has(t, /\b(coffee|cold brew|nitro|filament)\b/))
