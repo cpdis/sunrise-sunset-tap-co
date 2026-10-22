@@ -1,0 +1,152 @@
+/* Hand-made feel: three shape languages for the public site, picked with ?form=a|b|c.
+   Each keeps the Golden Hour inks and type and only changes the form: corners, edges, rules and markers.
+   The admin keeps its own form and is untouched. */
+
+/* ---------- shared: the hard horizontals between sections soften in every option ---------- */
+html[data-form] .site-header { border-bottom: var(--rule-hair); }
+html[data-form] .section:last-of-type { border-bottom: 0; }
+html[data-form] .btn:active:not(:disabled) { transform: scale(0.97); }
+
+/* ======================================================================
+   A  "Ticket": pills and rounded panels, rolling-hill edges, perforated fare stub
+   ====================================================================== */
+html[data-form="a"] { --radius: 12px; --wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 28' preserveAspectRatio='none'%3E%3Cpath d='M0 0H1440V12C1300 4 1180 22 1040 16 880 9 760 24 620 18 470 12 340 26 200 16 110 10 50 6 0 14Z'/%3E%3C/svg%3E"); }
+html[data-form="a"] .btn { border-radius: 999px; padding: 0 24px; }
+html[data-form="a"] .btn.small { padding: 0 16px; }
+html[data-form="a"] .eyebrow::before { border-radius: 50%; width: 11px; height: 11px; outline-offset: 1px; }
+html[data-form="a"] .hero .eyebrow, html[data-form="a"] .hero .row .label { border-radius: 999px; padding: 7px 14px; }
+html[data-form="a"] .card, html[data-form="a"] .table-wrap, html[data-form="a"] .ticket, html[data-form="a"] .notice, html[data-form="a"] .empty, html[data-form="a"] .seg { border-radius: 16px; overflow: hidden; }
+html[data-form="a"] .ticket .t-tot { margin: 0; }
+html[data-form="a"] .input, html[data-form="a"] select.input, html[data-form="a"] textarea.input { border-radius: 12px; }
+html[data-form="a"] .notice::before { border-radius: 50%; }
+html[data-form="a"] .film { border-radius: 18px; overflow: hidden; }
+html[data-form="a"] .video-toggle { border-radius: 999px; }
+/* hero and ground bands end in a low horizon wave instead of a rule */
+html[data-form="a"] .hero, html[data-form="a"] .banner { border-bottom: 0; }
+html[data-form="a"] .hero::after, html[data-form="a"] .banner::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 28px; background: var(--paper); -webkit-mask: var(--wave) center / 100% 100% no-repeat; mask: var(--wave) center / 100% 100% no-repeat; transform: scaleY(-1); pointer-events: none; }
+html[data-form="a"] .section { border-bottom: 0; position: relative; }
+html[data-form="a"] .section.ground { padding: 100px 0; }
+html[data-form="a"] .section.ground::before, html[data-form="a"] .section.ground::after { content: ""; position: absolute; left: 0; right: 0; height: 28px; background: var(--paper); -webkit-mask: var(--wave) center / 100% 100% no-repeat; mask: var(--wave) center / 100% 100% no-repeat; pointer-events: none; }
+html[data-form="a"] .section.ground::before { top: -1px; }
+html[data-form="a"] .section.ground::after { bottom: -1px; transform: scaleY(-1); }
+html[data-form="a"] .footer { border-top: 0; position: relative; padding-top: 20px; }
+html[data-form="a"] .footer::before { content: ""; position: absolute; left: 0; right: 0; top: -1px; height: 28px; background: var(--paper); -webkit-mask: var(--wave) center / 100% 100% no-repeat; mask: var(--wave) center / 100% 100% no-repeat; }
+/* fare stub: one rounded ticket, perforated between the two blocks */
+html[data-form="a"] .fares { border-radius: 20px; position: relative; }
+html[data-form="a"] .fare + .fare { border-left: 2px dashed var(--ink); }
+@media (min-width: 701px) {
+  html[data-form="a"] .fares::before, html[data-form="a"] .fares::after { content: ""; position: absolute; left: 50%; width: 22px; height: 22px; margin-left: -11px; border-radius: 50%; background: var(--paper); border: var(--rule-strong); z-index: 1; }
+  html[data-form="a"] .fares::before { top: -12px; clip-path: inset(50% 0 0 0); }
+  html[data-form="a"] .fares::after { bottom: -12px; clip-path: inset(0 0 50% 0); }
+  html[data-form="a"] .fare:first-child { border-radius: 20px 0 0 20px; }
+  html[data-form="a"] .fare.hero-strip { border-radius: 0 20px 20px 0; }
+}
+@media (max-width: 700px) {
+  html[data-form="a"] .fare + .fare { border-left: 0; border-top: 2px dashed var(--ink); }
+  html[data-form="a"] .fare.hero-strip { border-radius: 0 0 20px 20px; }
+}
+html[data-form="a"] .timetable, html[data-form="a"] .spec, html[data-form="a"] .faq-list { border-top: var(--rule-hair); }
+html[data-form="a"] .cal { border-radius: 12px; overflow: hidden; border: var(--rule-hair); border-right: 0; border-bottom: 0; }
+html[data-form="a"] .chip { border-width: 1.5px; }
+
+/* ======================================================================
+   B  "Hand-cut": corners cut by hand, misregistered print, wobbling rules
+   ====================================================================== */
+html[data-form="b"] {
+  --cut: 255px 15px 225px 15px / 15px 225px 15px 255px; /* a button cut with scissors */
+  --cut-card: 18px 10px 16px 12px / 12px 16px 10px 18px;
+  --wobble: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='8' viewBox='0 0 480 8'%3E%3Cpath d='M0 4C40 2.5 70 5.5 120 4S190 2 240 4s80 2.5 120 1 80-2 120-1' fill='none' stroke='%2316264A' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+  --wobble-hair: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='8' viewBox='0 0 480 8'%3E%3Cpath d='M0 4C40 2.5 70 5.5 120 4S190 2 240 4s80 2.5 120 1 80-2 120-1' fill='none' stroke='%23DCCFB1' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+html[data-form="b"] .btn { border-radius: var(--cut); box-shadow: 3px 3px 0 var(--gold); transition: transform 160ms var(--ease-out), box-shadow 160ms var(--ease-out), background-color 150ms ease, color 150ms ease; }
+html[data-form="b"] .btn.gold { box-shadow: 3px 3px 0 var(--ink); }
+html[data-form="b"] .btn.ghost { box-shadow: 3px 3px 0 var(--sand); }
+html[data-form="b"] .btn:active:not(:disabled) { transform: translate(2px, 2px) scale(0.99); box-shadow: 1px 1px 0 var(--gold); }
+html[data-form="b"] .btn.gold:active:not(:disabled) { box-shadow: 1px 1px 0 var(--ink); }
+html[data-form="b"] .btn.small { box-shadow: 2px 2px 0 var(--gold); }
+html[data-form="b"] .sms-fab { box-shadow: 3px 3px 0 var(--gold); }
+html[data-form="b"] .eyebrow { transform: rotate(-1.2deg); transform-origin: left center; }
+html[data-form="b"] .eyebrow::before { border-radius: 60% 40% 55% 45% / 45% 55% 40% 60%; }
+html[data-form="b"] .hero .eyebrow, html[data-form="b"] .hero .row .label { border-radius: var(--cut-card); }
+html[data-form="b"] .card, html[data-form="b"] .table-wrap, html[data-form="b"] .ticket, html[data-form="b"] .notice, html[data-form="b"] .empty, html[data-form="b"] .fares, html[data-form="b"] .film, html[data-form="b"] .seg, html[data-form="b"] .cal { border-radius: var(--cut-card); overflow: hidden; }
+html[data-form="b"] .cal { border: var(--rule-hair); border-right: 0; border-bottom: 0; }
+html[data-form="b"] .input, html[data-form="b"] select.input, html[data-form="b"] textarea.input { border-radius: 12px 8px 11px 9px / 9px 11px 8px 12px; }
+html[data-form="b"] .notice::before { border-radius: 60% 40% 55% 45% / 45% 55% 40% 60%; }
+html[data-form="b"] .video-toggle { border-radius: var(--cut); }
+/* a drawn gold stroke under every section heading */
+html[data-form="b"] .section h2::after { content: ""; display: block; width: 96px; height: 10px; margin-top: 10px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 10'%3E%3Cpath d='M1 6C20 2 40 7 60 4s26-1 35 2' fill='none' stroke='%23F2B33D' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E") left / contain no-repeat; }
+/* every rule between sections is a drawn line */
+html[data-form="b"] .section, html[data-form="b"] .hero, html[data-form="b"] .banner, html[data-form="b"] .site-header { border-bottom: 0; position: relative; }
+html[data-form="b"] .section::after, html[data-form="b"] .hero::after, html[data-form="b"] .banner::after { content: ""; position: absolute; left: 0; right: 0; bottom: -4px; height: 8px; background: var(--wobble) left center / 480px 8px repeat-x; pointer-events: none; }
+html[data-form="b"] .section:last-of-type::after { display: none; }
+html[data-form="b"] .footer { border-top: 0; position: relative; }
+html[data-form="b"] .timetable, html[data-form="b"] .spec, html[data-form="b"] .faq-list { border-top: 0; }
+html[data-form="b"] .timetable li, html[data-form="b"] .spec li, html[data-form="b"] details.faq { border-bottom: 0; background: var(--wobble-hair) left bottom / 480px 8px repeat-x; padding-bottom: 22px; }
+html[data-form="b"] .timetable li { padding: 20px 0 24px; }
+/* the two fares sit on the same cut card, split by a drawn line */
+html[data-form="b"] .fare + .fare { border-left: 0; }
+html[data-form="b"] .fare.hero-strip { box-shadow: -2px 0 0 var(--ink); }
+@media (max-width: 700px) { html[data-form="b"] .fare.hero-strip { box-shadow: 0 -2px 0 var(--ink); } }
+html[data-form="b"] .timetable .n { transform: rotate(-3deg); display: inline-block; }
+html[data-form="b"] .timetable li:nth-child(even) .n { transform: rotate(2.5deg); }
+
+/* ======================================================================
+   C  "Luggage label": keylined lozenges, arched fares, scalloped bands, roundel numbers
+   ====================================================================== */
+html[data-form="c"] { --radius: 8px; --scallop-top: radial-gradient(circle at 50% 0, var(--paper) 7.5px, transparent 8px); --scallop-bottom: radial-gradient(circle at 50% 100%, var(--paper) 7.5px, transparent 8px); }
+html[data-form="c"] .btn { border-radius: 999px; padding: 0 26px; box-shadow: inset 0 0 0 3px var(--ink), inset 0 0 0 4.5px var(--paper); border-color: var(--ink); }
+html[data-form="c"] .btn.gold { box-shadow: inset 0 0 0 3px var(--gold), inset 0 0 0 4.5px var(--ink); }
+html[data-form="c"] .btn.ghost { box-shadow: inset 0 0 0 3px var(--paper), inset 0 0 0 4.5px var(--ink); background: var(--paper); }
+html[data-form="c"] .btn.small { padding: 0 18px; box-shadow: inset 0 0 0 2.5px var(--ink), inset 0 0 0 3.5px var(--paper); }
+html[data-form="c"] .btn.ghost.small { box-shadow: inset 0 0 0 2.5px var(--paper), inset 0 0 0 3.5px var(--ink); }
+html[data-form="c"] .btn.danger { box-shadow: inset 0 0 0 3px var(--bad), inset 0 0 0 4.5px var(--white); }
+html[data-form="c"] .eyebrow::before { border-radius: 50%; width: 12px; height: 12px; background: radial-gradient(circle, var(--gold) 0 3px, var(--paper) 3.5px 4.5px, var(--gold) 5px); outline-offset: 0; }
+html[data-form="c"] .hero .eyebrow, html[data-form="c"] .hero .row .label { border-radius: 999px; padding: 7px 14px; box-shadow: inset 0 0 0 1.5px var(--ink); }
+/* label-shaped panels: two opposite corners round, two tight */
+html[data-form="c"] .card, html[data-form="c"] .ticket, html[data-form="c"] .notice, html[data-form="c"] .empty, html[data-form="c"] .table-wrap { border-radius: 26px 8px 26px 8px; overflow: hidden; }
+html[data-form="c"] .ticket .t-top { padding-top: 22px; }
+html[data-form="c"] .card { padding: 28px; }
+html[data-form="c"] .input, html[data-form="c"] select.input, html[data-form="c"] textarea.input { border-radius: 10px; }
+html[data-form="c"] .seg { border-radius: 999px; }
+html[data-form="c"] .film { border-radius: 26px 8px 26px 8px; overflow: hidden; }
+html[data-form="c"] .video-toggle { border-radius: 999px; }
+html[data-form="c"] .notice::before { border-radius: 50%; }
+/* each step number sits in its own roundel */
+html[data-form="c"] .timetable li { align-items: start; }
+html[data-form="c"] .timetable .n { width: 56px; height: 56px; border-radius: 50%; background: var(--ink); color: var(--paper); display: inline-flex; align-items: center; justify-content: center; font-size: 26px; line-height: 1; box-shadow: inset 0 0 0 3px var(--ink), inset 0 0 0 4.5px var(--paper); }
+html[data-form="c"] .timetable li > strong, html[data-form="c"] .timetable li > span:last-child { padding-top: 18px; }
+@media (max-width: 640px) { html[data-form="c"] .timetable .n { width: 44px; height: 44px; font-size: 20px; } html[data-form="c"] .timetable li > strong, html[data-form="c"] .timetable li > span:last-child { padding-top: 12px; } html[data-form="c"] .timetable li > span:last-child { padding-top: 0; } }
+/* the fares are two station arches */
+html[data-form="c"] .fares { border: 0; background: transparent; gap: 20px; }
+html[data-form="c"] .fare { border: var(--rule-strong); background: var(--white); border-radius: 50% 50% 14px 14px / 150px 150px 14px 14px; padding: 72px 32px 32px; align-items: center; text-align: center; }
+html[data-form="c"] .fare + .fare { border-left: var(--rule-strong); }
+html[data-form="c"] .fare.hero-strip { background: var(--gold); }
+html[data-form="c"] .fare .btn { align-self: center !important; }
+html[data-form="c"] .fare .amt { display: flex; flex-direction: column; align-items: center; }
+html[data-form="c"] .fare .per { font-size: 22px; margin-top: 10px; }
+@media (max-width: 700px) { html[data-form="c"] .fare + .fare { border-top: var(--rule-strong); } html[data-form="c"] .fare { border-radius: 50% 50% 14px 14px / 110px 110px 14px 14px; padding-top: 56px; } }
+/* ground bands and the footer get a ticket-stub scalloped edge; the strong rules go */
+html[data-form="c"] .section, html[data-form="c"] .hero, html[data-form="c"] .banner { border-bottom: 0; position: relative; }
+html[data-form="c"] .section.ground { padding: 96px 0; }
+html[data-form="c"] .section.ground::before, html[data-form="c"] .section.ground::after, html[data-form="c"] .footer::before { content: ""; position: absolute; left: 0; right: 0; height: 16px; pointer-events: none; }
+html[data-form="c"] .section.ground::before { top: 0; background: var(--scallop-top) 0 0 / 32px 16px repeat-x; }
+html[data-form="c"] .section.ground::after { bottom: 0; background: var(--scallop-bottom) 0 0 / 32px 16px repeat-x; }
+html[data-form="c"] .footer { border-top: 0; position: relative; padding-top: 8px; }
+html[data-form="c"] .footer::before { top: 0; background: var(--scallop-top) 0 0 / 32px 16px repeat-x; }
+html[data-form="c"] .hero::after, html[data-form="c"] .banner::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 16px; background: var(--scallop-bottom) 0 0 / 32px 16px repeat-x; pointer-events: none; }
+html[data-form="c"] .timetable, html[data-form="c"] .spec, html[data-form="c"] .faq-list { border-top: var(--rule-hair); }
+html[data-form="c"] .cal { border-radius: 12px; overflow: hidden; border: var(--rule-hair); border-right: 0; border-bottom: 0; }
+/* keylined chips, like the tags on a trunk */
+html[data-form="c"] .chip { box-shadow: inset 0 0 0 2px var(--paper), inset 0 0 0 3px var(--ink); border-color: var(--ink); }
+
+@media (hover: hover) and (pointer: fine) {
+  html[data-form="b"] .btn:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--gold); }
+  html[data-form="b"] .btn.gold:hover { box-shadow: 4px 4px 0 var(--ink); }
+  html[data-form="b"] .btn.ghost:hover { box-shadow: 4px 4px 0 var(--sand); }
+  html[data-form="c"] .btn:hover { box-shadow: inset 0 0 0 3px #0e1a36, inset 0 0 0 4.5px var(--paper); }
+  html[data-form="c"] .btn.gold:hover { box-shadow: inset 0 0 0 3px #f5c25f, inset 0 0 0 4.5px var(--ink); }
+  html[data-form="c"] .btn.ghost:hover { box-shadow: inset 0 0 0 3px var(--ground), inset 0 0 0 4.5px var(--ink); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-form="b"] .btn:active:not(:disabled), html[data-form="b"] .btn:hover { transform: none; }
+}

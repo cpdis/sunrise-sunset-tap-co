@@ -4,6 +4,7 @@ import Link from "next/link";
 import { BUSINESS } from "@/lib/config";
 import { Roundel, Wordmark } from "./Logo";
 import { SmsWidget } from "./SmsWidget";
+import { FormSwitch } from "./FormSwitch";
 
 export function SiteHeader() {
   return (
@@ -48,6 +49,7 @@ export function Footer() {
 export function SiteShell({ children }: { children: React.ReactNode }) {
   return (
     <>
+      <FormSwitch />
       <SiteHeader />
       <main>{children}</main>
       <Footer />
