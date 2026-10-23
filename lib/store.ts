@@ -51,6 +51,8 @@ interface AppState {
   sendCustomer: (convId: string, body: string) => Promise<AgentResult | null>;
   ownerReply: (convId: string, body: string) => void;
   setAgentActive: (convId: string, active: boolean) => void;
+  handBack: (convId: string, force?: boolean) => void;
+  setDraft: (convId: string, draft: string) => void;
   markRead: (convId: string) => void;
   claimRun: (bookingId: string, which: "deliver" | "collect") => void;
   captureBond: (bookingId: string, amount: number, note: string) => void;
@@ -238,6 +240,8 @@ export const useApp = create<AppState>()(
         get().mutate((d) => {
           const c = d.conversations.find((x) => x.id === convId);
           if (!c) return;
+          // The reply goes in first so a hand-over row reads after what the agent told the customer.
+          c.messages.push({ id: uid("m"), from: "agent", body: result.reply, at: new Date().toISOString(), tools: result.tools });
           for (const a of result.actions) {
             if (a.type === "hold") {
               const isEmail = a.contact.includes("@");
@@ -263,15 +267,18 @@ export const useApp = create<AppState>()(
               if (b && pol) log(d, `${c.ownerId ? `${c.name} cancelled ${b.ref} by SMS` : `Agent cancelled ${b.ref}`}; refunded $${pol.refund}`);
             } else if (a.type === "escalate") {
               if (c.escalated && !c.agentActive) continue;
+              const repeat = c.escalated === a.reason;
               c.escalated = a.reason;
               if (!a.keepAgent) c.agentActive = false;
+              if (a.draft) c.draft = a.draft;
+              // The reason stays in the thread after an owner replies and the flag clears. Written once per reason.
+              if (!repeat) c.messages.push({ id: uid("m"), from: "system", body: `Agent handed over: ${a.reason}`, at: new Date().toISOString() });
               log(d, `Escalated to owners: ${a.reason}`);
             } else if (c.ownerId) {
               ops.applyOwnerAction(d, a, c.ownerId);
             }
           }
           c.state = result.state;
-          c.messages.push({ id: uid("m"), from: "agent", body: result.reply, at: new Date().toISOString(), tools: result.tools });
         });
         return result;
       },
@@ -281,7 +288,11 @@ export const useApp = create<AppState>()(
         if (me) get().mutate((d) => ops.ownerReply(d, convId, body, me));
       },
 
-      setAgentActive: (convId, active) => get().mutate((d) => ops.setAgentActive(d, convId, active)),
+      setAgentActive: (convId, active) => get().mutate((d) => ops.setAgentActive(d, convId, active, get().ownerId ?? undefined)),
+
+      handBack: (convId, force) => get().mutate((d) => ops.handBack(d, convId, get().ownerId ?? undefined, force)),
+
+      setDraft: (convId, draft) => get().mutate((d) => ops.setDraft(d, convId, draft)),
 
       markRead: (convId) =>
         get().mutate((d) => {

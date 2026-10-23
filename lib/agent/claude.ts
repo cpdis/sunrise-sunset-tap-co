@@ -69,7 +69,13 @@ const TOOLS: Tool[] = [
   {
     name: "escalate_to_owner",
     description: "Hand the conversation to a human owner. Use for complaints, damage disputes, discounts, multi-day or sponsorship requests, media, legal questions beyond the FAQ, or whenever the customer asks for a person.",
-    input_schema: obj({ reason: { type: "string" } }, ["reason"]),
+    input_schema: obj(
+      {
+        reason: { type: "string", description: "One line for the owners: what the customer wants and why you stopped." },
+        draft: { type: "string", description: "A reply an owner could send as-is, written to the customer in the same voice. Cover what you can from the knowledge base and leave the owner decision open. No prices or promises outside the knowledge base. No sign-off." },
+      },
+      ["reason", "draft"],
+    ),
     strict: true,
   },
 ];
@@ -123,7 +129,7 @@ function exec(ctx: ToolCtx, name: string, input: Record<string, unknown>): unkno
     case "cancel_booking":
       return cancelBookingTool(ctx, String(input.booking), Boolean(input.confirmed));
     case "escalate_to_owner":
-      return escalate(ctx, String(input.reason));
+      return escalate(ctx, String(input.reason), false, typeof input.draft === "string" ? input.draft : undefined);
     default:
       return { error: `Unknown tool ${name}` };
   }

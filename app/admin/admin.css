@@ -236,11 +236,14 @@
 .cal-key i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; box-shadow: inset 0 0 0 1px var(--a-line); }
 
 /* ---------- inbox: an agent console ---------- */
-.inbox { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 0; border: 1px solid var(--a-line); border-radius: var(--a-radius); overflow: hidden; box-shadow: var(--a-shadow); min-height: 560px; height: min(76vh, 820px); }
+.inbox { display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); gap: 0; border: 1px solid var(--a-line); border-radius: var(--a-radius); overflow: hidden; box-shadow: var(--a-shadow); min-height: 560px; height: min(76vh, 820px); }
 .inbox-list { border-right: 1px solid var(--a-line); background: var(--a-bg); display: flex; flex-direction: column; min-height: 0; }
 .inbox-list .il-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 12px 0 16px; height: 48px; border-bottom: 1px solid var(--a-line); flex: none; }
 .inbox-list .il-head strong { font-weight: 600; font-size: 14px; }
-.inbox-list ul { list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.inbox-list .il-body { overflow-y: auto; flex: 1; padding: 4px 6px 8px; }
+.inbox-list ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.il-title { display: flex; justify-content: space-between; padding: 10px 10px 4px; font-size: 12px; font-weight: 500; color: var(--a-text-2); }
+.il-empty { margin: 0; padding: 4px 10px 8px; font-size: 13px; color: var(--a-text-2); }
 .conv { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 10px; width: 100%; text-align: left; padding: 10px; border: 0; border-radius: 6px; background: transparent; cursor: pointer; color: var(--ink); font: inherit; transition: background-color 120ms ease; }
 .conv:hover { background: var(--a-subtle); }
 .conv[aria-current="true"] { background: var(--a-muted); }
@@ -256,7 +259,7 @@
 .avatar.agent { background: var(--a-bg); padding: 2px; }
 .avatar.owner { background: color-mix(in srgb, var(--azure) 12%, white); color: var(--azure); box-shadow: none; }
 
-.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--a-bg); }
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--a-bg); container-type: inline-size; }
 .pane-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; min-height: 56px; border-bottom: 1px solid var(--a-line); flex: none; flex-wrap: wrap; }
 .pane-head .who { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .pane-head .who > div { display: flex; flex-direction: column; min-width: 0; }
@@ -265,10 +268,6 @@
 .pane-head .acts { display: flex; align-items: center; gap: 8px; }
 .pane .back { display: none; }
 .pane-body { flex: 1; overflow-y: auto; padding: 20px 20px 8px; display: flex; flex-direction: column; gap: 18px; scroll-padding-bottom: 20px; }
-.stopped { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 10px; padding: 12px 14px; border-radius: var(--a-radius); background: color-mix(in srgb, var(--gold) 12%, white); border: 1px solid color-mix(in srgb, var(--gold) 45%, white); font-size: 13px; }
-.stopped svg { margin-top: 2px; color: var(--warn); }
-.stopped strong { font-weight: 600; display: block; color: var(--ink); }
-.stopped .refs { margin-top: 4px; display: flex; gap: 10px; flex-wrap: wrap; }
 
 /* one turn: avatar, a name line, then the body. The customer's words sit in a grey box;
    the agent's and owners' replies are plain text, like an agent transcript. */
@@ -281,7 +280,10 @@
 .steps { list-style: none; margin: 6px 0 2px; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .steps li { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--a-text-2); }
 .steps li svg { color: var(--good); flex: none; }
-.steps li.handover svg { color: var(--warn); }
+.steps li.handover { align-items: flex-start; color: var(--ink); font-weight: 500; }
+.steps li.handover svg { color: var(--warn); margin-top: 2px; }
+.steps .result { display: block; margin-top: 2px; font-weight: 400; color: var(--a-text-2); }
+.steps .result .ref { margin-left: 8px; }
 .steps code { font-family: var(--mono); font-size: 12px; color: var(--a-text-2); }
 .sysline { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--a-text-2); }
 .sysline::before, .sysline::after { content: ""; flex: 1; height: 1px; background: var(--a-line); }
@@ -292,7 +294,22 @@
 .composer:focus-within { border-color: var(--azure); box-shadow: 0 0 0 3px color-mix(in srgb, var(--azure) 15%, transparent); }
 .composer textarea { display: block; width: 100%; min-height: 64px; max-height: 200px; resize: vertical; border: 0; outline: 0; background: transparent; padding: 12px 14px 4px; font: inherit; font-size: 14px; line-height: 1.55; }
 .composer .cbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 8px 8px 14px; }
-.composer .cbar .meta { min-width: 0; }
+.composer .cbar .acts { display: flex; align-items: center; gap: 8px; flex: none; }
+.composer .chip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; height: 24px; line-height: 24px; padding: 0 8px; border-radius: 6px; background: var(--a-subtle); border: 1px solid var(--a-line); font-size: 12px; color: var(--a-text-2); }
+.composer .cwarn { padding: 8px 14px 0; font-size: 12px; color: var(--a-text-2); }
+.pane .confirm { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin: 8px 16px 0; padding: 10px 12px; border: 1px solid var(--a-line-2); border-radius: var(--a-radius); font-size: 13px; animation: sheet-in 180ms var(--ease-out); }
+.pane .confirm .acts { display: flex; gap: 8px; }
+.pane .narrow-only { display: none; }
+/* a narrow thread keeps one pill in its header; the hand-back or take-over moves down beside Send */
+@container (max-width: 560px) {
+  .pane-head { flex-wrap: nowrap; padding-top: 8px; padding-bottom: 8px; }
+  .pane-head .who { flex: 1; }
+  .pane .wide-only { display: none; }
+  .pane .narrow-only { display: contents; }
+  .composer .cbar { flex-wrap: wrap; }
+  .composer .chip { flex: 1 1 100%; max-width: max-content; }
+  .composer .cbar .acts { margin-left: auto; }
+}
 .composer kbd { font-family: var(--mono); font-size: 11px; padding: 1px 5px; border-radius: 4px; border: 1px solid var(--a-line); background: var(--a-subtle); color: var(--a-text-2); }
 .pane-empty { flex: 1; display: grid; place-items: center; color: var(--a-text-2); font-size: 13px; }
 .sim { border: 1px solid var(--a-line); border-radius: var(--a-radius); }
@@ -346,13 +363,17 @@
   .nav-links a.on { background: var(--a-muted); box-shadow: none; }
   .nav-foot { margin-top: 6px; padding: 10px 4px 2px; }
   .admin-main { padding-top: 20px; }
+}
+/* the inbox keeps list and thread side by side down to 700px, then drills in; the thread header keeps only its pill */
+@media (max-width: 700px) {
   .inbox { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 0; }
   .inbox-list { border-right: 0; }
-  .inbox-list ul { overflow: visible; }
+  .inbox-list .il-body { overflow: visible; }
   .inbox.has-sel .inbox-list { display: none; }
   .inbox:not(.has-sel) .pane { display: none; }
   .pane .back { display: inline-flex; }
   .pane-body { overflow: visible; padding: 16px 14px 8px; }
+  .pane .confirm { margin: 8px 10px 0; }
   .composer { margin: 8px 10px 10px; position: sticky; bottom: 10px; }
 }
 /* forms open from a button in their section head, as a drawer above the list they feed */
@@ -444,6 +465,6 @@ li:last-child > .list-row { border-bottom: 0; }
 @media (prefers-reduced-motion: reduce) {
   .admin-nav.open .nav-links { animation: none; }
   .admin .btn:active:not(:disabled), .admin .seg button:active { transform: none; }
-  .turn, .admin .drawer, .save-bar { animation: none; }
+  .turn, .admin .drawer, .save-bar, .pane .confirm { animation: none; }
   .chart-card .draw { animation: none; stroke-dashoffset: 0; }
 }
