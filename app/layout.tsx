@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { Big_Shoulders, Instrument_Sans, Josefin_Sans } from "next/font/google";
 import { AppProvider } from "@/components/AppProvider";
 import "./tokens.css";
@@ -20,6 +21,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en-AU" className={`${display.variable} ${label.variable} ${body.variable}`}>
       <body>
         <AppProvider>{children}</AppProvider>
+        {/* Vercel Web Analytics: injects /_vercel/insights/script.js on Vercel deploys; no-op in dev. Admin routes nest under this layout, so they are covered too. */}
+        <Analytics />
       </body>
     </html>
   );
