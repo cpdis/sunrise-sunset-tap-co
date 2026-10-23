@@ -39,6 +39,9 @@ Vercel every request shares one window.
 - Sign in: on `/login`, pick an owner, open the sign-in link in `/outbox`, then press "Sign in" on the page it
   opens (`/login/confirm`). Opening the link alone changes nothing. "Switch owner" in the admin signs that owner out
   on every device.
+- Codes in stored messages show as "YES ••••": nonces, one-time codes and cancel codes are masked before they are
+  saved, so `/api/state` and the admin inbox never hold a live one. The SMS widget shows them as the phone got them,
+  for the browser tab. A signed-in owner can text only from their own number there.
 - Every SMS and email the business would send is in `/admin/outbox`. Run the daily jobs with "Run daily jobs now" in
   Settings, or `curl -H "Authorization: Bearer dev-only-cron-secret" http://localhost:3000/api/jobs`.
 - Send a signed inbound text by hand: sign the form fields with the dev secret `dev-only-twilio-auth-token` (see
@@ -60,9 +63,10 @@ Vercel every request shares one window.
 | `/admin/inbox` | All channels. Simulate an inbound email, call or web form; take over from the agent; hand back. |
 | `/admin/outbox` | Every simulated SMS and email: owner notices for hand-overs, owners' replies to customers, alerts. |
 | `/admin/payouts` | Quarterly distribution. Approve as one owner, "Switch owner", approve as a second, then pay (mock bank transfer). |
+| `/admin/owners` | Shareholders. A share transfer waits above the page until a second director approves it. |
 | `/admin/money` | 12-month revenue vs costs, quarterly P&L, GST threshold watch, ledger, add expense. |
 | `/admin/knowledge` | Edit what the agent knows and test it against the draft. |
-| `/admin/settings` | Prices and rules. Changes flow to the site, checkout and agent immediately. "Reset demo data" regenerates the year; "Run daily jobs now" runs the scheduled jobs. "Demo scenario" switches between bear, base and bull seeds; every KPI is labelled illustrative. |
+| `/admin/settings` | Prices and rules. Changes flow to the site, checkout and agent immediately. The payout approvals, refund limit and SMS expense cap are directors' to change, and fewer payout approvals waits for a second director. "Reset demo data" regenerates the year; "Run daily jobs now" runs the scheduled jobs. "Demo scenario" switches between bear, base and bull seeds; every KPI is labelled illustrative. |
 
 ## How it works
 
@@ -88,14 +92,16 @@ Vercel every request shares one window.
   multi-day and sponsor requests, date changes, dates inside 7 days' notice and anything it can't pin down after two
   re-asks go to an owner. A hand-over flags the conversation in the inbox and puts one notice for the owners in the
   outbox (who, why and a link to the conversation), so replies say an owner has been notified but promise no time or
-  call. Both engines cancel only after a quote and a clear YES to it, hold one unpaid date per
-  contact, and treat someone else's SST- reference like an unknown one. After a hand-over it keeps answering FAQs but
+  call. Both engines cancel only after a quote and a clear YES to it, and treat someone else's SST- reference like an
+  unknown one. One phone or email holds one unpaid date, from the agent or `/book`, and a lapsed hold can't be paid. After a hand-over it keeps answering FAQs but
   won't hold or cancel until handed back.
 - **Owner agent**: a text from an owner's own number gets the owner agent (`lib/agent/owner-*.ts`). Caller ID can be
   spoofed, so only reads run at once. Every change is staged in the approvals table and runs only on a reply of YES
   with the 4-digit code in the confirmation text. Money, settings, knowledge lines and draft sends also need the
   6-digit code at the top of that owner's admin pages (`lib/server/approvals.ts`). A YES runs the exact change it
-  confirmed, once, within 10 minutes; if the change has moved on, the agent asks again.
+  confirmed, once, within 10 minutes; if the change has moved on, the agent asks again. Three wrong one-time codes
+  close the change, and five wrong codes from one number in a day pause its changes by text until midnight, with one
+  alert to the owners. A new change while one waits says which one it replaces. Reads give customers' numbers masked.
 
 ## Scheduled jobs and the outbox
 

@@ -129,6 +129,10 @@ export const ADMIN_ONLY_SETTINGS: (keyof Settings)[] = [
   "smsExpenseCap",
 ];
 
+// Settings that bound what one owner can do alone (B5, SS-09). Only a director changes them, and lowering the
+// approvals a payout needs also takes a second director (lib/ops.ts requestChange).
+export const GUARDRAIL_SETTINGS: (keyof Settings)[] = ["approvalsRequired", "refundLimit", "smsExpenseCap"];
+
 // Approximate one-way drive time from the Perth CBD at weekend traffic.
 // Anything not listed is assumed to be outside the service area.
 export const SUBURBS: { name: string; minutes: number; km: number }[] = [

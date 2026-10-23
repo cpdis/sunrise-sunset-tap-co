@@ -138,6 +138,20 @@ export function sameContact(a?: string, b?: string): boolean {
   return n(a) !== "" && n(a) === n(b);
 }
 
+// An Australian number as the data writes it: "+61412345678" becomes "0412 345 678". Anything else is trimmed.
+export function localNumber(x: string) {
+  const m = /^(?:\+61|0)(\d{9})$/.exec(x.replace(/[\s()-]/g, ""));
+  if (!m) return x.trim();
+  const d = m[1];
+  return d.startsWith("4") ? `0${d.slice(0, 3)} ${d.slice(3, 6)} ${d.slice(6)}` : `0${d[0]} ${d.slice(1, 5)} ${d.slice(5)}`;
+}
+
+// A phone or email as every route stores it (B9): an email trimmed and lower-cased, a number in local form. The same
+// person then has one contact however they wrote it, so a conversation an owner took over stays theirs.
+export function normalContact(x: string) {
+  return x.includes("@") ? x.trim().toLowerCase() : localNumber(x);
+}
+
 // JSON with sorted keys and no undefined values, so equal values give equal text however they were built or stored.
 export const canon = (x: unknown) =>
   JSON.stringify(x, (_k, v) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : 1))) : v));

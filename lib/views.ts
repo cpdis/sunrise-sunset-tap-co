@@ -5,7 +5,7 @@ import type { OwnerSnapshot } from "./agent/owner-tools";
 import type { Snapshot } from "./agent/tools";
 import { balance, cancelNeedsOwner, cashAt, freeCash, paidSoFar, periodTotals, reserveTarget } from "./domain";
 import type { ApprovalCode, Booking, Conversation, Data, KbPage, Settings, Slot } from "./types";
-import { addDays, safeEqual, sameContact, todayISO } from "./util";
+import { addDays, normalContact, safeEqual, sameContact, todayISO } from "./util";
 
 // What anyone may see: prices, the knowledge base and which days are taken. No booking ids, refs or customers.
 export interface PublicView {
@@ -27,7 +27,7 @@ export function publicView(d: Data, now = new Date()): PublicView {
 // What a customer's booking link shows: their own booking, without the owners' notes or who runs the truck.
 export interface BookingView {
   booking: Booking;
-  // Where the receipt went.
+  // Where the receipt goes: only an email given with this booking, never the customer record's (AUTH-06).
   receiptTo?: string;
   // Paid so far, less refunds.
   paid: number;
@@ -45,7 +45,7 @@ export function bookingView(d: Data, b: Booking, now = new Date()): BookingView 
   const reason = cancelNeedsOwner(d.settings, b, now);
   return {
     booking: { ...b, notes: undefined, condition: undefined, deliver: { done: b.deliver.done }, collect: { done: b.collect.done } },
-    receiptTo: b.receiptEmail || d.customers.find((c) => c.id === b.customerId)?.email || undefined,
+    receiptTo: b.receiptEmail || undefined,
     paid: paidSoFar(d, b.id),
     ownerAsked: !!reason && d.conversations.some((c) => c.customerId === b.customerId && c.escalated === reason),
   };
@@ -109,7 +109,8 @@ export function ownerSnapshot(d: Data, now = new Date()): OwnerSnapshot {
 // The whole answer to a state read. Each part is present only when the caller may see it.
 export interface StateView {
   pub: PublicView;
-  // A signed-in owner: the whole document, and the one-time codes for the changes they texted (KTD6).
+  // A signed-in owner: the whole document, and the one-time codes for the changes they texted (KTD6). Live codes stay
+  // out of the document (B2): stored messages mask them, and a cancel quote's code is left off its conversation.
   owner?: { id: string; data: Data; codes: ApprovalCode[] };
   // A customer's booking link.
   booking?: BookingView;
@@ -127,13 +128,16 @@ export interface StateQuery {
   demo?: boolean;
 }
 
+// The document as an owner reads it, without the code each customer's cancel quote waits for.
+const ownerData = (d: Data): Data => ({ ...d, conversations: d.conversations.map((c) => (c.state.code ? { ...c, state: { ...c.state, code: undefined } } : c)) });
+
 export function stateFor(d: Data, q: StateQuery, now = new Date()): StateView {
   const owner = d.owners.find((o) => o.id === q.ownerId);
   const b = q.booking ? bookingByToken(d, q.booking, q.token) : undefined;
-  const c = q.chat ? d.conversations.find((x) => x.channel === "sms" && x.contact === q.chat) : undefined;
+  const c = q.chat ? d.conversations.find((x) => x.channel === "sms" && sameContact(x.contact, normalContact(q.chat!))) : undefined;
   return {
     pub: publicView(d, now),
-    ...(owner && { owner: { id: owner.id, data: d, codes: [] } }),
+    ...(owner && { owner: { id: owner.id, data: ownerData(d), codes: [] } }),
     ...(b && { booking: bookingView(d, b, now) }),
     // A phone number is no secret, so a conversation goes only to a signed-in owner, or to the demo's widget, whose
     // simulator lets anyone text as any customer number anyway. An owner's own number reaches the owner agent, so

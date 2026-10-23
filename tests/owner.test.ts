@@ -200,7 +200,8 @@ describe("money and settings also need the one-time code (KTD6)", () => {
     s.say("$42 CO2 refill");
     const r = s.say("yes {nonce} 000000");
     // A one-in-a-million chance that 000000 is the code; the ids are random, so this would not repeat.
-    expect(r.reply).toMatch(/^That isn't the code on your admin page, so nothing has changed\. Reply YES \d{4} and the code to try again\.$/);
+    expect(r.reply).toMatch(/^That isn't the code on your admin page, so nothing has changed\. Reply YES \d{4} and the code to try again \(2 tries left\)\.$/);
+    expect(r.approval?.miss).toEqual({ id: s.pending!.id, kind: "code" });
     expect(cashAt(d)).toBe(cash0);
     expect(s.say("yes {nonce} {code}").reply).toMatch(/^Done\. I added/);
     expect(cashAt(d) - cash0).toBe(-42);
@@ -567,7 +568,7 @@ describe("owner Claude path", () => {
     claude.replies.push(toolUse("add_expense", expense), says("ok"));
     const first = await runOwnerClaude(ctxFor(d), said("$42 CO2 refill"));
     const staged = first.approval!.staged!;
-    const ctx = { ...ctxFor(d), pending: { ...staged, code: "123456", expired: false } };
+    const ctx = { ...ctxFor(d), pending: { ...staged, code: "123456", expired: false, codeMisses: 0 } };
     const r = await runOwnerClaude(ctx, said(`yes ${staged.nonce} 123456`));
     expect(claude.replies).toHaveLength(0);
     expect(r.reply).toMatch(/^Done\. I added a \$42 CO2 expense/);

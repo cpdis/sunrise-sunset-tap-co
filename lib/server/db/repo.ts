@@ -35,8 +35,8 @@ export type MutateResult<T> =
 
 export type OnceResult<T> =
   | { ok: true; replay: false; value: T }
-  // The key was used before: the first run's stored result, and the command that ran it.
-  | { ok: true; replay: true; value: unknown; command: string }
+  // The key was used before: the first run's stored result, and the request digest it was stored under.
+  | { ok: true; replay: true; value: unknown; request: string }
   | { ok: false; reason: "conflict" | "not_found" };
 
 export type OutboxMessage = Pick<typeof outbox.$inferSelect, "channel" | "to" | "subject" | "body">;
@@ -49,6 +49,9 @@ export interface ApprovalWrites {
   // A staged approval to consume. If another write got to it first, the whole write runs again on fresh data.
   consume?: string;
   close?: { id: string; status: "cancelled" | "invalidated" | "expired" }[];
+  // A wrong one-time code for a staged approval: counted on the row, which closes when the count reaches `tries` (B1).
+  // One statement, so concurrent wrong codes can't both slip under the limit.
+  codeMiss?: { id: string; tries: number };
   // A new staged approval. It replaces any other still staged in the conversation.
   add?: NewApprovalRow;
 }
@@ -125,23 +128,24 @@ export function createRepo(db: Db, opts: RepoOptions = {}) {
   }
 
   // Like mutate, but runs at most once per tenant and key (a command's idempotency key). The result is stored in the
-  // same transaction as the save, so a retry with the key gets the first run's result back and changes nothing.
-  // A document fn leaves unchanged is not saved. Keys older than a day are pruned, except inbound message ids (prune).
-  async function mutateOnce<T>(tenantId: string, key: string, command: string, fn: (d: Data) => T): Promise<OnceResult<T>> {
+  // same transaction as the save, with `request`, the caller's digest of what was asked, so a retry with the key gets
+  // the first run's result and digest back and changes nothing. A document fn leaves unchanged is not saved. Keys older
+  // than a day are pruned, except inbound message ids (prune).
+  async function mutateOnce<T>(tenantId: string, key: string, command: string, request: string, fn: (d: Data) => T): Promise<OnceResult<T>> {
     const byKey = and(eq(idempotencyKeys.tenantId, tenantId), eq(idempotencyKeys.key, key));
     for (let attempt = 1; attempt <= MUTATE_ATTEMPTS; attempt++) {
       try {
         return await db.transaction(async (tx): Promise<OnceResult<T>> => {
           const cur = await load(tenantId, tx);
           if (!cur) return { ok: false, reason: "not_found" };
-          const [prior] = await tx.select({ command: idempotencyKeys.command, result: idempotencyKeys.result }).from(idempotencyKeys).where(byKey);
-          if (prior) return { ok: true, replay: true, value: prior.result, command: prior.command };
+          const [prior] = await tx.select({ request: idempotencyKeys.request, result: idempotencyKeys.result }).from(idempotencyKeys).where(byKey);
+          if (prior) return { ok: true, replay: true, value: prior.result, request: prior.request };
           const before = JSON.stringify(cur.data);
           const value = fn(cur.data);
           if (value instanceof Promise) throw new Error("repo.mutateOnce needs a synchronous function (KTD10).");
           if (JSON.stringify(cur.data) !== before && (await save(tenantId, cur.version, cur.data, tx)) === null) throw LOST_RACE;
           // A concurrent run with the same key that committed first wins, and the retry returns its result.
-          const kept = await tx.insert(idempotencyKeys).values({ tenantId, key, command, result: value ?? {} }).onConflictDoNothing().returning({ key: idempotencyKeys.key });
+          const kept = await tx.insert(idempotencyKeys).values({ tenantId, key, command, request, result: value ?? {} }).onConflictDoNothing().returning({ key: idempotencyKeys.key });
           if (kept.length === 0) throw LOST_RACE;
           await tx
             .delete(idempotencyKeys)
@@ -198,6 +202,13 @@ export function createRepo(db: Db, opts: RepoOptions = {}) {
             if (used.length === 0) throw LOST_RACE;
           }
           for (const c of w.close ?? []) await tx.update(approvals).set({ status: c.status }).where(staged(c.id));
+          if (w.codeMiss) {
+            const misses = sql`${approvals.codeMisses} + 1`;
+            await tx
+              .update(approvals)
+              .set({ codeMisses: misses, status: sql`case when ${misses} >= ${w.codeMiss.tries} then 'cancelled' else ${approvals.status} end` })
+              .where(staged(w.codeMiss.id));
+          }
           if (w.add) {
             await tx
               .update(approvals)

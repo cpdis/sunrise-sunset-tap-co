@@ -119,10 +119,11 @@ describe("repo reads filter on the business id (R16)", () => {
     expect(await repo.stagedApprovals(NOBODY, "conv_1")).toEqual([]);
     expect(await repo.ownerApprovals(NOBODY, "own_colin")).toEqual([]);
 
-    // And cannot consume the demo business's approval or reuse its key.
+    // And cannot consume the demo business's approval, count a wrong code on it, or reuse its key.
     expect(await repo.mutateApprovals(NOBODY, "conv_1", () => ({ value: undefined, writes: { consume: "apr_1" } }))).toEqual({ ok: false, reason: "not_found" });
-    expect(await repo.mutateOnce(NOBODY, "link:abc", "sign_in", () => undefined)).toEqual({ ok: false, reason: "not_found" });
-    expect(await repo.stagedApprovals(DEMO_TENANT, "conv_1")).toHaveLength(1);
+    expect(await repo.mutateApprovals(NOBODY, "conv_1", () => ({ value: undefined, writes: { codeMiss: { id: "apr_1", tries: 1 } } }))).toEqual({ ok: false, reason: "not_found" });
+    expect(await repo.mutateOnce(NOBODY, "link:abc", "sign_in", "", () => undefined)).toEqual({ ok: false, reason: "not_found" });
+    expect(await repo.stagedApprovals(DEMO_TENANT, "conv_1")).toMatchObject([{ id: "apr_1", codeMisses: 0 }]);
 
     // Nor prune its outbox or inbound message ids, however late the clock.
     expect(await repo.claimKey(DEMO_TENANT, "inbound:sms:SM1", "inbound_sms")).toBe(true);

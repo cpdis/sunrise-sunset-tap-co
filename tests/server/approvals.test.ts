@@ -43,7 +43,8 @@ const lastReply = (d: Data, convId: string) => d.conversations.find((c) => c.id 
 // One text to the business line and the agent's answer, as the inbound route runs it.
 async function say(repo: Repo, contact: string, body: string, opts: { channel?: "sms" | "email"; now?: Date } = {}) {
   const out = await agentTurn(repo, { tenant: DEMO_TENANT, now: opts.now ?? NOW }, { channel: opts.channel ?? "sms", contact, body }, { origin: BASE });
-  return { id: out.conversation.id, reply: out.conversation.messages.at(-1)!.body };
+  // The reply as the handset gets it; the stored copy masks its codes (B2).
+  return { id: out.conversation.id, reply: out.reply?.body ?? "" };
 }
 
 // The conversation's one staged approval, with the code the owner's admin page shows for it.
@@ -273,7 +274,7 @@ describe("the one-time code on the admin page (KTD6)", () => {
     const q = await say(repo, ownerOf(await doc(repo), COLIN).phone, "$42 CO2 refill");
     const [row] = await repo.stagedApprovals(DEMO_TENANT, q.id);
     const code = approvalCode(DEMO_TENANT, row.id);
-    expect(Object.keys(row).sort()).toEqual(["args", "binding", "consumedAt", "conversationId", "createdAt", "expiresAt", "id", "needsCode", "nonce", "ownerId", "policyVersion", "status", "summary", "tenantId", "tool"]);
+    expect(Object.keys(row).sort()).toEqual(["args", "binding", "codeMisses", "consumedAt", "conversationId", "createdAt", "expiresAt", "id", "needsCode", "nonce", "ownerId", "policyVersion", "status", "summary", "tenantId", "tool"]);
     for (const v of Object.values(row)) expect(String(v)).not.toBe(code);
     // Each approval gets its own code from its random id, under the server's secret.
     expect(approvalCode(DEMO_TENANT, row.id, { NODE_ENV: "test", APPROVAL_SECRET: "another secret" })).not.toBe(code);

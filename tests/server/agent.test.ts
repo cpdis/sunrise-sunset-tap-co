@@ -81,13 +81,15 @@ describe("a customer's cancel needs the code from the quote (KTD11)", () => {
   test("'cancel SST-1052' then a bare 'yes' cancels nothing; 'yes' with the quoted code cancels it", async () => {
     const repo = await setup();
     const q = await say(repo, PHONE, "cancel SST-1052");
-    const code = codeIn(q.conversation.messages.at(-1)!.body);
-    expect(q.conversation.messages.at(-1)!.body).toMatch(/full refund of \$250\. Reply YES \d{4} to cancel\./);
+    const code = codeIn(q.reply!.body);
+    expect(q.reply!.body).toMatch(/full refund of \$250\. Reply YES \d{4} to cancel\./);
 
-    await say(repo, PHONE, "yes");
+    const ask = await say(repo, PHONE, "yes");
     let d = await doc(repo);
     expect(sst1052(d).state).toBe("confirmed");
-    expect(lastReply(d, PHONE).body).toBe(`To go ahead with SST-1052, reply YES ${code}. The code shows it's really you.`);
+    expect(ask.reply!.body).toBe(`To go ahead with SST-1052, reply YES ${code}. The code shows it's really you.`);
+    // The stored copy masks the live code (B2).
+    expect(lastReply(d, PHONE).body).toBe("To go ahead with SST-1052, reply YES ••••. The code shows it's really you.");
 
     await say(repo, PHONE, `YES ${code}`);
     d = await doc(repo);
@@ -116,19 +118,19 @@ describe("takeover (AGENTS.md: never book or cancel after an owner takes over)",
   test("a YES that arrives after an owner took over applies nothing, and the agent stays quiet", async () => {
     const repo = await setup();
     const q = await say(repo, PHONE, "cancel SST-1052");
-    const code = codeIn(q.conversation.messages.at(-1)!.body);
+    const code = codeIn(q.reply!.body);
     await command(repo, owner(), "setAgentActive", { convId: q.conversation.id, active: false });
     const r = await say(repo, PHONE, `YES ${code}`);
     expect(r.engine).toBeUndefined();
     const d = await doc(repo);
     expect(sst1052(d).state).toBe("confirmed");
-    expect(lastReply(d, PHONE)).toMatchObject({ from: "customer", body: `YES ${code}` });
+    expect(lastReply(d, PHONE)).toMatchObject({ from: "customer", body: "YES ••••" });
   });
 
   test("an owner taking over while the model thinks drops the whole answer", async () => {
     const repo = await setup();
     const q = await say(repo, PHONE, "cancel SST-1052");
-    const code = codeIn(q.conversation.messages.at(-1)!.body);
+    const code = codeIn(q.reply!.body);
     const m = scripted([toolUse("cancel_booking", { booking: "SST-1052", confirmed: true }), says("Done, SST-1052 is cancelled.")], async (call) => {
       if (call === 1) await command(repo, owner(), "setAgentActive", { convId: q.conversation.id, active: false });
     });
@@ -145,7 +147,7 @@ describe("the apply checks again (KTD10)", () => {
   test("a late cancel after the balance was paid is refused over the refund limit", async () => {
     const repo = await setup();
     const q = await say(repo, PHONE, "cancel SST-1052");
-    const code = codeIn(q.conversation.messages.at(-1)!.body);
+    const code = codeIn(q.reply!.body);
     await command(repo, owner(), "chargeBalanceNow", { bookingId: sst1052(await doc(repo)).id });
     expect(sst1052(await doc(repo)).state).toBe("balance_paid");
     await say(repo, PHONE, `YES ${code}`);
@@ -158,7 +160,7 @@ describe("the apply checks again (KTD10)", () => {
   test("a balance paid while the model thinks: the apply refuses the cancel and the reply says so", async () => {
     const repo = await setup();
     const q = await say(repo, PHONE, "cancel SST-1052");
-    const code = codeIn(q.conversation.messages.at(-1)!.body);
+    const code = codeIn(q.reply!.body);
     const id = sst1052(await doc(repo)).id;
     const m = scripted([toolUse("cancel_booking", { booking: "SST-1052", confirmed: true }), says("Done, SST-1052 is cancelled.")], async (call) => {
       if (call === 1) await command(repo, owner(), "chargeBalanceNow", { bookingId: id });
@@ -174,7 +176,7 @@ describe("the apply checks again (KTD10)", () => {
     const repo = await setup();
     await command(repo, owner(), "updateSettings", { patch: { refundLimit: 5000 } });
     const q = await say(repo, PHONE, "cancel SST-1052");
-    const code = codeIn(q.conversation.messages.at(-1)!.body);
+    const code = codeIn(q.reply!.body);
     const id = sst1052(await doc(repo)).id;
     const m = scripted([toolUse("cancel_booking", { booking: "SST-1052", confirmed: true }), says("Done, SST-1052 is cancelled.")], async (call) => {
       if (call === 1) await command(repo, owner(), "chargeBalanceNow", { bookingId: id });

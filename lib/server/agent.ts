@@ -6,22 +6,24 @@
 // confirmed. A version conflict in that write runs the apply again, never the model.
 import Anthropic from "@anthropic-ai/sdk";
 import { runClaude } from "@/lib/agent/claude";
+import { maskAnswer, maskReply } from "@/lib/agent/confirm";
 import { runOwnerClaude } from "@/lib/agent/owner-claude";
 import { runOwnerRules } from "@/lib/agent/owner-rules";
 import type { OwnerCtx } from "@/lib/agent/owner-tools";
 import { runRules } from "@/lib/agent/rules";
 import type { ToolCtx } from "@/lib/agent/tools";
 import { findSuburb } from "@/lib/config";
-import { cancelBooking, cancelNeedsOwner, cancelPolicy, createHold, holdExpired } from "@/lib/domain";
+import { cancelBooking, cancelNeedsOwner, cancelPolicy, createHold } from "@/lib/domain";
 import * as ops from "@/lib/ops";
 import type { AgentAction, AgentResult, AgentState, Conversation, Data, KbPage, Msg, PendingApproval } from "@/lib/types";
 import { canon, sameContact, uid } from "@/lib/util";
 import { type ChatView, chatView, ownerByContact, ownerHolds, ownerSnapshot, snapshot } from "@/lib/views";
-import { pendingApproval, settleApprovals } from "./approvals";
+import { closingWrites, pendingApproval, settleApprovals } from "./approvals";
 import { CommandError, type Raw, bad, isObj, maybeText, oneOf, text } from "./args";
 import { sessionOwner } from "./auth";
 import type { Caller } from "./commands";
 import type { ApprovalRow, ApprovalWrites, Repo } from "./db/repo";
+import { guessesSpent, wrongGuess } from "./limits";
 
 // What the model reads, bounded by the stored data rather than by the request: the last HISTORY messages, each cut
 // to MESSAGE_CHARS, and the knowledge base cut to KB_CHARS in all.
@@ -52,16 +54,26 @@ export interface TurnOptions {
   onTokens?: (tokens: number) => Promise<void>;
 }
 
+// One message of the turn as the sender's handset has it. The stored copy masks the codes in it (B2), so this is the
+// only place a reply's nonce or cancel code appears: the provider texts it to the handset.
+type Handset = Pick<Msg, "id" | "body">;
+
 export interface TurnOutput {
   conversation: ChatView;
   // Which engine answered, or undefined when the agent did not answer (an owner has the conversation).
   engine?: AgentResult["engine"];
+  // The message as the sender wrote it, and the agent's reply as it goes to them, when the agent answered.
+  sent: Handset;
+  reply?: Handset;
 }
 
 // ---------- 1. the message goes in ----------
 
+// The stored copy of an answer to "Reply YES 4821" masks its codes (maskAnswer, B2); the turn reads the message as
+// sent. A sender's conversation is found however their contact is written (B9), so a capital letter in an email can't
+// open a second thread beside one an owner took over (F03).
 function receive(d: Data, input: TurnInput, now: Date) {
-  let c = d.conversations.find((x) => x.contact === input.contact && x.channel === input.channel);
+  let c = d.conversations.find((x) => sameContact(x.contact, input.contact) && x.channel === input.channel);
   if (!c) {
     // An owner's own number gets the owner agent. Caller ID proves nothing, so its changes wait for a YES with the
     // nonce sent to that number, and the risky ones also for the code on the owner's admin page (KTD6).
@@ -69,9 +81,10 @@ function receive(d: Data, input: TurnInput, now: Date) {
     c = { id: uid("conv"), channel: input.channel, contact: input.contact, name: owner?.name ?? input.name ?? "New contact", ...(owner && { ownerId: owner.id }), agentActive: true, unread: !owner, state: {}, messages: [] };
     d.conversations.unshift(c);
   }
-  c.messages.push({ id: uid("m"), from: "customer", body: input.body, at: now.toISOString() });
+  const m: Msg = { id: uid("m"), from: "customer", body: maskAnswer(input.body), at: now.toISOString() };
+  c.messages.push(m);
   c.unread = !c.ownerId;
-  return c.id;
+  return { convId: c.id, msgId: m.id };
 }
 
 // ---------- 2. the turn, outside any write ----------
@@ -95,24 +108,34 @@ const mark = (c: Conversation) => canon([c.messages.at(-1)?.id, c.agentActive, c
 interface Turn {
   convId: string;
   mark: string;
+  // The live codes the turn read (a staged nonce, a cancel quote's code), for maskReply.
+  codes: (string | undefined)[];
   run(client?: Anthropic, rulesOnly?: boolean): Promise<AgentResult>;
 }
 
+interface PrepareOptions {
+  // An owner conversation's staged approval (lib/server/approvals.ts).
+  pending?: PendingApproval;
+  // The owner's number sent too many wrong codes today (B1).
+  locked?: boolean;
+  // The new message as sent, in place of its masked stored copy.
+  sent?: Handset;
+}
+
 // The agent for this conversation, on what the server stored. Undefined when the agent doesn't answer.
-// pending: an owner conversation's staged approval (lib/server/approvals.ts).
-function prepare(d: Data, c: Conversation, now: Date, origin: string, pending?: PendingApproval): Turn | undefined {
+function prepare(d: Data, c: Conversation, now: Date, origin: string, { pending, locked, sent }: PrepareOptions = {}): Turn | undefined {
   if (ownerHolds(c)) return undefined;
-  const history = c.messages.slice(-HISTORY).map((m) => ({ ...m, body: m.body.slice(0, MESSAGE_CHARS) }));
+  const history = c.messages.slice(-HISTORY).map((m) => ({ ...m, body: (m.id === sent?.id ? sent.body : m.body).slice(0, MESSAGE_CHARS) }));
   const last = history.at(-1)?.body ?? "";
   // Each engine gets a fresh state and context, so a Claude failure leaves nothing behind for the fallback.
   const state = () => structuredClone(c.state ?? {});
   const kb = boundKb(d.kb);
-  const base = { convId: c.id, mark: mark(c) };
+  const base = { convId: c.id, mark: mark(c), codes: [pending?.nonce, c.state?.code] };
   if (c.ownerId) {
     const owner = d.owners.find((o) => o.id === c.ownerId);
     if (!owner) return undefined;
     const data = { ...ownerSnapshot(d, now), kb };
-    const ctx = (): OwnerCtx => ({ data, owner, now, actions: [], used: [], pending });
+    const ctx = (): OwnerCtx => ({ data, owner, now, actions: [], used: [], pending, locked });
     return { ...base, run: (client, rulesOnly) => engine(client, rulesOnly, (cl) => runOwnerClaude(ctx(), history, cl), () => runOwnerRules(ctx(), last)) };
   }
   const data = { ...snapshot(d, c.contact), kb };
@@ -160,8 +183,7 @@ function hold(d: Data, c: Conversation, a: Extract<AgentAction, { type: "hold" }
   const n = Number(a.ref.slice(4));
   if (!findSuburb(a.suburb)) return refuse(`${a.suburb} is outside the service area`);
   if (d.bookings.some((b) => b.id === a.bookingId || b.ref === a.ref) || n > d.seq + 10) return refuse(`${a.ref} was just given to another booking`);
-  // One contact holds one unpaid date at a time (R13), whichever surface asked.
-  if (d.bookings.some((b) => b.state === "held" && !holdExpired(b, now) && sameAs(d, b.customerId, c.contact))) return refuse("this contact already holds an unpaid date");
+  // createHold refuses a second unpaid date for this contact (R13), whichever surface asked.
   const isEmail = c.contact.includes("@");
   let b;
   try {
@@ -209,16 +231,16 @@ function escalate(d: Data, c: Conversation, a: Extract<AgentAction, { type: "esc
 }
 
 // Applies a turn's result to the stored data, with the approval writes an owner's turn makes (staged: the
-// conversation's staged approvals as they are now). Synchronous and repeatable, as repo.mutateApprovals needs
-// (KTD10).
-function applyTurn(d: Data, t: Pick<Turn, "convId" | "mark">, r: AgentResult, now: Date, staged: ApprovalRow[]): { value: boolean; writes?: ApprovalWrites } {
+// conversation's staged approvals as they are now). Returns the reply as it goes to the handset, when it applied; the
+// stored copy masks its codes (B2). Synchronous and repeatable, as repo.mutateApprovals needs (KTD10).
+function applyTurn(d: Data, t: Pick<Turn, "convId" | "mark" | "codes">, r: AgentResult, now: Date, staged: ApprovalRow[]): { value: Handset | undefined; writes?: ApprovalWrites } {
   const c = d.conversations.find((x) => x.id === t.convId);
   const owner = c?.ownerId ? d.owners.find((o) => o.id === c.ownerId) : undefined;
   if (!c || mark(c) !== t.mark || (c.ownerId && !owner)) {
     // An owner took over, another message came in, or another turn answered first. This answer is out of date, so
-    // none of it applies; the message waits for the owners or the newer turn.
+    // none of it applies; the message waits for the owners or the newer turn. What it closed stays closed (F07).
     ops.log(d, `Agent reply to ${c?.name ?? "a conversation"} dropped: the conversation changed while the agent was answering`);
-    return { value: false };
+    return { value: undefined, writes: owner ? closingWrites(r.approval, staged) : undefined };
   }
   // The reply goes in first so a hand-over row reads after what the agent told the customer.
   const reply: Msg = { id: uid("m"), from: "agent", body: r.reply, at: now.toISOString(), tools: r.tools };
@@ -226,10 +248,16 @@ function applyTurn(d: Data, t: Pick<Turn, "convId" | "mark">, r: AgentResult, no
   // An owner's YES runs only if its approval still holds as this write sees the data (KTD4). If not, nothing of
   // the turn applies and the reply says what happened instead of "Done" (R4).
   const settled = owner ? settleApprovals(d, owner, r.approval, staged, now) : undefined;
+  // What the handset gets, and the stored copy without the turn's live codes.
+  const deliver = (): Handset => {
+    const delivered = { id: reply.id, body: reply.body };
+    reply.body = maskReply(reply.body, [...t.codes, r.approval?.staged?.nonce, r.state.code]);
+    return delivered;
+  };
   if (settled?.refused) {
     reply.body = settled.refused;
     c.state = structuredClone(r.state);
-    return { value: true, writes: settled.writes };
+    return { value: deliver(), writes: settled.writes };
   }
   for (const a of r.actions) {
     // After a hand-over the agent books and cancels nothing (its tools refuse too).
@@ -247,7 +275,7 @@ function applyTurn(d: Data, t: Pick<Turn, "convId" | "mark">, r: AgentResult, no
     }
   }
   c.state = structuredClone(r.state);
-  return { value: true, writes: settled?.writes };
+  return { value: deliver(), writes: settled?.writes };
 }
 
 // ---------- the turn ----------
@@ -269,16 +297,21 @@ export async function agentTurn(repo: Repo, caller: Pick<Caller, "tenant" | "now
   // The message is stored first, so it stays for the owners even if the agent fails.
   const got = await repo.mutate(caller.tenant, (d) => receive(d, input, now));
   if (!got.ok) mutateFailed(got);
-  const convId = got.value;
+  const { convId, msgId } = got.value;
+  const sent = { id: msgId, body: input.body };
   const c = find(got.data, convId);
-  const pending = c.ownerId ? await pendingApproval(repo, caller.tenant, convId, now) : undefined;
-  const turn = prepare(got.data, c, now, opts.origin, pending);
-  if (!turn) return { conversation: chatView(c) };
+  const owner = c.ownerId ? got.data.owners.find((o) => o.id === c.ownerId) : undefined;
+  const pending = owner ? await pendingApproval(repo, caller.tenant, convId, now) : undefined;
+  const locked = owner ? await guessesSpent(repo, caller.tenant, c.contact, now) : false;
+  const turn = prepare(got.data, c, now, opts.origin, { pending, locked, sent });
+  if (!turn) return { conversation: chatView(c), sent };
   const result = await turn.run(opts.client, opts.rulesOnly);
   if (result.tokens) await opts.onTokens?.(result.tokens);
+  // A wrong code counts against the number's day whether or not the rest of the turn applies (B1).
+  if (owner && result.approval?.miss) await wrongGuess(repo, caller.tenant, c.contact, owner.name, now);
   const put = await repo.mutateApprovals(caller.tenant, convId, (d, staged) => applyTurn(d, turn, result, now, staged));
   if (!put.ok) mutateFailed(put);
-  return { conversation: chatView(find(put.data, convId)), ...(put.value && { engine: result.engine }) };
+  return { conversation: chatView(find(put.data, convId)), sent, ...(put.value && { engine: result.engine, reply: put.value }) };
 }
 
 // The knowledge page's "test the agent against this draft": the customer agent answers a test conversation from

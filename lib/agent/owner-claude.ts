@@ -119,10 +119,10 @@ const TOOLS: Tool[] = [
 
 const s = (x: unknown) => (x == null ? undefined : String(x));
 
-// The tool-result fields that can carry customer text: names, escalation reasons that quote them, their last
-// message, the agent's drafts, and the summaries and refusals that name a conversation or quote a draft. The model
-// reads them only inside the untrusted marker (R18).
-const UNTRUSTED_FIELDS = new Set(["name", "why", "last", "draft", "who", "summary", "reason"]);
+// The tool-result fields that can carry customer text: names, phone numbers as they typed them (F14), escalation
+// reasons that quote them, their last message, the agent's drafts, and the summaries and refusals that name a
+// conversation or quote a draft. The model reads them only inside the untrusted marker (R18).
+const UNTRUSTED_FIELDS = new Set(["name", "phone", "why", "last", "draft", "who", "summary", "reason"]);
 
 function exec(ctx: OwnerCtx, name: string, i: Record<string, unknown>): unknown {
   switch (name) {

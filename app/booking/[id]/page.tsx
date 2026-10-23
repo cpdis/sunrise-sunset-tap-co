@@ -69,7 +69,7 @@ export default function BookingPage() {
             <div className="card night stack" style={{ gap: 8 }}>
               <span className="eyebrow">You&apos;re booked</span>
               <span className="display" style={{ fontSize: 48 }}>See you on {fmtDate(b.date, { dow: true })}.</span>
-              <span>Receipt and hire agreement sent to {view.receiptTo}.</span>
+              {view.receiptTo && <span>Receipt and hire agreement sent to {view.receiptTo}.</span>}
             </div>
           )}
           {b.state === "confirmed" && b.balanceFailedAt && (

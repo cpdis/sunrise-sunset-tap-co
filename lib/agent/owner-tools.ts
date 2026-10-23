@@ -1,6 +1,6 @@
 // Owner agent tools. An owner texting the business line can do over SMS what they do in the admin, but caller ID
 // proves nothing, so by stakes (KTD6):
-// - reads run at once: what's on, finding a booking, the inbox;
+// - reads run at once: what's on, finding a booking, the inbox. They give customers' contacts masked (SS-03);
 // - every change is staged and runs only when the owner replies YES with the 4-digit nonce in the confirmation,
 //   which goes to the owner's real handset (KTD11): claiming a run, the truck log, the calendar, replying to a
 //   customer and handing back;
@@ -51,10 +51,19 @@ export interface OwnerCtx {
   staged?: StagedApproval;
   // A second change this turn asked for, refused until the first is answered.
   deferred?: boolean;
+  // This number sent GUESSES_PER_DAY wrong codes today (lib/server/limits.ts, B1): nothing stages, and a YES to
+  // what was staged runs nothing.
+  locked?: boolean;
+  // A wrong nonce or one-time code in this message (resolvePending), for the server to count.
+  miss?: ApprovalChange["miss"];
 }
 
 // A staged change expires after this, and a YES then does nothing (KTD4).
 export const APPROVAL_MINUTES = 10;
+// Wrong one-time codes a staged change takes; the last one closes it (B1, SS-12).
+export const CODE_TRIES = 3;
+// The reply to a number whose changes by text are paused for the day (B1).
+export const PAUSED = "Changes by text from this number are paused until tomorrow, after too many wrong codes today. Reads still work, and so does the admin.";
 // Bumped when what a stage binds or what it needs changes. A staged row from another version asks again.
 const APPROVAL_POLICY = 1;
 // An ambiguity list: the owner's answer picks a conversation for the tool that asked (askWhich).
@@ -110,9 +119,11 @@ function newApproval(ctx: OwnerCtx, s: Pick<StagedApproval, "tool" | "args" | "s
   return { id: uid("apr"), ...s, policyVersion: APPROVAL_POLICY, expiresAt: new Date(ctx.now.getTime() + APPROVAL_MINUTES * 60_000).toISOString() };
 }
 
-// Stages a plan for YES with a fresh nonce. One per turn, so the owner confirms one thing at a time.
+// Stages a plan for YES with a fresh nonce. One per turn, so the owner confirms one thing at a time. A paused number
+// stages nothing.
 function stage(ctx: OwnerCtx, p: Plan | Refusal) {
   if (!p.ok) return p;
+  if (ctx.locked) return refuse(PAUSED);
   if (ctx.staged) {
     ctx.deferred = true;
     return refuse(`One change at a time: "${ctx.staged.summary}" is waiting for the owner's YES first.`);
@@ -127,13 +138,23 @@ function stagedText(s: StagedApproval) {
   return `To confirm: ${s.summary}. Reply YES ${s.nonce}${s.needsCode ? " and the 6-digit code from your admin page" : ""} to go ahead.`;
 }
 
-// A turn's reply: when it staged a change, the confirmation, whatever else the engine wrote.
-export function finish(ctx: OwnerCtx, reply: string) {
-  if (!ctx.staged) return reply;
-  return `${stagedText(ctx.staged)}${ctx.deferred ? " One change at a time, so send the other one after this." : ""}`;
+// The change this message dropped while it waited for a YES: any message that isn't an answer drops it.
+function replaced(ctx: OwnerCtx) {
+  const p = ctx.pending;
+  return p && p.tool !== PICK && !p.expired && ctx.settled?.id === p.id && ctx.settled.status === "cancelled" ? p : undefined;
 }
 
-export const approvalOf = (ctx: OwnerCtx): ApprovalChange | undefined => (ctx.settled || ctx.staged ? { settled: ctx.settled, staged: ctx.staged } : undefined);
+// A turn's reply: when it staged a change, the confirmation, whatever else the engine wrote. A confirmation that
+// replaces one still waiting says so and names it (SS-11), so a second "To confirm" from someone else stands out.
+export function finish(ctx: OwnerCtx, reply: string) {
+  if (!ctx.staged) return reply;
+  const was = replaced(ctx);
+  const note = was ? `This replaces the change that was waiting for your YES (${was.summary}), so that one won't happen. ` : "";
+  return `${note}${stagedText(ctx.staged)}${ctx.deferred ? " One change at a time, so send the other one after this." : ""}`;
+}
+
+export const approvalOf = (ctx: OwnerCtx): ApprovalChange | undefined =>
+  ctx.settled || ctx.staged || ctx.miss ? { settled: ctx.settled, staged: ctx.staged, miss: ctx.miss } : undefined;
 
 // ---------- read: run at once ----------
 
@@ -167,7 +188,8 @@ export function findBookings(ctx: OwnerCtx, q: { ref?: string; date?: string; su
       ref: b.ref,
       kind: b.kind,
       who: b.kind === "personal" ? `${ownerName(ctx, b.ownerId)} (own use)` : customerName(ctx, b.customerId),
-      phone: ctx.data.customers.find((c) => c.id === b.customerId)?.phone,
+      // Masked: a caller ID that only claims to be an owner learns no customer's number (SS-03).
+      phone: maskOf(ctx.data.customers.find((c) => c.id === b.customerId)?.phone),
       date: fmtDate(b.date, { dow: true, year: true }),
       block: b.block,
       start: b.startTime,
@@ -297,9 +319,12 @@ export function maskContact(contact: string) {
   return n.length < 7 ? `••• ${n.slice(-3)}` : `${n.slice(0, 4)} ••• ${n.slice(-3)}`;
 }
 
+const maskOf = (contact?: string) => (contact ? maskContact(contact) : undefined);
+
 // Lists the matches and stages the list as a pick (no nonce: a pick changes nothing by itself). The owner's next
 // text picks one by number or contact (resolvePick), which stages that tool's change for YES.
 function askWhich(ctx: OwnerCtx, tool: string, args: Record<string, unknown>, matches: OwnerInboxItem[]) {
+  if (ctx.locked) return refuse(PAUSED);
   const lines = matches.map((c, i) => `${i + 1}. ${c.name}, ${maskContact(c.contact)}`);
   const reason = `That matches ${matches.length} conversations:\n${lines.join("\n")}\nReply with the number or the end of the contact.`;
   if (ctx.staged) ctx.deferred = true;
@@ -534,7 +559,9 @@ export function replan(ctx: OwnerCtx, s: StagedApproval): { ok: true; same: bool
 // staged change is cancelled and the message is handled as a new one.
 // - A refusal cancels it. A YES quoting the wrong nonce ends it, so a spoofed caller ID gets one guess per stage.
 // - A YES without the nonce, or without the one-time code a change needs, keeps it and asks for them. A wrong
-//   one-time code applies nothing and keeps it too: expiry and the sender rate limit bound the guesses.
+//   one-time code applies nothing and keeps it, up to CODE_TRIES; the last wrong one closes it (B1).
+// - Each wrong nonce or code is a miss the server counts against the number's day (B1). A paused number's YES runs
+//   nothing and drops the change.
 // - The right YES plans the change again. The same plan runs; a changed one asks again; a refused one says why.
 export function resolvePending(ctx: OwnerCtx, text: string): string | undefined {
   const p = ctx.pending;
@@ -557,12 +584,21 @@ export function resolvePending(ctx: OwnerCtx, text: string): string | undefined 
   }
   if (a.answer === "no") return "No worries, I've left it.";
   if (!answers) return undefined;
-  if (a.code !== undefined && !safeEqual(a.code, p.nonce)) return "That code doesn't match, so I've dropped it and nothing has changed. Send it again if you still want it.";
+  if (ctx.locked) return PAUSED;
+  if (a.code !== undefined && !safeEqual(a.code, p.nonce)) {
+    ctx.miss = { id: p.id, kind: "nonce" };
+    return "That code doesn't match, so I've dropped it and nothing has changed. Send it again if you still want it.";
+  }
   const ask = `To go ahead, reply YES ${p.nonce}${p.needsCode ? " and the 6-digit code from your admin page." : ". The code shows it's really you."}`;
   if (a.code === undefined || a.answer !== "yes") return keep(ask);
   if (p.needsCode) {
     if (!a.oneTime) return keep(ask);
-    if (!p.code || !safeEqual(a.oneTime, p.code)) return keep(`That isn't the code on your admin page, so nothing has changed. Reply YES ${p.nonce} and the code to try again.`);
+    if (!p.code || !safeEqual(a.oneTime, p.code)) {
+      ctx.miss = { id: p.id, kind: "code" };
+      const left = CODE_TRIES - p.codeMisses - 1;
+      if (left <= 0) return `That's ${CODE_TRIES} wrong codes, so I've dropped it and nothing has changed. Send it again if you still want it.`;
+      return keep(`That isn't the code on your admin page, so nothing has changed. Reply YES ${p.nonce} and the code to try again (${left} ${left === 1 ? "try" : "tries"} left).`);
+    }
   }
   const r = replan(ctx, p);
   if (!r.ok) {

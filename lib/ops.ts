@@ -2,7 +2,7 @@
 // so an action means the same thing whichever way an owner takes it.
 import { ADMIN_ONLY_SETTINGS, settingProblem } from "./config";
 import { ACCOUNT_LABEL, cancelBooking, cancelNeedsOwner, ensureDistributions, pay, payDistribution, post, runJobs } from "./domain";
-import type { Account, AgentAction, Conversation, Data, KbPage, Outgoing, Settings, TruckLog } from "./types";
+import type { Account, AgentAction, Conversation, Data, DirectorRequest, KbPage, Outgoing, Settings, TruckLog } from "./types";
 import { money, todayISO, uid } from "./util";
 
 export function log(d: Data, text: string) {
@@ -70,6 +70,68 @@ export function returnedClean(d: Data, bookingId: string, ownerId: string, now =
   pay(d, b, "bond_release", b.bond, now.toISOString());
   b.bondStatus = "released";
   log(d, `${ownerName(d, ownerId)} checked ${b.ref} back clean; released the ${money(b.bond)} bond`);
+}
+
+// ---------- changes that wait for a second director (B5) ----------
+
+type Change = DirectorRequest["change"];
+
+// What a requested change would do, in the words the admin and the activity log use.
+export function describeChange(d: Pick<Data, "owners" | "settings">, c: Change) {
+  const name = (id: string) => d.owners.find((o) => o.id === id)?.name ?? "an owner";
+  return c.type === "approvals"
+    ? `lower the director approvals a payout needs from ${d.settings.approvalsRequired} to ${c.to}`
+    : `move ${c.shares} share${c.shares === 1 ? "" : "s"} from ${name(c.fromId)} to ${name(c.toId)}`;
+}
+
+// Why a change can't happen on the data as it is, or undefined when it can.
+function changeProblem(d: Data, c: Change): string | undefined {
+  if (c.type === "approvals") return settingProblem("approvalsRequired", c.to) && "That isn't a number of approvals the business can use.";
+  const from = d.owners.find((o) => o.id === c.fromId);
+  const to = d.owners.find((o) => o.id === c.toId);
+  if (!from || !to || from === to) return "A transfer needs two different owners.";
+  if (!Number.isInteger(c.shares) || from.shares < c.shares) return `${from.name} holds ${from.shares} share${from.shares === 1 ? "" : "s"}.`;
+}
+
+// One director asks for a change that a second, different director must approve (the payout approvals pattern): it
+// waits on the document until then. Throws a refusal for a change that couldn't happen. A new request for the
+// approvals replaces an older one. Returns the request's id.
+export function requestChange(d: Data, c: Change, by: string, now = new Date()) {
+  const why = changeProblem(d, c);
+  if (why) throw new Error(why);
+  const r: DirectorRequest = { id: uid("req"), change: c, by, at: now.toISOString() };
+  d.requests = [...(d.requests ?? []).filter((x) => !(c.type === "approvals" && x.change.type === "approvals")), r];
+  log(d, `${ownerName(d, by)} asked to ${describeChange(d, c)}; it waits for a second director`);
+  return r.id;
+}
+
+// A second director approves a request, and the change happens, checked again on the data as it is now. The
+// commands route makes sure the approver is a director and not the one who asked. Throws a refusal when the change
+// can no longer happen (the shares moved since, or the one who asked is no longer a director); the request then
+// stays for a director to decline.
+export function approveRequest(d: Data, id: string, by: string) {
+  const r = d.requests?.find((x) => x.id === id);
+  if (!r) return;
+  if (!d.owners.find((o) => o.id === r.by)?.isDirector) throw new Error(`${ownerName(d, r.by)} isn't a director now, so this needs asking again.`);
+  const why = changeProblem(d, r.change);
+  if (why) throw new Error(why);
+  const what = describeChange(d, r.change);
+  const c = r.change;
+  if (c.type === "approvals") d.settings = { ...d.settings, approvalsRequired: c.to };
+  else {
+    d.owners.find((o) => o.id === c.fromId)!.shares -= c.shares;
+    d.owners.find((o) => o.id === c.toId)!.shares += c.shares;
+  }
+  d.requests = d.requests!.filter((x) => x.id !== id);
+  log(d, `${ownerName(d, by)} approved ${ownerName(d, r.by)}'s request to ${what}`);
+}
+
+// Any director declines a request, or the one who asked withdraws it. Nothing changes.
+export function declineRequest(d: Data, id: string, by: string) {
+  const r = d.requests?.find((x) => x.id === id);
+  if (!r) return;
+  d.requests = d.requests!.filter((x) => x.id !== id);
+  log(d, `${ownerName(d, by)} declined ${by === r.by ? "their own" : `${ownerName(d, r.by)}'s`} request to ${describeChange(d, r.change)}`);
 }
 
 // Applies only the keys in range (SETTING_RANGES) and returns the ones it dropped, so no surface stores a bad value.

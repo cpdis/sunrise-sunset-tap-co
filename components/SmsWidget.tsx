@@ -23,14 +23,17 @@ function demoPhone() {
 }
 
 // A phone-shaped simulator for texting the business. Messages go through the same
-// agent and inbox the owners see in /admin/inbox. A signed-in owner can "Text as" an owner's number,
-// which gets the owner agent instead of the customer one.
+// agent and inbox the owners see in /admin/inbox. A signed-in owner can "Text as" their own number,
+// which gets the owner agent instead of the customer one; another owner's number is that owner's phone (F05).
+// It shows each text as the phone has it: the stored copies mask the codes in a confirmation (B2).
 export function SmsWidget({ as: initialAs = "customer" }: { as?: string }) {
   const data = useData();
   const pub = usePublic();
   const chat = useApp((s) => s.chat);
   const watchChat = useApp((s) => s.watchChat);
   const sendCustomer = useApp((s) => s.sendCustomer);
+  const me = useApp((s) => s.ownerId);
+  const handset = useApp((s) => s.handset);
   const [open, setOpen] = useState(false);
   const [customerPhone, setCustomerPhone] = useState("");
   const [as, setAs] = useState(initialAs);
@@ -102,7 +105,7 @@ export function SmsWidget({ as: initialAs = "customer" }: { as?: string }) {
                 From
                 <select value={as} onChange={(e) => setAs(e.target.value)} aria-label="Text as">
                   <option value="customer">{customerPhone} (customer)</option>
-                  {data?.owners.map((o) => <option key={o.id} value={o.id}>{o.name}, owner</option>)}
+                  {data?.owners.filter((o) => o.id === me).map((o) => <option key={o.id} value={o.id}>{o.name}, owner</option>)}
                 </select>
               </label>
             </div>
@@ -119,7 +122,7 @@ export function SmsWidget({ as: initialAs = "customer" }: { as?: string }) {
             {msgs.map((m) => (
               <div key={m.id} className={`bubble ${m.from === "customer" ? "me" : m.from === "owner" ? "owner" : m.from === "system" ? "sys" : "them"}`}>
                 {m.from === "owner" && <span className="label" style={{ fontSize: 10, display: "block" }}>{data?.owners.find((o) => o.id === m.ownerId)?.name ?? "Owner"}</span>}
-                <Linkify text={m.body} />
+                <Linkify text={handset[m.id] ?? m.body} />
               </div>
             ))}
             {busy && <div className="typing">typing…</div>}

@@ -103,6 +103,30 @@ export async function newNumberRefused(repo: Repo, tenant: string, ip: string, c
   return false;
 }
 
+// Wrong approval codes (a 4-digit nonce or a 6-digit one-time code) one owner's number may send in a Perth day. After
+// that its changes by text stop until midnight (B1): 9,000 nonces at one guess a stage would otherwise fall to a
+// spoofed caller ID in about 15 hours (SS-02).
+export const GUESSES_PER_DAY = 5;
+
+const guesses = (sender: string) => `guess:${contactKey(sender)}`;
+
+// True once this number has sent GUESSES_PER_DAY wrong codes today.
+export async function guessesSpent(repo: Repo, tenant: string, sender: string, now = new Date()) {
+  return (await repo.counted(tenant, guesses(sender), perthDay(now))) >= GUESSES_PER_DAY;
+}
+
+// Counts one wrong code from an owner's number. The one that reaches the limit writes a single alert to the owners'
+// inbox; the count is one atomic write, so two at once can't both send it. The alert names the owner, not the number.
+export async function wrongGuess(repo: Repo, tenant: string, sender: string, ownerName: string, now = new Date()) {
+  if ((await repo.bump(tenant, guesses(sender), perthDay(now))) !== GUESSES_PER_DAY) return;
+  await repo.writeOutbox(tenant, {
+    channel: "email",
+    to: BUSINESS.email,
+    subject: `${ownerName}'s number sent ${GUESSES_PER_DAY} wrong codes today`,
+    body: `Texts from ${ownerName}'s number quoted ${GUESSES_PER_DAY} wrong confirmation codes today, so changes by text from it are paused until midnight. Reads still work, and so does the admin. If ${ownerName} didn't send them, someone may be using their number: their thread is under Owner line in the admin inbox.`,
+  });
+}
+
 // Records the tokens one model call spent.
 export async function spend(repo: Repo, tenant: string, tokens: number, now = new Date()) {
   if (tokens > 0) await repo.bump(tenant, "tokens", perthDay(now), Math.round(tokens));

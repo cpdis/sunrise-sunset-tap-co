@@ -75,6 +75,7 @@ export function chat(d: Data, contact: string, lines: string[], opts: { handover
 // owner's admin page shows for it (KTD6), as the real owner would see them.
 export function ownerSession(d: Data, ownerId: string) {
   let pending: StagedApproval | undefined;
+  let codeMisses = 0;
   return {
     get pending() {
       return pending;
@@ -83,10 +84,11 @@ export function ownerSession(d: Data, ownerId: string) {
       const code = pending ? approvalCode(DEMO_TENANT, pending.id) : "";
       const text = line.replace("{nonce}", pending?.nonce ?? "").replace("{code}", code);
       const owner = d.owners.find((o) => o.id === ownerId)!;
-      const live = pending && { ...pending, code: pending.needsCode ? code : undefined, expired: Date.parse(pending.expiresAt) <= now.getTime() };
+      const live = pending && { ...pending, code: pending.needsCode ? code : undefined, expired: Date.parse(pending.expiresAt) <= now.getTime(), codeMisses };
       const r = runOwnerRules({ data: ownerSnapshot(d, now), owner, now, actions: [], used: [], pending: live }, text);
+      if (r.approval?.miss?.kind === "code") codeMisses++;
       if (r.approval?.settled) pending = undefined;
-      if (r.approval?.staged) pending = r.approval.staged;
+      if (r.approval?.staged) [pending, codeMisses] = [r.approval.staged, 0];
       for (const a of r.actions) {
         if (a.type === "cancel") cancelBooking(d, a.bookingId, now);
         else applyOwnerAction(d, a, ownerId);

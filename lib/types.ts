@@ -86,7 +86,8 @@ export interface Booking {
   guests?: number;
   notes?: string;
   agreementSigned: boolean;
-  // Where checkout sent the receipt. Kept on the booking: checkout never changes the customer's own contacts.
+  // Where the receipt goes: the email given with this booking, or the one checkout took. Kept on the booking, never
+  // read from the customer record, so a booking made with someone else's phone never shows their email (AUTH-06).
   receiptEmail?: string;
   // The secret in the customer's checkout and booking links. Random and separate from the id, so a booking id
   // alone (in a log, a screenshot, an owner's view) opens nothing. Paid bookings always have one.
@@ -214,10 +215,11 @@ export interface StagedApproval {
 }
 
 // The approval waiting when an owner's message comes in, as the server hands it to the owner agent: with its
-// one-time code when it needs one, and whether its time ran out.
+// one-time code when it needs one, whether its time ran out, and how many wrong codes it has had (B1).
 export interface PendingApproval extends StagedApproval {
   code?: string;
   expired: boolean;
+  codeMisses: number;
 }
 
 export type ApprovalStatus = "consumed" | "cancelled" | "invalidated" | "expired";
@@ -235,6 +237,19 @@ export interface ApprovalChange {
   // The approval the message answered and what becomes of it. Left out, it stays staged (asked again for its code).
   settled?: { id: string; status: ApprovalStatus };
   staged?: StagedApproval;
+  // The message quoted a wrong nonce or one-time code for this approval (B1). The server counts it against the
+  // sender's day, and a wrong one-time code against the approval's tries.
+  miss?: { id: string; kind: "nonce" | "code" };
+}
+
+// A change one director asked for in the admin that a second, different director must approve before it happens (B5):
+// lowering the approvals a payout needs, or moving shares between owners. Approving applies it; declining drops it.
+export interface DirectorRequest {
+  id: string;
+  change: { type: "approvals"; to: number } | { type: "shares"; fromId: string; toId: string; shares: number };
+  // The director who asked, and when.
+  by: string;
+  at: string;
 }
 
 export interface Conversation {
@@ -324,6 +339,8 @@ export interface Data {
   jobs: JobLog[];
   seq: number;
   scenario: Scenario;
+  // Changes waiting for a second director (B5). Absent is none.
+  requests?: DirectorRequest[];
   // What a change sends (lib/ops.ts send). Never stored: the repo turns these into outbox rows in the same
   // transaction as the save, and drops them from the document (lib/server/outbox.ts).
   outgoing?: Outgoing[];

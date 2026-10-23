@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { SmsWidget } from "@/components/SmsWidget";
 import { Loading, useData } from "@/components/ui";
+import { describeChange } from "@/lib/ops";
 import { SCENARIOS } from "@/lib/seed";
 import { useApp } from "@/lib/store";
 import { TZ } from "@/lib/util";
@@ -36,6 +37,38 @@ function Codes() {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// B5: changes one director asked for that wait for a second (a share transfer, fewer payout approvals). Every owner
+// sees them; another director approves or declines, and the one who asked can withdraw.
+function Requests() {
+  const data = useData();
+  const ownerId = useApp((s) => s.ownerId);
+  const approve = useApp((s) => s.approveRequest);
+  const decline = useApp((s) => s.declineRequest);
+  if (!data?.requests?.length) return null;
+  const director = !!data.owners.find((o) => o.id === ownerId)?.isDirector;
+  return (
+    <div className="requests" role="region" aria-label="Waiting for a second director">
+      {data.requests.map((r) => {
+        const mine = r.by === ownerId;
+        const by = mine ? "You" : (data.owners.find((o) => o.id === r.by)?.name ?? "A director");
+        return (
+          <div key={r.id} className="notice request-row">
+            <span>
+              <strong>{by}</strong> asked to {describeChange(data, r.change)}. It waits for {mine ? "another" : "a second"} director.
+            </span>
+            {director && (
+              <div className="row">
+                {!mine && <button type="button" className="btn small primary" onClick={() => approve(r.id)}>Approve</button>}
+                <button type="button" className="btn small" onClick={() => decline(r.id)}>{mine ? "Withdraw" : "Decline"}</button>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -126,6 +159,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </nav>
         <main className="admin-main">
           <Codes />
+          <Requests />
           {error && (
             <div className="notice admin-error" role="alert">
               <span>{error}</span>

@@ -3,14 +3,15 @@
 // browser store used to run, inside repo.mutateOnce: one compare-and-swap save per command, at most once per
 // idempotency key. An inbound message and the agent's turn on it run in lib/server/agent.ts, not here: the model
 // call is too slow for a write (KTD10).
-import { DEFAULT_SETTINGS, SUBURBS } from "@/lib/config";
+import { createHash } from "node:crypto";
+import { DEFAULT_SETTINGS, GUARDRAIL_SETTINGS, SETTING_GROUPS, SUBURBS, settingProblem } from "@/lib/config";
 import { ACCOUNT_LABEL, cancelBooking, chargeBalance, createHold, pay, payDeposit } from "@/lib/domain";
 import * as ops from "@/lib/ops";
 import { SCENARIOS, buildSeed } from "@/lib/seed";
 import type { Account, Data, Owner, Scenario, Settings, TruckLog } from "@/lib/types";
-import { uid } from "@/lib/util";
+import { canon, uid } from "@/lib/util";
 import { bookingByToken } from "@/lib/views";
-import { CommandError, type Raw, bad, date, flag, id, isObj, match, maybeNum, maybeText, num, obj, oneOf, text } from "./args";
+import { CommandError, type Raw, bad, date, flag, id, isObj, match, maybeEmail, maybeNum, maybePhone, maybeText, num, obj, oneOf, text } from "./args";
 import { sessionOwner } from "./auth";
 import type { Repo } from "./db/repo";
 import { publicLimited } from "./limits";
@@ -58,6 +59,7 @@ const command = <A>(c: Command<A>) => c as Command<unknown>;
 
 const TRUCK_LOGS: TruckLog["type"][] = ["service", "clean", "odometer", "incident", "purchase"];
 const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[];
+const SETTING_LABEL = Object.fromEntries(SETTING_GROUPS.flatMap((g) => g.fields).map((f) => [f.k, f.label.toLowerCase()]));
 
 // ---------- lookups ----------
 
@@ -79,21 +81,26 @@ const me = (ctx: Ctx) => ctx.owner as Owner;
 // ---------- the commands ----------
 
 const COMMANDS: Record<string, Command<unknown>> = {
+  // A web booking holds the date for one phone or email, stored as inbound messages store them (B9). The owners
+  // need a way to reach the customer, and the one-unpaid-hold rule needs a contact to count (AUTH-08, F10).
   book: command({
     role: "public",
-    args: (r) => ({
-      date: date(r, "date"),
-      block: oneOf(r, "block", [4, 8] as const),
-      startTime: maybeText(r, "startTime", 5),
-      suburb: oneOf(r, "suburb", SUBURBS.map((s) => s.name)),
-      name: text(r, "name", 80),
-      email: maybeText(r, "email", 120),
-      phone: maybeText(r, "phone", 30),
-      eventType: maybeText(r, "eventType", 40),
-      guests: maybeNum(r, "guests", 0, 5000),
-      notes: maybeText(r, "notes", 1000),
-      agreed: flag(r, "agreed"),
-    }),
+    args: (r) => {
+      const n = {
+        date: date(r, "date"),
+        block: oneOf(r, "block", [4, 8] as const),
+        startTime: maybeText(r, "startTime", 5),
+        suburb: oneOf(r, "suburb", SUBURBS.map((s) => s.name)),
+        name: text(r, "name", 80),
+        email: maybeEmail(r, "email"),
+        phone: maybePhone(r, "phone"),
+        eventType: maybeText(r, "eventType", 40),
+        guests: maybeNum(r, "guests", 0, 5000),
+        notes: maybeText(r, "notes", 1000),
+        agreed: flag(r, "agreed"),
+      };
+      return n.phone || n.email ? n : bad("phone or email");
+    },
     contacts: (n) => [n.phone, n.email],
     run(d, n, ctx) {
       try {
@@ -101,8 +108,8 @@ const COMMANDS: Record<string, Command<unknown>> = {
         ops.log(d, `New hold ${b.ref} via web (${n.name})`);
         return { id: b.id, token: b.token };
       } catch (err) {
-        // The date was taken since the page checked it.
-        ops.log(d, `Hold refused for ${n.date} via web: ${(err as Error).message}`);
+        // The date was taken since the page checked it, or this contact already holds one. Nothing is saved, so a
+        // stream of refused requests leaves the activity log alone (F10).
         return { refused: (err as Error).message };
       }
     },
@@ -110,7 +117,7 @@ const COMMANDS: Record<string, Command<unknown>> = {
 
   payDeposit: command({
     role: "customer",
-    args: (r) => ({ bookingId: id(r, "bookingId"), token: text(r, "token", 100), card: text(r, "card", 40), email: maybeText(r, "email", 120), agreed: flag(r, "agreed") }),
+    args: (r) => ({ bookingId: id(r, "bookingId"), token: text(r, "token", 100), card: text(r, "card", 40), email: maybeEmail(r, "email"), agreed: flag(r, "agreed") }),
     run(d, a, ctx) {
       const was = linked(d, a.bookingId, a.token).state;
       const b = payDeposit(d, a.bookingId, a.card, ctx.now, a.agreed, a.email);
@@ -200,6 +207,8 @@ const COMMANDS: Record<string, Command<unknown>> = {
     run(d, a, ctx) {
       const b = d.bookings.find((x) => x.id === a.bookingId);
       if (!b) return;
+      // Only from a bond the card is holding, so once (F06).
+      if (b.bondStatus !== "held") throw new Error(`The bond on ${b.ref} isn't held, so there's nothing to capture.`);
       if (a.amount > b.bond) throw new Error(`The bond on ${b.ref} is ${b.bond}.`);
       pay(d, b, "bond_capture", a.amount, ctx.now.toISOString());
       b.bondStatus = "captured";
@@ -241,6 +250,9 @@ const COMMANDS: Record<string, Command<unknown>> = {
     run: (d, a, ctx) => ops.payOut(d, a.distId, me(ctx).id, ctx.now),
   }),
 
+  // The guardrails (GUARDRAIL_SETTINGS) are a director's to change, and lowering the approvals a payout needs waits
+  // for a second director (B5, SS-09): one owner could otherwise lower it to 1 and pay alone. The settings page
+  // sends the whole form, so only a guardrail whose value changes counts.
   updateSettings: command({
     role: "owner",
     args(r) {
@@ -248,7 +260,14 @@ const COMMANDS: Record<string, Command<unknown>> = {
       if (!Object.keys(patch).every((k) => SETTING_KEYS.includes(k as keyof Settings) && typeof patch[k] === "number")) bad("patch");
       return { patch: patch as Partial<Settings> };
     },
-    run: (d, a) => ({ dropped: ops.updateSettings(d, a.patch) }),
+    run(d, a, ctx) {
+      const guards = GUARDRAIL_SETTINGS.filter((k) => a.patch[k] !== undefined && a.patch[k] !== d.settings[k]);
+      if (guards.length && !me(ctx).isDirector) throw new CommandError(403, `Only a director can change: ${guards.map((k) => SETTING_LABEL[k]).join(", ")}.`);
+      const { approvalsRequired: to, ...rest } = a.patch;
+      // A value out of range is dropped as any other is (ops.updateSettings), so only a real lowering waits.
+      if (to === undefined || to >= d.settings.approvalsRequired || settingProblem("approvalsRequired", to)) return { dropped: ops.updateSettings(d, a.patch) };
+      return { dropped: ops.updateSettings(d, rest), requested: ops.requestChange(d, { type: "approvals", to }, me(ctx).id, ctx.now) };
+    },
   }),
   saveKb: command({
     role: "owner",
@@ -276,17 +295,28 @@ const COMMANDS: Record<string, Command<unknown>> = {
     },
     run: (d, a) => ops.addTruckLog(d, a.log),
   }),
+  // A share transfer waits for a second director to approve it (B5, F06): one director could otherwise move every
+  // share to themselves.
   transferShares: command({
     role: "director",
     args: (r) => ({ fromId: id(r, "fromId"), toId: id(r, "toId"), shares: num(r, "shares", 1, 1000) }),
-    run(d, a) {
-      const from = d.owners.find((o) => o.id === a.fromId);
-      const to = d.owners.find((o) => o.id === a.toId);
-      if (!from || !to || from === to || !Number.isInteger(a.shares) || from.shares < a.shares) return;
-      from.shares -= a.shares;
-      to.shares += a.shares;
-      ops.log(d, `Transferred ${a.shares} share(s) from ${from.name} to ${to.name}`);
+    run: (d, a, ctx) => ({ requested: ops.requestChange(d, { type: "shares", ...a }, me(ctx).id, ctx.now) }),
+  }),
+  // A second director, never the one who asked, approves or declines a waiting change (lib/ops.ts requestChange).
+  approveRequest: command({
+    role: "director",
+    args: (r) => ({ id: id(r, "id") }),
+    run(d, a, ctx) {
+      const r = d.requests?.find((x) => x.id === a.id);
+      if (!r) throw new CommandError(404, "That request has gone.");
+      if (r.by === me(ctx).id) throw new CommandError(403, "A second director has to approve this one.");
+      ops.approveRequest(d, a.id, me(ctx).id);
     },
+  }),
+  declineRequest: command({
+    role: "director",
+    args: (r) => ({ id: id(r, "id") }),
+    run: (d, a, ctx) => ops.declineRequest(d, a.id, me(ctx).id),
   }),
 
   // Regenerates the demo year. The data is shared by everyone using the demo, so it resets for them too. Sign-outs
@@ -319,6 +349,14 @@ function authorise(role: Role, ctx: Ctx) {
 // Domain functions refuse with a plain Error (a date already taken, terms not accepted). Anything else is a bug.
 const refusal = (err: unknown) => (err instanceof Error && err.constructor === Error ? new CommandError(409, err.message) : err);
 
+// B8: what an idempotency key is bound to. The command, its parsed arguments (a customer's link token among them) and
+// who asked: the signed-in owner, or for a public command the client IP. A replay that differs in any of them is a
+// different request, so it gets neither the first run's result (a booking's token, AUTH-07) nor a second run.
+function requestDigest(name: string, role: Role, args: unknown, caller: Caller) {
+  const who = role === "owner" || role === "director" ? `owner:${caller.ownerId}` : role === "public" ? `ip:${caller.ip ?? ""}` : "link";
+  return createHash("sha256").update(canon({ name, args, who })).digest("base64url");
+}
+
 export interface CommandBody {
   command?: unknown;
   args?: unknown;
@@ -346,14 +384,16 @@ export async function runCommand(repo: Repo, caller: Caller, body: CommandBody) 
     authorise(def.role, ctx);
     return ctx;
   };
+  const request = requestDigest(name, def.role, args, caller);
   let r;
   try {
-    r = await repo.mutateOnce(caller.tenant, body.key, name, (d) => def.run(d, args, ctxFor(d)));
+    // A command's keys live apart from the server's own one-time keys (F09).
+    r = await repo.mutateOnce(caller.tenant, `cmd:${body.key}`, name, request, (d) => def.run(d, args, ctxFor(d)));
   } catch (err) {
     throw refusal(err);
   }
   if (!r.ok) throw r.reason === "not_found" ? new CommandError(404, "No such business.") : new CommandError(409, "Too many changes at once. Try again.");
-  if (r.replay && r.command !== name) throw new CommandError(422, "That idempotency key was used for another command.");
+  if (r.replay && r.request !== request) throw new CommandError(422, "That idempotency key was used for another request.");
   // The key stores {} for a command that returns nothing, so a first run answers the same as its replay.
   const result = r.value ?? {};
   if (r.replay) {

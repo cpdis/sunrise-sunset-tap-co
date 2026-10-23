@@ -8,6 +8,8 @@ import type { Account, ApprovalCode, Conversation, Data, KbPage, Scenario, Setti
 import type { BookingView, ChatView, PublicView, StateView } from "./views";
 
 type Booked = { id: string; token: string };
+// A web booking the server refused, and why (lib/domain.ts createHold).
+type Refused = { refused: string };
 
 // Where a simulated inbound message comes from: the sender's conversation on that channel (made if new).
 export type To = Pick<Conversation, "channel" | "contact"> & { name?: string };
@@ -27,6 +29,9 @@ interface AppState {
   // The SMS widget's number, and its conversation.
   chatWith: string | null;
   chat: ChatView | null;
+  // What this browser's simulated phone shows for the messages it sent and got, by message id, where the stored copy
+  // masks a code (B2): the confirmation's nonce, the code it was answered with.
+  handset: Record<string, string>;
   hydrated: boolean;
   // Why the last command failed, for the page to show.
   error: string | null;
@@ -38,7 +43,7 @@ interface AppState {
   reset: (scenario?: Scenario) => Promise<void>;
   // The demo's "Run daily jobs now". What ran, or null when it failed.
   runJobs: () => Promise<string[] | null>;
-  book: (n: Omit<NewBooking, "via" | "id" | "ref" | "token">) => Promise<Booked | null>;
+  book: (n: Omit<NewBooking, "via" | "id" | "ref" | "token">) => Promise<Booked | Refused | null>;
   payDeposit: (bookingId: string, card: string, checkout?: { email?: string; agreed?: boolean }) => Promise<boolean>;
   payBalance: (bookingId: string, card: string) => Promise<boolean>;
   customerCancel: (bookingId: string) => Promise<{ refund: number } | { needsOwner: string } | null>;
@@ -61,7 +66,10 @@ interface AppState {
   toggleBlackout: (date: string) => Promise<void>;
   addPersonalUse: (date: string, note: string) => Promise<void>;
   addTruckLog: (log: Omit<TruckLog, "id">) => Promise<void>;
+  // Share transfers and lowering the payout approvals wait for a second director (B5).
   transferShares: (fromId: string, toId: string, shares: number) => Promise<void>;
+  approveRequest: (id: string) => Promise<void>;
+  declineRequest: (id: string) => Promise<void>;
 }
 
 // What /api/commands answers.
@@ -83,6 +91,27 @@ async function call(command: string, args: object): Promise<CommandOut> {
 
 // Only the newest read lands, so a slow one never overwrites a newer answer.
 let reads = 0;
+
+// The simulated phone's texts last for the browser tab, like texts on a phone outlast a page reload. Storage can be
+// missing or full; the phone then forgets on reload.
+const HANDSET_KEY = "sst-handset";
+const HANDSET_MAX = 200;
+
+function savedHandset(): Record<string, string> {
+  try {
+    return JSON.parse(sessionStorage.getItem(HANDSET_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveHandset(h: Record<string, string>) {
+  try {
+    sessionStorage.setItem(HANDSET_KEY, JSON.stringify(h));
+  } catch {
+    // Kept in memory only.
+  }
+}
 
 export const useApp = create<AppState>()((set, get) => {
   // Runs a command and reads the state again. A failure is kept in `error`; the caller gets undefined.
@@ -109,6 +138,7 @@ export const useApp = create<AppState>()((set, get) => {
     bookingFor: null,
     chatWith: null,
     chat: null,
+    handset: savedHandset(),
     hydrated: false,
     error: null,
 
@@ -150,10 +180,11 @@ export const useApp = create<AppState>()((set, get) => {
     reset: (scenario) => done("reset", { scenario }),
     runJobs: async () => ((await run("runJobs"))?.result as { ran?: string[] } | undefined)?.ran ?? null,
 
-    // null when the hold was refused (the date was taken since the page checked it).
+    // Refused when the date was taken since the page checked it, or this contact already holds an unpaid date. null
+    // when the command failed.
     book: async (n) => {
-      const r = (await run("book", n))?.result as Partial<Booked> | undefined;
-      return r?.id && r.token ? { id: r.id, token: r.token } : null;
+      const r = (await run("book", n))?.result as Partial<Booked & Refused> | undefined;
+      return r?.id && r.token ? { id: r.id, token: r.token } : r?.refused ? { refused: r.refused } : null;
     },
 
     payDeposit: async (bookingId, card, checkout = {}) => !!(await run("payDeposit", { bookingId, token: tokenFor(bookingId), card, ...checkout })),
@@ -166,13 +197,16 @@ export const useApp = create<AppState>()((set, get) => {
 
     // The message goes to /api/dev/simulate, which signs it and posts it through the inbound webhook, where the server
     // stores it and runs the agent's turn (lib/server/inbound.ts). Not retried: a second post would be a second
-    // message. Returns the conversation id, or "" when refused (for example an owner's number without an owner
-    // signed in, or too many messages a minute).
+    // message. Returns the conversation id, or "" when refused (for example another owner's number, or too many
+    // messages a minute). The answer's `handset` is what the phone shows for this turn.
     sendCustomer: async (to, body) => {
       try {
         const res = await post(JSON.stringify({ ...to, body }), "/api/dev/simulate");
         const out = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(out.error ?? `Something went wrong (${res.status}).`);
+        const handset = Object.fromEntries(Object.entries({ ...get().handset, ...(out.handset as Record<string, string> | undefined) }).slice(-HANDSET_MAX));
+        set({ handset });
+        saveHandset(handset);
         return (out.conversation as ChatView | undefined)?.id ?? "";
       } catch (err) {
         set({ error: (err as Error).message });
@@ -200,5 +234,7 @@ export const useApp = create<AppState>()((set, get) => {
     addPersonalUse: (date, note) => done("addPersonalUse", { date, note }),
     addTruckLog: (log) => done("addTruckLog", { log }),
     transferShares: (fromId, toId, shares) => done("transferShares", { fromId, toId, shares }),
+    approveRequest: (id) => done("approveRequest", { id }),
+    declineRequest: (id) => done("declineRequest", { id }),
   };
 });

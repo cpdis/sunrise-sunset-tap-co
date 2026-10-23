@@ -124,6 +124,10 @@ describe("roles", () => {
     const dist = (await doc(repo)).data.distributions.find((x) => x.status === "awaiting")!;
     await refusedWith(run(repo, as("own_joe"), "approveDistribution", { distId: dist.id }), 403);
     await refusedWith(run(repo, as("own_joe"), "payDistribution", { distId: dist.id }), 403);
+    // Share transfers and the requests a second director approves (B5) are directors' too.
+    await refusedWith(run(repo, as("own_joe"), "transferShares", { fromId: "own_colin", toId: "own_joe", shares: 1 }), 403);
+    await refusedWith(run(repo, as("own_joe"), "approveRequest", { id: "req_1" }), 403);
+    await refusedWith(run(repo, as("own_joe"), "declineRequest", { id: "req_1" }), 403);
     await refusedWith(run(repo, as("own_nobody"), "addExpense", { date: "2026-10-20", account: "fuel", amount: 1, memo: "x" }), 401);
   });
 
@@ -167,6 +171,8 @@ function argsFor(d: Data): Record<string, object> {
     addPersonalUse: { date: "2027-01-06", note: "mine" },
     addTruckLog: { log: { date: "2026-10-20", type: "clean", notes: "clean" } },
     transferShares: { fromId: "own_colin", toId: "own_aaron", shares: 1 },
+    approveRequest: { id: "req_1" },
+    declineRequest: { id: "req_1" },
     reset: {},
     runJobs: {},
   };
@@ -309,9 +315,10 @@ describe("/api/state", () => {
       (await (await stateGET(new Request(`${BASE}/api/state?chat=${encodeURIComponent(contact)}`, { headers }))).json()).chat;
     // Development counts as the demo (KTD12).
     expect((await chatOf(number))?.contact).toBe(number);
-    // The widget never sees agent state, which holds a cancel quote's code.
+    // The widget never sees agent state, which holds a cancel quote's code, and the stored message masks it (B2,
+    // SS-14): only the handset the quote went to has it.
     const quoted = await chatOf("0450 926 727");
-    expect(quoted.messages.at(-1).body).toMatch(/Reply YES \d{4} to cancel/);
+    expect(quoted.messages.at(-1).body).toMatch(/Reply YES •••• to cancel/);
     expect(quoted).not.toHaveProperty("state");
 
     vi.stubEnv("NODE_ENV", "production");

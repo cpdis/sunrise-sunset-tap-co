@@ -9,7 +9,7 @@
 // which the admin page works out again, for the owner who staged it only. That secret is its own, apart from the
 // session secret, so rotating one leaves the other alone (A7).
 import { createHmac } from "node:crypto";
-import { type OwnerCtx, PICK, replan } from "@/lib/agent/owner-tools";
+import { CODE_TRIES, type OwnerCtx, PICK, replan } from "@/lib/agent/owner-tools";
 import type { ApprovalChange, ApprovalCode, Data, Owner, PendingApproval, StagedApproval } from "@/lib/types";
 import { ownerSnapshot } from "@/lib/views";
 import type { ApprovalRow, ApprovalWrites, NewApprovalRow, Repo } from "./db/repo";
@@ -49,10 +49,10 @@ const toRow = (s: StagedApproval, ownerId: string): NewApprovalRow => ({
 });
 
 // The conversation's staged approval, as the owner agent gets it with a new message: with its code when it needs
-// one, and whether it has expired.
+// one, whether it has expired, and its wrong codes so far.
 export async function pendingApproval(repo: Repo, tenant: string, conversationId: string, now: Date): Promise<PendingApproval | undefined> {
   const [r] = await repo.stagedApprovals(tenant, conversationId);
-  return r && { ...toStaged(r), code: r.needsCode ? approvalCode(tenant, r.id) : undefined, expired: !live(r, now) };
+  return r && { ...toStaged(r), code: r.needsCode ? approvalCode(tenant, r.id) : undefined, expired: !live(r, now), codeMisses: r.codeMisses };
 }
 
 // The live approvals waiting on this owner's one-time code, in conversations the business still has (a demo reset
@@ -64,30 +64,35 @@ export async function codesFor(repo: Repo, d: Data, tenant: string, ownerId: str
     .map((r) => ({ id: r.id, summary: r.summary, code: approvalCode(tenant, r.id), expiresAt: r.expiresAt.toISOString() }));
 }
 
+// What a turn closes on its conversation's staged approvals, and the wrong one-time code it counts (B1). These only
+// take away what can run, so they apply even when the rest of the turn is out of date and dropped: a wrong nonce
+// still ends its approval when a newer message overtook the turn (F07).
+export function closingWrites(change: ApprovalChange | undefined, staged: ApprovalRow[]): ApprovalWrites {
+  const writes: ApprovalWrites = {};
+  const s = change?.settled;
+  const m = change?.miss;
+  if (s && s.status !== "consumed" && staged.some((r) => r.id === s.id)) writes.close = [{ id: s.id, status: s.status }];
+  if (m?.kind === "code" && !s && staged.some((r) => r.id === m.id)) writes.codeMiss = { id: m.id, tries: CODE_TRIES };
+  return writes;
+}
+
 // The approval writes for one owner turn, checked again inside the write that applies it (KTD4). A YES consumes its
 // approval only while the approval is staged and unexpired and plans the same on the data as it is now. Otherwise
 // nothing of the turn applies and `refused` is the reply instead (R4).
 export function settleApprovals(d: Data, owner: Owner, change: ApprovalChange | undefined, staged: ApprovalRow[], now: Date): { writes: ApprovalWrites; refused?: string } {
-  const writes: ApprovalWrites = {};
   const s = change?.settled;
-  const row = s && staged.find((r) => r.id === s.id);
-  if (s?.status === "consumed") {
-    if (!row || !live(row, now)) {
-      if (row) writes.close = [{ id: row.id, status: "expired" }];
-      return { writes, refused: "Nothing has changed: that one has expired or was already done. Send it again if you still want it." };
-    }
-    if (row.tool !== PICK) {
-      const ctx: OwnerCtx = { data: ownerSnapshot(d, now), owner, now, actions: [], used: [] };
-      const r = replan(ctx, toStaged(row));
-      if (!r.ok || !r.same) {
-        writes.close = [{ id: row.id, status: "invalidated" }];
-        return { writes, refused: r.ok ? "Something changed while I was on it, so I didn't do it. Send it again if you still want it." : `I didn't do it: ${r.reason}` };
-      }
-    }
-    writes.consume = row.id;
-  } else if (s && row) {
-    writes.close = [{ id: row.id, status: s.status }];
+  const add = change?.staged && { add: toRow(change.staged, owner.id) };
+  if (s?.status !== "consumed") return { writes: { ...closingWrites(change, staged), ...add } };
+  const row = staged.find((r) => r.id === s.id);
+  if (!row || !live(row, now)) {
+    return { writes: row ? { close: [{ id: row.id, status: "expired" }] } : {}, refused: "Nothing has changed: that one has expired or was already done. Send it again if you still want it." };
   }
-  if (change?.staged) writes.add = toRow(change.staged, owner.id);
-  return { writes };
+  if (row.tool !== PICK) {
+    const ctx: OwnerCtx = { data: ownerSnapshot(d, now), owner, now, actions: [], used: [] };
+    const r = replan(ctx, toStaged(row));
+    if (!r.ok || !r.same) {
+      return { writes: { close: [{ id: row.id, status: "invalidated" }] }, refused: r.ok ? "Something changed while I was on it, so I didn't do it. Send it again if you still want it." : `I didn't do it: ${r.reason}` };
+    }
+  }
+  return { writes: { consume: row.id, ...add } };
 }

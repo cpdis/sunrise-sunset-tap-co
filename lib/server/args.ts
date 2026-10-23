@@ -1,5 +1,5 @@
 // Argument checks for server commands. Each returns the value, or throws a 400 naming the field.
-import { isISODate } from "@/lib/util";
+import { isISODate, localNumber } from "@/lib/util";
 
 export class CommandError extends Error {
   constructor(
@@ -51,6 +51,22 @@ export const oneOf = <T>(r: Raw, k: string, xs: readonly T[]) => (xs.includes(r[
 export const date = (r: Raw, k: string) => {
   const v = r[k];
   return isISODate(v) ? v : bad(k);
+};
+
+// A phone number as every route stores it (localNumber), or a 400: digits, spaces and + ( ) - only, 8 to 15 digits.
+// Blank is none. A field that must hold a number can't carry an instruction to a model (F14).
+export const maybePhone = (r: Raw, k: string) => {
+  const v = maybeText(r, k, 30)?.trim();
+  if (!v) return undefined;
+  const n = v.replace(/\D/g, "").length;
+  return /^[\d\s()+-]+$/.test(v) && n >= 8 && n <= 15 ? localNumber(v) : bad(k);
+};
+
+// An email as every route stores it, trimmed and lower-cased (B9), or a 400. Blank is none.
+export const maybeEmail = (r: Raw, k: string) => {
+  const v = maybeText(r, k, 120)?.trim();
+  if (!v) return undefined;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? v.toLowerCase() : bad(k);
 };
 
 // A record id: booking, conversation, distribution or owner.

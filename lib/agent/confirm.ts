@@ -79,3 +79,21 @@ export function parseApproval(text: string): { answer: Confirm; code?: string; o
   const quoted = oneTimes.length > 0 || (rest.match(CODE) ?? []).length > 0;
   return { answer: r.answer, code: r.code, oneTime: oneTimes.length === 1 ? oneTimes[0] : undefined, bare: quoted && normalise(rest.replace(CODE, " ")) === "" };
 }
+
+const dots = (s: string) => s.replace(/\d/g, "•");
+
+// B2: an answer's codes as the stored copy keeps them. A message that answers "Reply YES 4821" ("YES 4821 482193",
+// "4821", the one-time code alone) has its codes masked, so no conversation view holds a live one. Anything else is
+// kept as written: "log 115900 km" is not an answer.
+export function maskAnswer(text: string) {
+  const a = parseApproval(text);
+  return a.answer === "yes" || a.bare ? text.replace(ONE_TIME, dots).replace(CODE, dots) : text;
+}
+
+// B2: a reply as the stored copy keeps it. Every "YES 4821" is masked, and so is each live code it names wherever it
+// stands (`codes`: the turn's nonces and cancel codes), since a model may word the request its own way.
+export function maskReply(text: string, codes: (string | undefined)[]) {
+  let out = text.replace(/\b(YES\s+)(\d{4})\b/gi, (_m, yes: string, n: string) => yes + dots(n));
+  for (const c of new Set(codes.filter((x): x is string => !!x && /^\d{4}$/.test(x)))) out = out.replace(new RegExp(`(?<![\\d-])${c}(?!\\d)`, "g"), dots(c));
+  return out;
+}

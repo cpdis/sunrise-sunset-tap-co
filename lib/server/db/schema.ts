@@ -46,6 +46,8 @@ export const approvals = pgTable(
     binding: text("binding").notNull(),
     nonce: text("nonce").notNull(),
     needsCode: boolean("needs_code").notNull().default(false),
+    // Wrong one-time codes so far. The CODE_TRIES-th closes it (lib/agent/owner-tools.ts, B1).
+    codeMisses: integer("code_misses").notNull().default(0),
     policyVersion: integer("policy_version").notNull(),
     status: text("status", { enum: ["staged", "consumed", "invalidated", "cancelled", "expired"] })
       .notNull()
@@ -72,7 +74,9 @@ export const rateLimits = pgTable(
   (t) => [primaryKey({ columns: [t.tenantId, t.bucket, t.windowStart] })],
 );
 
-// A command's result, kept so a retry with the same key returns it instead of running the command again.
+// A command's result, kept so a retry with the same key returns it instead of running the command again. Server
+// one-time keys (sign-in link nonces, inbound message ids, the day's budget alert) share the table under their own
+// prefixes; a command's key is stored under "cmd:", so a caller can't spend one of them (F09).
 export const idempotencyKeys = pgTable(
   "idempotency_keys",
   {
@@ -81,6 +85,8 @@ export const idempotencyKeys = pgTable(
       .references(() => tenants.id),
     key: text("key").notNull(),
     command: text("command").notNull(),
+    // A digest of the command, its arguments and its caller. A replay must match it (lib/server/commands.ts, B8).
+    request: text("request").notNull().default(""),
     result: jsonb("result").notNull(),
     createdAt: createdAt(),
   },
