@@ -31,24 +31,23 @@ export default function Calendar() {
       <div className="admin-top">
         <h1>{MONTHS[Number(month.slice(5, 7)) - 1]} {month.slice(0, 4)}</h1>
         <div className="row">
-          <button className="btn ghost small" aria-label="Previous month" onClick={() => setMonth(addMonths(month, -1))}>←</button>
-          <button className="btn ghost small" onClick={() => setMonth(today.slice(0, 7) + "-01")}>Today</button>
-          <button className="btn ghost small" aria-label="Next month" onClick={() => setMonth(addMonths(month, 1))}>→</button>
+          <button className="btn small" aria-label="Previous month" onClick={() => setMonth(addMonths(month, -1))}>←</button>
+          <button className="btn small" onClick={() => setMonth(today.slice(0, 7) + "-01")}>Today</button>
+          <button className="btn small" aria-label="Next month" onClick={() => setMonth(addMonths(month, 1))}>→</button>
         </div>
       </div>
       <div className="stack">
         <div className="mcal">
-          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => <div key={d} className="label">{d}</div>)}
+          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => <div key={d} className="dow">{d}</div>)}
           {cells.map((d) => {
             const bs = live.filter((b) => b.date === d);
             return (
               <div
                 key={d}
-                className={cls("cell", d.slice(0, 7) !== month.slice(0, 7) && "out", d === today && "today", data.blackouts.includes(d) && "black")}
+                className={cls("cell", d.slice(0, 7) !== month.slice(0, 7) && "out", d === today && "today", data.blackouts.includes(d) && "black", sel === d && "sel")}
                 onClick={() => { setSel(d); setNote(""); }}
-                style={{ cursor: "pointer", outline: sel === d ? "2px solid var(--ink)" : undefined }}
               >
-                <button type="button" className="day-btn mono" aria-pressed={sel === d} aria-label={fmtDate(d, { dow: true, year: true })} onClick={(e) => { e.stopPropagation(); setSel(d); setNote(""); }}>{Number(d.slice(8))}</button>
+                <button type="button" className="day-btn" aria-pressed={sel === d} aria-label={fmtDate(d, { dow: true, year: true })} onClick={(e) => { e.stopPropagation(); setSel(d); setNote(""); }}>{Number(d.slice(8))}</button>
                 {bs.map((b) => (
                   <Link key={b.id} href={`/admin/bookings/${b.id}`} className={`ev ${b.kind === "personal" ? "personal" : b.state === "held" ? "held" : "paid"}`} onClick={(e) => e.stopPropagation()}>
                     {name(b)}
@@ -58,11 +57,11 @@ export default function Calendar() {
             );
           })}
         </div>
-        <div className="legend">
-          <span><i style={{ background: "var(--ink)" }} />Paid booking</span>
+        <div className="cal-key">
+          <span><i style={{ background: "var(--azure)" }} />Paid booking</span>
           <span><i style={{ background: "var(--gold)" }} />Held, awaiting deposit</span>
-          <span><i style={{ background: "var(--sand)" }} />Owner use</span>
-          <span><i style={{ background: "repeating-linear-gradient(135deg,#fff,#fff 3px,var(--ground) 3px,var(--ground) 6px)" }} />Blocked out</span>
+          <span><i style={{ background: "var(--a-muted)" }} />Owner use</span>
+          <span><i style={{ background: "repeating-linear-gradient(135deg, var(--a-bg), var(--a-bg) 2px, var(--a-line) 2px, var(--a-line) 4px)" }} />Blocked out</span>
         </div>
       </div>
 
@@ -78,7 +77,7 @@ export default function Calendar() {
                 <div className="row">
                   <input className="input" aria-label="What for?" style={{ maxWidth: 360 }} placeholder="What for? (e.g. Run club Saturday)" value={note} onChange={(e) => setNote(e.target.value)} />
                   <button className="btn small" onClick={() => { addPersonalUse(sel, note || "Owner use"); setSel(null); }}>Book for my own use</button>
-                  <button className="btn ghost small" onClick={() => toggleBlackout(sel)}>{data.blackouts.includes(sel) ? "Unblock date" : "Block out (service, away)"}</button>
+                  <button className="btn small" onClick={() => toggleBlackout(sel)}>{data.blackouts.includes(sel) ? "Unblock date" : "Block out (service, away)"}</button>
                 </div>
                 <span className="note">Own use stays open to customers: a paid booking on the same day bumps it.</span>
               </>

@@ -1,5 +1,6 @@
 "use client";
 
+import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
@@ -7,6 +8,11 @@ import { Logo } from "@/components/Logo";
 import { SmsWidget } from "@/components/SmsWidget";
 import { Loading, useData } from "@/components/ui";
 import { useApp } from "@/lib/store";
+import "./admin.css";
+
+// The owners' admin reads like a finance console: Geist on white, Golden Hour inks as accents only.
+const sans = Geist({ subsets: ["latin"], variable: "--font-admin", display: "swap" });
+const mono = Geist_Mono({ subsets: ["latin"], variable: "--font-admin-mono", display: "swap" });
 
 const NAV = [
   { href: "/admin", label: "Today" },
@@ -39,27 +45,34 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const badge: Record<string, number> = { "/admin/inbox": inbox, "/admin/payouts": payouts };
 
   return (
-    <>
+    <div className={`admin ${sans.variable} ${mono.variable}`}>
       <div className="demo-bar">
-        Demo: data lives in your browser, payments and bank transfers are simulated. Signed in as {me?.name}.{" "}
-        <button className="linkbtn" style={{ color: "var(--ink)" }} onClick={() => { logout(); router.push("/login"); }}>Switch owner</button>
+        <span>Demo. Data lives in your browser; payments and bank transfers are simulated.</span>
+        <span>
+          Signed in as {me?.name} · <button className="linkbtn" onClick={() => { logout(); router.push("/login"); }}>Switch owner</button>
+        </span>
       </div>
-      <div className="admin">
-        <nav className="admin-nav">
-          <Link href="/" className="nav-home" aria-label="Public site" style={{ marginBottom: 12, gap: 10, justifyContent: "flex-start" }}><Logo size={34} /><span className="display" style={{ fontSize: 22, color: "var(--paper)", lineHeight: 0.95 }}>Sunrise<br />Sunset</span></Link>
-          {NAV.map((n) => {
-            const on = n.href === "/admin" ? path === "/admin" : path.startsWith(n.href);
-            return (
-              <Link key={n.href} href={n.href} className={on ? "on" : ""}>
-                {n.label}
-                {badge[n.href] ? <span className="badge">{badge[n.href]}</span> : null}
-              </Link>
-            );
-          })}
+      <div className="admin-shell">
+        <nav className="admin-nav" aria-label="Admin">
+          <Link href="/" className="nav-home" aria-label="Public site">
+            <Logo size={24} />
+            <span>Sunrise Sunset</span>
+          </Link>
+          <div className="nav-links">
+            {NAV.map((n) => {
+              const on = n.href === "/admin" ? path === "/admin" : path.startsWith(n.href);
+              return (
+                <Link key={n.href} href={n.href} className={on ? "on" : ""} aria-current={on ? "page" : undefined}>
+                  {n.label}
+                  {badge[n.href] ? <span className="badge">{badge[n.href]}</span> : null}
+                </Link>
+              );
+            })}
+          </div>
         </nav>
         <main className="admin-main">{children}</main>
       </div>
       <SmsWidget as={ownerId} />
-    </>
+    </div>
   );
 }

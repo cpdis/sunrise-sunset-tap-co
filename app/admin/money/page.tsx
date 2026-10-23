@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { StepChart } from "@/components/StepChart";
+import { useState } from "react";
+import { PaybackChart } from "@/components/PaybackChart";
 import { Loading, Section, Stat, useData } from "@/components/ui";
-import { ACCOUNT_LABEL, balance, cashAt, liveBookings, periodTotals, reserveTarget } from "@/lib/domain";
+import { ACCOUNT_LABEL, balance, cashAt, liveBookings, periodTotals } from "@/lib/domain";
 import { SCENARIOS } from "@/lib/seed";
 import { useApp } from "@/lib/store";
 import type { Account } from "@/lib/types";
@@ -21,21 +21,6 @@ export default function Money() {
   const [period, setPeriod] = useState(quarterOf(today).key);
   const [acct, setAcct] = useState<Account | "all">("all");
   const [ex, setEx] = useState({ date: today, account: "maintenance" as Account, amount: "", memo: "" });
-  // The chart picks its layout from the panel's own width, not the viewport: the admin nav takes a
-  // column on tablets, so a 1000 px window can leave the panel under 700 px. Below 720 px the full
-  // 960-wide drawing would shrink its labels past legible, so it switches to the narrow layout,
-  // drawn at the panel's width so its type stays the same size.
-  const panel = useRef<HTMLDivElement>(null);
-  const [panelW, setPanelW] = useState(960);
-  const compact = panelW < 720;
-  const loaded = !!data;
-  useEffect(() => {
-    const el = panel.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([e]) => setPanelW(Math.round(e.contentRect.width)));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [loaded]);
   if (!data) return <Loading />;
 
   // last 12 months, by month
@@ -44,13 +29,10 @@ export default function Money() {
     const t = periodTotals(data, m, addDays(addMonths(m, 1), -1));
     return { m, ...t };
   });
-  const best = series.reduce((a, b) => (b.revenue > a.revenue ? b : a));
   const hires = data.bookings.filter((b) => b.kind === "paid" && b.state === "completed" && b.date >= months[0] && b.date <= today).length;
   // same window as the chart (1st of the month, 11 months back, to today) so the numbers agree
   const year = periodTotals(data, months[0], today);
   const cash = cashAt(data);
-  const reserve = reserveTarget(data, today);
-  const owed = balance(data, "owed_runners");
   const capital = balance(data, "capital");
   const margin = Math.round((year.profit / Math.max(1, year.revenue)) * 100);
   const payback = year.profit > 0 ? capital / year.profit : Infinity;
@@ -62,43 +44,47 @@ export default function Money() {
     periodTotals(data, monthStart, today).revenue +
     liveBookings(data).filter((b) => b.kind === "paid" && b.state !== "held" && b.state !== "completed" && b.date <= horizon).reduce((s, b) => s + b.total, 0);
 
+  const gstHot = Math.max(year.revenue, projected) > GST_THRESHOLD * 0.8;
+  const pct = (n: number) => Math.min(100, (n / GST_THRESHOLD) * 100);
+
   const quarters = Array.from(new Set(data.ledger.map((e) => quarterOf(e.date).key))).sort().reverse();
   const q = quarterOf(period.replace(/-Q(\d)/, (_, n) => `-${String((Number(n) - 1) * 3 + 1).padStart(2, "0")}-01`));
   const inQ = data.ledger.filter((e) => e.date >= q.start && e.date <= q.end);
   const byAcct = new Map<Account, number>();
   for (const e of inQ) byAcct.set(e.account, (byAcct.get(e.account) ?? 0) + e.amount);
   const rows = [...byAcct.entries()].sort((a, b) => b[1] - a[1]);
+  const net = inQ.reduce((s, e) => s + e.amount, 0);
   const ledger = [...data.ledger].filter((e) => acct === "all" || e.account === acct).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 60);
 
   return (
     <div className="page">
-      <div className="admin-top"><h1>Money</h1><span className="pill">Illustrative · {scenario} case</span></div>
+      <div className="admin-top"><div><h1>Money</h1></div><span className="pill">Illustrative · {scenario} case</span></div>
 
-      <div className="grid cols-4">
+      <div className="stats">
         <Stat k="Cash in the bank" v={money(cash)} />
         <Stat k="Revenue, last 12 months" v={money(year.revenue)} />
         <Stat k="Operating costs, last 12 months" v={money(year.expenses)} />
         <Stat k="Profit, last 12 months" v={money(year.profit)} />
       </div>
 
-      <div className="chart-panel" ref={panel}>
-        <StepChart
-          compact={compact ? Math.max(360, panelW) : undefined}
-          eyebrow="Payback · cumulative"
-          title={Number.isFinite(payback) ? `Owners' ${money(capital)} back in ${payback.toFixed(1)} years at this pace` : "At this pace the owners don't get their capital back"}
-          sub="Operating profit after depreciation, AUD, cumulative by month, against capital paid in. Revenue counts when the hire happens."
-          periods={series.map((x) => MON3[Number(x.m.slice(5, 7)) - 1])}
-          fmt={(n) => money(n)}
-          series={[
-            { name: "Capital in", values: series.map(() => capital), color: "azure", note: `${data.owners.length} owners` },
-            { name: "Profit", values: cum(series.map((x) => x.profit)), color: "ink", note: `best month ${MON3[Number(best.m.slice(5, 7)) - 1]}` },
-          ]}
-          strip={{
-            label: "Profit, last 12 months",
-            lines: [`${hires} hires`, `${margin}% margin · avg ${money(year.revenue / Math.max(1, hires))} a hire`, `Illustrative ${scenario} case · source: ledger`],
-            hero: money(year.profit),
-          }}
-        />
+      <div className="chart-card">
+        <div className="ch-head">
+          <div className="ch-title">
+            <span className="k">Payback · operating profit after depreciation, cumulative</span>
+            <span className="v">{money(year.profit)} <span className="meta">of {money(capital)}</span></span>
+            <span className="finding">{Number.isFinite(payback) ? `Owners' capital back in ${payback.toFixed(1)} years at this pace.` : "At this pace the owners don't get their capital back."}</span>
+          </div>
+          <div className="ch-key">
+            <span style={{ color: "var(--azure)" }}><i />Profit to date</span>
+            <span style={{ color: "var(--ink)" }}><i style={{ background: "repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 5px)" }} />Capital in, {data.owners.length} owners</span>
+          </div>
+        </div>
+        <PaybackChart months={series.map((x) => MON3[Number(x.m.slice(5, 7)) - 1])} profit={cum(series.map((x) => x.profit))} capital={capital} />
+        <div className="ch-foot">
+          <div><span className="k">Hires</span><span className="v">{hires}</span></div>
+          <div><span className="k">Margin</span><span className="v">{margin}%</span></div>
+          <div><span className="k">Average a hire</span><span className="v">{money(year.revenue / Math.max(1, hires))}</span></div>
+        </div>
       </div>
 
       <div className="grid cols-2" style={{ alignItems: "start" }}>
@@ -112,21 +98,25 @@ export default function Money() {
         >
           <div className="card">
             {rows.map(([k, v]) => (
-              <div key={k} className="summary-row"><span>{ACCOUNT_LABEL[k]}</span><span className={v > 0 ? "pos" : ""}>{money(v)}</span></div>
+              <div key={k} className="summary-row"><span>{ACCOUNT_LABEL[k]}</span><span>{money(v)}</span></div>
             ))}
-            <div className="summary-row"><strong>Net cash movement</strong><strong>{money(inQ.reduce((s, e) => s + e.amount, 0))}</strong></div>
+            <div className="summary-row total"><strong>Net cash movement</strong><strong>{money(net)}</strong></div>
           </div>
         </Section>
 
         <div className="page">
           <Section title="GST registration watch">
-            <div className="card stack" style={{ gap: 12 }}>
-              <div className="gauge"><div style={{ width: `${Math.min(100, (Math.max(year.revenue, projected) / GST_THRESHOLD) * 100)}%`, background: Math.max(year.revenue, projected) > GST_THRESHOLD * 0.8 ? "var(--sunset)" : "var(--ink)" }} /></div>
-              <span className="note">
-                {money(year.revenue)} of {money(GST_THRESHOLD)} turnover in the last 12 months, and {money(projected)} projected
-                for this month and the next 11 (including hires already booked). Register within 21 days of either crossing it,
-                and prices then include GST.
-              </span>
+            <div className="card meter">
+              <div className={`track${gstHot ? " hot" : ""}`} role="img" aria-label={`${money(year.revenue)} of ${money(GST_THRESHOLD)}, ${money(projected)} projected`}>
+                <span className="proj" style={{ width: `${pct(projected)}%` }} />
+                <span className="act" style={{ width: `${pct(year.revenue)}%` }} />
+              </div>
+              <div className="legend3">
+                <div><span className="k"><i style={{ background: gstHot ? "var(--sunset)" : "var(--azure)" }} />Last 12 months</span><span className="v">{money(year.revenue)}</span></div>
+                <div><span className="k"><i style={{ background: gstHot ? "color-mix(in srgb, var(--sunset) 30%, white)" : "color-mix(in srgb, var(--azure) 28%, white)" }} />Projected, next 12</span><span className="v">{money(projected)}</span></div>
+                <div><span className="k">Threshold</span><span className="v">{money(GST_THRESHOLD)}</span></div>
+              </div>
+              <span className="note">Projected counts this month and the next 11, including hires already booked. Register within 21 days of either crossing the threshold; prices then include GST.</span>
             </div>
           </Section>
           <Section title="Add an expense">
@@ -163,7 +153,7 @@ export default function Money() {
             <tbody>
               {ledger.map((e) => (
                 <tr key={e.id}>
-                  <td style={{ whiteSpace: "nowrap" }}>{fmtDate(e.date, { year: true })}</td>
+                  <td className="nowrap">{fmtDate(e.date, { year: true })}</td>
                   <td data-label="Account">{ACCOUNT_LABEL[e.account]}</td>
                   <td className="muted" data-label="Memo">{e.memo}</td>
                   <td className={`num ${e.amount > 0 ? "pos" : ""}`} data-label="Amount">{money(e.amount, true)}</td>

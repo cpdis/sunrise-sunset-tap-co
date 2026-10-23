@@ -43,9 +43,9 @@ export default function BookingDetail() {
     <div className="page">
       <div className="admin-top">
         <div className="stack" style={{ gap: 4 }}>
-          <Link href="/admin/bookings" className="note">← Bookings</Link>
+          <Link href="/admin/bookings" className="crumb">← Bookings</Link>
           <h1>{b.ref} · {b.kind === "personal" ? `${owner(b.ownerId)}, own use` : c?.name}</h1>
-          <span className="muted">{fmtDate(b.date, { dow: true, year: true })}, {fmtTime(b.startTime)} for {b.block} hours · {b.suburb} ({b.travelMinutes} min, {b.km} km)</span>
+          <span className="note">{fmtDate(b.date, { dow: true, year: true })}, {fmtTime(b.startTime)} for {b.block} hours · {b.suburb} ({b.travelMinutes} min, {b.km} km)</span>
         </div>
         <StatePill b={b} />
       </div>
@@ -73,7 +73,7 @@ export default function BookingDetail() {
             <div>
               <div className="summary-row"><span>Hire</span><span>{money(b.price)}</span></div>
               {b.travelFee > 0 && <div className="summary-row"><span>Travel</span><span>{money(b.travelFee)}</span></div>}
-              <div className="summary-row"><strong>Total</strong><strong>{money(b.total)}</strong></div>
+              <div className="summary-row total"><strong>Total</strong><strong>{money(b.total)}</strong></div>
               <div className="summary-row"><span>Collected</span><span>{money(paidSoFar(data, b.id))}</span></div>
               <div className="summary-row"><span>Net to the business</span><span>{money(net)}</span></div>
               <div className="summary-row"><span>Bond</span><span>{bond}</span></div>

@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { CHANNEL_LABEL, Linkify, Loading, useData } from "@/components/ui";
+import { Logo } from "@/components/Logo";
+import { CHANNEL_LABEL, Linkify, Loading, toolWords, useData } from "@/components/ui";
 import { useApp } from "@/lib/store";
-import type { Conversation } from "@/lib/types";
+import type { Conversation, Msg } from "@/lib/types";
 import { cls, fmtDateTime } from "@/lib/util";
 
 type Inbound = Exclude<Conversation["channel"], "sms"> | "sms";
@@ -16,6 +17,27 @@ const SAMPLES: Record<Inbound, { contact: string; name: string; body: string }> 
   sms: { contact: "0499 120 554", name: "New contact", body: "how many kegs can it fit" },
 };
 
+// "Harbour Collective (events)" -> "HC"; a phone-number caller gets a hash.
+function initials(name: string) {
+  const w = name.replace(/\(.*?\)/g, "").split(/[\s·]+/).filter((x) => /^[A-Za-z]/.test(x));
+  return w.length ? (w[0][0] + (w[1]?.[0] ?? "")).toUpperCase() : "#";
+}
+
+// One status per conversation, worst first, so the list never stacks pills.
+function status(c: Conversation): { dot: string; label: string } {
+  if (c.escalated) return { dot: "bad", label: "Needs you" };
+  if (!c.agentActive) return { dot: "warn", label: "Owner handling" };
+  if (c.ownerId) return { dot: "info", label: "Owner line" };
+  return { dot: "good", label: "Agent" };
+}
+
+const Check = () => (
+  <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+);
+const Alert = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l6.6 11.6H1.4z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /><path d="M8 6.3v3.4M8 11.6v.1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+);
+
 export default function Inbox() {
   const data = useData();
   const a = useApp();
@@ -24,7 +46,7 @@ export default function Inbox() {
   const [sim, setSim] = useState<Inbound>("email");
   const [simBody, setSimBody] = useState(SAMPLES.email.body);
   const [busy, setBusy] = useState(false);
-  const threadRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const c = new URLSearchParams(window.location.search).get("c");
@@ -32,6 +54,7 @@ export default function Inbox() {
   }, []);
 
   const conv = data?.conversations.find((c) => c.id === sel);
+  // wide screens open the most urgent thread; phones start on the list
   useEffect(() => {
     if (!sel && data?.conversations.length && window.innerWidth > 900) {
       setSel(data.conversations.find((c) => c.escalated)?.id ?? data.conversations[0].id);
@@ -39,14 +62,16 @@ export default function Inbox() {
   }, [sel, data?.conversations]);
   useEffect(() => {
     if (conv?.unread) a.markRead(conv.id);
-    threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight });
+    bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel, conv?.messages.length]);
 
   if (!data) return <Loading />;
   const list = [...data.conversations].sort((x, y) => (y.messages.at(-1)?.at ?? "").localeCompare(x.messages.at(-1)?.at ?? ""));
   const owner = (id?: string) => data.owners.find((o) => o.id === id)?.name ?? "Owner";
+  const me = owner(a.ownerId ?? undefined);
   const linked = conv?.customerId ? data.bookings.filter((b) => b.customerId === conv.customerId) : [];
+  const waiting = list.filter((c) => c.escalated).length;
 
   async function simulate() {
     const s = SAMPLES[sim];
@@ -57,17 +82,126 @@ export default function Inbox() {
     setBusy(false);
   }
 
+  function send() {
+    if (!conv || !reply.trim()) return;
+    a.ownerReply(conv.id, reply.trim());
+    setReply("");
+  }
+
+  function turn(m: Msg) {
+    if (m.from === "system") return <div key={m.id} className="sysline">{m.body}</div>;
+    const words = m.from === "agent" ? toolWords(m.tools) : "";
+    const who = m.from === "customer" ? conv!.name : m.from === "owner" ? owner(m.ownerId) : "Agent";
+    return (
+      <div key={m.id} className={cls("turn", m.from)}>
+        {m.from === "agent" ? (
+          <span className="avatar sm agent"><Logo size={20} /></span>
+        ) : (
+          <span className={cls("avatar sm", m.from === "owner" && "owner")}>{initials(who)}</span>
+        )}
+        <div>
+          <div className="who-line"><strong>{who}</strong><span className="meta">{fmtDateTime(m.at)}</span></div>
+          {words && (
+            <ul className="steps">
+              {words.split(", ").map((w) => (
+                <li key={w} className={w === "handed over" ? "handover" : undefined}>{w === "handed over" ? <Alert /> : <Check />}{w[0].toUpperCase() + w.slice(1)}</li>
+              ))}
+            </ul>
+          )}
+          <div className="body"><Linkify text={m.body} /></div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="stack" style={{ gap: 20 }}>
+    <div className="page">
       <div className="admin-top">
-        <h1>Inbox</h1>
-        <span className="muted" style={{ fontSize: 14 }}>SMS, email, phone and web form land here. The agent answers; anything it hands over is flagged.</span>
+        <div><h1>Inbox</h1></div>
+        <span className="meta">{waiting ? `${waiting} waiting on an owner` : "Nothing waiting on an owner"}</span>
       </div>
 
-      <details className="card stack" style={{ gap: 10 }}>
-        <summary className="eyebrow muted" style={{ cursor: "pointer" }}>Demo controls: simulate an inbound message</summary>
-        <div className="row" style={{ alignItems: "flex-end", marginTop: 12 }}>
-          <div className="field" style={{ width: 140 }}>
+      <div className={cls("inbox", conv && "has-sel")}>
+        <div className="inbox-list">
+          <div className="il-head"><strong>Conversations</strong><span className="meta">{list.length}</span></div>
+          <ul>
+            {list.map((c) => {
+              const last = c.messages.at(-1);
+              const st = status(c);
+              return (
+                <li key={c.id}>
+                  <button type="button" className={cls("conv", c.unread && "unread")} onClick={() => setSel(c.id)} aria-current={sel === c.id ? "true" : undefined}>
+                    <span className="avatar">{initials(c.name)}</span>
+                    <span style={{ minWidth: 0 }}>
+                      <span className="c1"><strong>{c.name}</strong>{last && <span className="meta">{fmtDateTime(last.at)}</span>}</span>
+                      <span className="c2" style={{ display: "block" }}>{last?.body}</span>
+                      <span className="c3"><span className={`dot ${st.dot}`} />{st.label}<span className="sep">·</span>{CHANNEL_LABEL[c.channel]}</span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
+        {conv ? (
+          <section className="pane" aria-label={`Conversation with ${conv.name}`}>
+            <div className="pane-head">
+              <div className="who">
+                <button type="button" className="btn small ghost back" onClick={() => setSel(null)} aria-label="Back to conversations">←</button>
+                <span className="avatar">{initials(conv.name)}</span>
+                <div><strong>{conv.name}</strong><span className="meta">{CHANNEL_LABEL[conv.channel]} · {conv.contact}</span></div>
+              </div>
+              <div className="acts">
+                <span className={`pill ${status(conv).dot === "bad" ? "bad" : status(conv).dot === "warn" ? "warn" : status(conv).dot === "good" ? "good" : ""}`}>{status(conv).label}</span>
+                {conv.ownerId ? null : conv.agentActive ? (
+                  <button className="btn small" onClick={() => a.setAgentActive(conv.id, false)}>Take over</button>
+                ) : (
+                  <button className="btn small" onClick={() => a.setAgentActive(conv.id, true)}>Hand back to agent</button>
+                )}
+              </div>
+            </div>
+            <div className="pane-body" ref={bodyRef}>
+              {conv.escalated && (
+                <div className="stopped" role="note">
+                  <Alert />
+                  <div>
+                    <strong>Agent stopped and handed over</strong>
+                    {conv.escalated}
+                    {linked.length > 0 && <div className="refs">{linked.map((b) => <Link key={b.id} className="ref" href={`/admin/bookings/${b.id}`}>{b.ref}</Link>)}</div>}
+                  </div>
+                </div>
+              )}
+              {!conv.escalated && linked.length > 0 && (
+                <div className="meta">Bookings: {linked.map((b, i) => <span key={b.id}>{i ? ", " : ""}<Link className="ref" href={`/admin/bookings/${b.id}`}>{b.ref}</Link></span>)}</div>
+              )}
+              {conv.messages.map(turn)}
+            </div>
+            {!conv.ownerId && (
+              <form className="composer" onSubmit={(e) => { e.preventDefault(); send(); }}>
+                <textarea
+                  aria-label="Reply"
+                  placeholder={`Reply to ${conv.name}`}
+                  value={reply}
+                  onChange={(e) => setReply(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); } }}
+                />
+                <div className="cbar">
+                  <span className="meta">Sends by {/^[\d\s+()]+$/.test(conv.contact) ? "SMS" : "email"} to {conv.contact} as {me}. Replying takes the thread off the agent.</span>
+                  <button className="btn small primary" disabled={!reply.trim()}>Send <kbd>⌘↵</kbd></button>
+                </div>
+              </form>
+            )}
+          </section>
+        ) : (
+          <div className="pane"><div className="pane-empty">Pick a conversation.</div></div>
+        )}
+      </div>
+
+      <details className="sim">
+        <summary>Demo: simulate an inbound message</summary>
+        <div className="row">
+          <div className="field" style={{ width: 160 }}>
             <label htmlFor="sim-channel">Channel</label>
             <select id="sim-channel" className="input" value={sim} onChange={(e) => { const v = e.target.value as Inbound; setSim(v); setSimBody(SAMPLES[v].body); }}>
               <option value="email">Email</option>
@@ -76,92 +210,13 @@ export default function Inbox() {
               <option value="sms">SMS</option>
             </select>
           </div>
-          <div className="field" style={{ flex: 1, minWidth: 240 }}>
+          <div className="field" style={{ flex: 1, minWidth: 220 }}>
             <label htmlFor="sim-body">From {SAMPLES[sim].contact}</label>
             <input id="sim-body" className="input" value={simBody} onChange={(e) => setSimBody(e.target.value)} />
           </div>
           <button className="btn small" disabled={busy || !simBody.trim()} onClick={simulate}>{busy ? "Agent replying…" : "Send in"}</button>
         </div>
       </details>
-
-      <div className="split">
-        <div className="table-wrap" style={{ maxHeight: "70vh", overflowY: "auto" }}>
-          <table className="t" style={{ tableLayout: "fixed" }}>
-            <tbody>
-              {list.map((c) => {
-                const last = c.messages.at(-1);
-                return (
-                  <tr key={c.id} className="click" style={{ background: sel === c.id ? "#faf6ef" : undefined }}>
-                    <td>
-                      <button type="button" className="rowbtn" onClick={() => setSel(c.id)} aria-current={sel === c.id ? "true" : undefined}>
-                      <div className="row between" style={{ flexWrap: "nowrap" }}>
-                        <strong style={{ fontWeight: c.unread ? 700 : 500 }}>{c.name}</strong>
-                        <span className="pill">{CHANNEL_LABEL[c.channel]}</span>
-                      </div>
-                      <div className="muted" style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{last?.body}</div>
-                      <div className="row" style={{ gap: 6, marginTop: 4 }}>
-                        {c.ownerId && <span className="pill">Owner line</span>}
-                        {c.escalated && <span className="pill bad">Needs a person</span>}
-                        {!c.agentActive && !c.escalated && <span className="pill warn">Owner handling</span>}
-                        {last && <span className="mono muted" style={{ fontSize: 11 }}>{fmtDateTime(last.at)}</span>}
-                      </div>
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {conv ? (
-          <div className="stack" style={{ minWidth: 0 }}>
-            <div className="row between">
-              <div>
-                <strong style={{ fontSize: 18 }}>{conv.name}</strong>{" "}
-                <span className="muted">{CHANNEL_LABEL[conv.channel]} · {conv.contact}</span>
-              </div>
-              {conv.ownerId ? null : conv.agentActive ? (
-                <button className="btn small ghost" onClick={() => a.setAgentActive(conv.id, false)}>Take over</button>
-              ) : (
-                <button className="btn small" onClick={() => a.setAgentActive(conv.id, true)}>Hand back to agent</button>
-              )}
-            </div>
-            {conv.escalated && <div className="notice"><strong>Handed over:</strong> {conv.escalated}</div>}
-            {linked.length > 0 && (
-              <div className="row" style={{ fontSize: 14 }}>
-                Bookings: {linked.map((b) => <Link key={b.id} href={`/admin/bookings/${b.id}`}>{b.ref}</Link>)}
-              </div>
-            )}
-            <div className="thread" ref={threadRef}>
-              {conv.messages.map((m) => (
-                <div key={m.id} style={{ display: "contents" }}>
-                  <div className={cls("bubble", m.from === "customer" ? "me" : m.from === "owner" ? "owner" : m.from === "system" ? "sys" : "them")}>
-                    {m.from === "owner" && <span className="mono" style={{ fontSize: 10, display: "block", opacity: 0.8 }}>{owner(m.ownerId)}</span>}
-                    <Linkify text={m.body} />
-                  </div>
-                  {m.from === "agent" && (
-                    <span className="tools">
-                      agent · {fmtDateTime(m.at)}{m.tools?.length ? ` · ${m.tools.join(", ")}` : ""}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-            {!conv.ownerId && (
-              <>
-                <form className="row" onSubmit={(e) => { e.preventDefault(); if (!reply.trim()) return; a.ownerReply(conv.id, reply.trim()); setReply(""); }}>
-                  <input className="input" aria-label="Reply" style={{ flex: 1 }} placeholder={`Reply by ${CHANNEL_LABEL[conv.channel].toLowerCase()} as ${owner(a.ownerId ?? undefined)}`} value={reply} onChange={(e) => setReply(e.target.value)} />
-                  <button className="btn primary">Send</button>
-                </form>
-                <span className="muted" style={{ fontSize: 13 }}>Replying takes the conversation off the agent until you hand it back.</span>
-              </>
-            )}
-          </div>
-        ) : (
-          <div className="card muted">Pick a conversation.</div>
-        )}
-      </div>
     </div>
   );
 }

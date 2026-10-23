@@ -43,15 +43,15 @@ export default function Payouts() {
                 <div>
                   <div className="summary-row"><span>Revenue</span><span>{money(d.revenue)}</span></div>
                   <div className="summary-row"><span>Operating costs</span><span>−{money(d.expenses)}</span></div>
-                  <div className="summary-row"><strong>Profit</strong><strong>{money(d.profit)}</strong></div>
+                  <div className="summary-row total"><strong>Profit</strong><strong>{money(d.profit)}</strong></div>
                   <div className="summary-row"><span>Tax provision</span><span>−{money(d.taxProvision)}</span></div>
                   <div className="summary-row"><span>Cash at quarter end</span><span>{money(d.cash)}</span></div>
                   <div className="summary-row"><span>Reserve kept</span><span>{money(d.reserve)}</span></div>
                   <div className="summary-row"><span>Customer money held for hires ahead</span><span>{money(d.deposits ?? 0)}</span></div>
                   <div className="summary-row"><span>Runner fees owed</span><span>{money(d.owedRunners ?? 0)}</span></div>
-                  <div className="summary-row"><strong>To distribute</strong><strong>{money(d.distributable)}</strong></div>
+                  <div className="summary-row total"><strong>To distribute</strong><strong>{money(d.distributable)}</strong></div>
                 </div>
-                <div className="table-wrap" style={{ background: "var(--paper)" }}>
+                <div className="table-wrap">
                   <table className="t cards wide tight">
                     <thead><tr><th>Owner</th><th className="num">Shares</th><th className="num">Dividend</th><th className="num">Runner fees</th><th>Transfer</th></tr></thead>
                     <tbody>

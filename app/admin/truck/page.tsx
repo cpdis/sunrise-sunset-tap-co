@@ -23,7 +23,7 @@ export default function Truck() {
   return (
     <div className="page">
       <div className="admin-top"><h1>Truck</h1></div>
-      <div className="grid cols-4">
+      <div className="stats">
         <Stat k="Odometer (last logged)" v={`${odo.toLocaleString()} km`} />
         <Stat k="Since last service" v={`${sinceService.toLocaleString()} km`} />
         <Stat k="Driven for hires, last 12 months" v={`${yearKm.toLocaleString()} km`} />

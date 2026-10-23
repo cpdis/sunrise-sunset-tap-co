@@ -66,7 +66,7 @@ export default function Owners() {
               <div className="summary-row"><span>Customer money for hires ahead</span><span>−{money(held)}</span></div>
               <div className="summary-row"><span>Runner fees owed</span><span>−{money(owed)}</span></div>
               <div className="summary-row"><span>Company tax not yet paid</span><span>−{money(tax)}</span></div>
-              <div className="summary-row"><strong>Net assets</strong><strong>{money(nav)}</strong></div>
+              <div className="summary-row total"><strong>Net assets</strong><strong>{money(nav)}</strong></div>
               <div className="summary-row"><strong>Per share</strong><strong>{money(nav / total)}</strong></div>
             </div>
             <span className="note">An exiting owner offers their shares to the others pro rata first, at a price set by the shareholders agreement (usually net assets with an independent truck valuation).</span>
