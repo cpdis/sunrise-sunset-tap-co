@@ -136,6 +136,10 @@ export function sameContact(a?: string, b?: string): boolean {
   return n(a) !== "" && n(a) === n(b);
 }
 
+// JSON with sorted keys and no undefined values, so equal values give equal text however they were built or stored.
+export const canon = (x: unknown) =>
+  JSON.stringify(x, (_k, v) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : 1))) : v));
+
 export function cls(...xs: (string | false | null | undefined)[]): string {
   return xs.filter(Boolean).join(" ");
 }

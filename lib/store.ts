@@ -4,7 +4,7 @@
 // named server command (lib/server/commands.ts), and the copy is read again from /api/state after it.
 import { create } from "zustand";
 import type { NewBooking } from "./domain";
-import type { Account, Conversation, Data, KbPage, Scenario, Settings, TruckLog } from "./types";
+import type { Account, ApprovalCode, Conversation, Data, KbPage, Scenario, Settings, TruckLog } from "./types";
 import type { BookingView, ChatView, PublicView, StateView } from "./views";
 
 type Booked = { id: string; token: string };
@@ -16,6 +16,8 @@ interface AppState {
   // A signed-in owner's whole business document, and who they are.
   data: Data | null;
   ownerId: string | null;
+  // The one-time codes for changes this owner texted, for the admin header (KTD6).
+  codes: ApprovalCode[];
   // What anyone may see: availability, settings and the knowledge base.
   pub: PublicView | null;
   // A customer's booking link, and the booking it opened (bookingFor says which link that answer was for).
@@ -99,6 +101,7 @@ export const useApp = create<AppState>()((set, get) => {
   return {
     data: null,
     ownerId: null,
+    codes: [],
     pub: null,
     link: null,
     booking: null,
@@ -121,7 +124,7 @@ export const useApp = create<AppState>()((set, get) => {
       if (!res?.ok || mine !== reads) return;
       const s = (await res.json()) as StateView;
       if (mine !== reads) return;
-      set({ pub: s.pub, data: s.owner?.data ?? null, ownerId: s.owner?.id ?? null, booking: s.booking ?? null, bookingFor: link?.id ?? null, chat: s.chat ?? null, hydrated: true });
+      set({ pub: s.pub, data: s.owner?.data ?? null, ownerId: s.owner?.id ?? null, codes: s.owner?.codes ?? [], booking: s.booking ?? null, bookingFor: link?.id ?? null, chat: s.chat ?? null, hydrated: true });
     },
 
     // Runs the due jobs on the server, then reads the state again.
@@ -143,7 +146,7 @@ export const useApp = create<AppState>()((set, get) => {
 
     logout: async () => {
       await fetch("/api/session", { method: "DELETE" }).catch(() => undefined);
-      set({ data: null, ownerId: null });
+      set({ data: null, ownerId: null, codes: [] });
       await get().refresh();
     },
 

@@ -23,7 +23,8 @@ export const tenantState = pgTable("tenant_state", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-// A staged owner or customer action, bound to its exact targets and consumed once (KTD4, KTD11).
+// A staged owner change, bound to its exact targets and consumed once (KTD4, KTD11). Rows stay after they settle,
+// as the record of what was staged and what ran. The one-time code is never stored (lib/server/approvals.ts).
 export const approvals = pgTable(
   "approvals",
   {
@@ -31,16 +32,17 @@ export const approvals = pgTable(
     tenantId: text("tenant_id")
       .notNull()
       .references(() => tenants.id),
-    // The owner who staged it; empty for a customer's own confirmation.
+    // The owner who staged it.
     ownerId: text("owner_id"),
     conversationId: text("conversation_id").notNull(),
     tool: text("tool").notNull(),
-    // Target ids, amounts and text, exactly as staged.
+    // The tool's input, with targets pinned to ids.
     args: jsonb("args").$type<Record<string, unknown>>().notNull(),
     summary: text("summary").notNull(),
+    // The exact actions and summary a YES applies (StagedApproval.binding).
+    binding: text("binding").notNull(),
     nonce: text("nonce").notNull(),
     needsCode: boolean("needs_code").notNull().default(false),
-    codeAttempts: integer("code_attempts").notNull().default(0),
     policyVersion: integer("policy_version").notNull(),
     status: text("status", { enum: ["staged", "consumed", "invalidated", "cancelled", "expired"] })
       .notNull()
@@ -49,7 +51,7 @@ export const approvals = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
   },
-  (t) => [index("approvals_conversation_idx").on(t.tenantId, t.conversationId, t.status)],
+  (t) => [index("approvals_conversation_idx").on(t.tenantId, t.conversationId, t.status), index("approvals_owner_idx").on(t.tenantId, t.ownerId, t.status)],
 );
 
 // Fixed-window counters (KTD8). `bucket` names what is counted, for example a sender's messages or the day's

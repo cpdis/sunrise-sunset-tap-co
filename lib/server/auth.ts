@@ -41,6 +41,13 @@ interface Claims extends Session {
 
 const mac = (payload: string, env: Env) => createHmac("sha256", secret(env)).update(payload).digest("base64url");
 
+// A keyed hash of other server-held values under the same secret, such as an approval's one-time code
+// (lib/server/approvals.ts). The purpose and a newline lead the input, so it never equals a token's signature:
+// token payloads are base64url, which has no newline.
+export function serverMac(purpose: string, data: string, env: Env = process.env) {
+  return createHmac("sha256", secret(env)).update(`${purpose}\n${data}`).digest();
+}
+
 function sign(c: Claims, env: Env = process.env) {
   const payload = Buffer.from(JSON.stringify(c)).toString("base64url");
   return `${payload}.${mac(payload, env)}`;

@@ -9,7 +9,36 @@ import { SmsWidget } from "@/components/SmsWidget";
 import { Loading, useData } from "@/components/ui";
 import { SCENARIOS } from "@/lib/seed";
 import { useApp } from "@/lib/store";
+import { TZ } from "@/lib/util";
 import "./admin.css";
+
+const clock = new Intl.DateTimeFormat("en-AU", { timeZone: TZ, hour: "numeric", minute: "2-digit" });
+
+// KTD6: the one-time code for each change this owner texted, with the change it is for. It stands in for an
+// authenticator app: a text from the owner's number proves only its caller ID, so the risky changes also need this
+// code, which only the signed-in owner sees.
+function Codes() {
+  const codes = useApp((s) => s.codes);
+  if (!codes.length) return null;
+  return (
+    <div className="codes" role="status">
+      {codes.map((a) => (
+        <div key={a.id} className="code-row">
+          <p className="code-for">
+            <span className="k">Your code to</span> {a.summary}
+          </p>
+          <div className="code-value">
+            <span className="code mono" aria-label={`Code ${a.code.split("").join(" ")}`}>
+              <span>{a.code.slice(0, 3)}</span>
+              <span>{a.code.slice(3)}</span>
+            </span>
+            <span className="meta">Text it with the YES, until {clock.format(new Date(a.expiresAt))}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // The owners' admin reads like a finance console: Geist on white, Golden Hour inks as accents only.
 const sans = Geist({ subsets: ["latin"], variable: "--font-admin", display: "swap" });
@@ -95,6 +124,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
         </nav>
         <main className="admin-main">
+          <Codes />
           {error && (
             <div className="notice admin-error" role="alert">
               <span>{error}</span>

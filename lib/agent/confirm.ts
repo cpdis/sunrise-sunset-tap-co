@@ -66,3 +66,16 @@ export function parseCoded(text: string, extraYes: string[] = []): { answer: Con
   const rest = text.replace(CODE, " ");
   return { answer: parseConfirm(rest, extraYes), code: codes.length === 1 ? codes[0] : undefined, bare: codes.length > 0 && normalise(rest) === "" };
 }
+
+// KTD6: an owner's one-time code from the admin page, six digits ("482193" or "482 193"), maybe after "code".
+const ONE_TIME = /\b(?:code\s*:?\s*)?(\d{3})\s?(\d{3})\b/gi;
+
+// A reply to "Reply YES 4821 and the 6-digit code from your admin page": parseCoded on the text without the
+// one-time code, plus that code (only when it quotes exactly one). bare: the message is only codes.
+export function parseApproval(text: string): { answer: Confirm; code?: string; oneTime?: string; bare: boolean } {
+  const oneTimes = [...text.matchAll(ONE_TIME)].map((m) => m[1] + m[2]);
+  const rest = text.replace(ONE_TIME, " ");
+  const r = parseCoded(rest);
+  const quoted = oneTimes.length > 0 || (rest.match(CODE) ?? []).length > 0;
+  return { answer: r.answer, code: r.code, oneTime: oneTimes.length === 1 ? oneTimes[0] : undefined, bare: quoted && normalise(rest.replace(CODE, " ")) === "" };
+}

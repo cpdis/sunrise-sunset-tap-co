@@ -187,14 +187,51 @@ export interface AgentState {
   code?: string;
   refund?: number;
   refDate?: string;
-  // Owner agent: a staged change that runs only if the owner's next text is YES.
-  pending?: PendingOwnerAction;
 }
 
-export interface PendingOwnerAction {
+// An owner change waiting for YES (KTD4, KTD11). The server keeps it in the approvals table, bound to its business,
+// owner and conversation, and it expires after APPROVAL_MINUTES (lib/agent/owner-tools.ts).
+export interface StagedApproval {
+  id: string;
+  // The owner tool that runs on YES, and its input with the conversation it names resolved to an id. A
+  // "pick_conversation" is a numbered list of conversations instead: a number answers it, it changes nothing by
+  // itself, and it has no nonce.
   tool: string;
   args: Record<string, unknown>;
+  // What the owner is asked to confirm (KTD5).
   summary: string;
+  // The actions and summary YES applies, as canonical JSON. A YES whose re-run gives anything else asks again.
+  binding: string;
+  // The 4-digit code the YES must echo, sent only to the owner's handset (KTD11).
+  nonce: string;
+  // Money, settings, knowledge and draft sends also need the one-time code on the owner's admin page (KTD6).
+  needsCode: boolean;
+  policyVersion: number;
+  expiresAt: string;
+}
+
+// The approval waiting when an owner's message comes in, as the server hands it to the owner agent: with its
+// one-time code when it needs one, and whether its time ran out.
+export interface PendingApproval extends StagedApproval {
+  code?: string;
+  expired: boolean;
+}
+
+export type ApprovalStatus = "consumed" | "cancelled" | "invalidated" | "expired";
+
+// A one-time code the signed-in owner's admin page shows, next to the change it is for (lib/server/approvals.ts).
+export interface ApprovalCode {
+  id: string;
+  summary: string;
+  code: string;
+  expiresAt: string;
+}
+
+// What an owner's turn does to approvals. lib/server/agent.ts writes it in the same transaction as the actions.
+export interface ApprovalChange {
+  // The approval the message answered and what becomes of it. Left out, it stays staged (asked again for its code).
+  settled?: { id: string; status: ApprovalStatus };
+  staged?: StagedApproval;
 }
 
 export interface Conversation {
@@ -331,4 +368,6 @@ export interface AgentResult {
   engine: "claude" | "rules";
   // Model tokens the turn spent, for the daily budget (lib/server/limits.ts). The rules engine spends none.
   tokens?: number;
+  // Owner agent only.
+  approval?: ApprovalChange;
 }

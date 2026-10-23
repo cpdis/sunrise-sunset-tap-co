@@ -14,12 +14,13 @@ import type { ToolCtx } from "@/lib/agent/tools";
 import { findSuburb } from "@/lib/config";
 import { cancelBooking, cancelNeedsOwner, cancelPolicy, createHold, holdExpired } from "@/lib/domain";
 import * as ops from "@/lib/ops";
-import type { AgentAction, AgentResult, AgentState, Conversation, Data, KbPage, Msg } from "@/lib/types";
-import { sameContact, uid } from "@/lib/util";
+import type { AgentAction, AgentResult, AgentState, Conversation, Data, KbPage, Msg, PendingApproval } from "@/lib/types";
+import { canon, sameContact, uid } from "@/lib/util";
 import { type ChatView, chatView, ownerByContact, ownerHolds, ownerSnapshot, snapshot } from "@/lib/views";
+import { pendingApproval, settleApprovals } from "./approvals";
 import { CommandError, type Raw, bad, isObj, maybeText, oneOf, text } from "./args";
 import type { Caller } from "./commands";
-import type { Repo } from "./db/repo";
+import type { ApprovalRow, ApprovalWrites, Repo } from "./db/repo";
 
 // What the model reads, bounded by the stored data rather than by the request: the last HISTORY messages, each cut
 // to MESSAGE_CHARS, and the knowledge base cut to KB_CHARS in all.
@@ -61,7 +62,8 @@ export interface TurnOutput {
 function receive(d: Data, input: TurnInput, now: Date) {
   let c = d.conversations.find((x) => x.contact === input.contact && x.channel === input.channel);
   if (!c) {
-    // An owner's own number gets the owner agent. U11 adds the second factor for anything risky.
+    // An owner's own number gets the owner agent. Caller ID proves nothing, so its changes wait for a YES with the
+    // nonce sent to that number, and the risky ones also for the code on the owner's admin page (KTD6).
     const owner = ownerByContact(d, input.contact);
     c = { id: uid("conv"), channel: input.channel, contact: input.contact, name: owner?.name ?? input.name ?? "New contact", ...(owner && { ownerId: owner.id }), agentActive: true, unread: !owner, state: {}, messages: [] };
     d.conversations.unshift(c);
@@ -85,12 +87,8 @@ export function boundKb(kb: KbPage[]): KbPage[] {
   return out;
 }
 
-// JSON with sorted keys and no undefined values, so a state read back from the database compares equal to itself.
-const canon = (x: unknown) =>
-  JSON.stringify(x, (_k, v) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : 1))) : v));
-
 // What the turn read of its conversation. The result applies only if this is unchanged: no newer message, no owner
-// taking over or handing back, no other turn's state (such as a concurrent YES that already used a staged change).
+// taking over or handing back, no other turn's state (such as a customer's cancel quote a concurrent YES already used).
 const mark = (c: Conversation) => canon([c.messages.at(-1)?.id, c.agentActive, c.escalated ?? null, c.handledBy ?? null, c.state]);
 
 interface Turn {
@@ -100,7 +98,8 @@ interface Turn {
 }
 
 // The agent for this conversation, on what the server stored. Undefined when the agent doesn't answer.
-function prepare(d: Data, c: Conversation, now: Date, origin: string): Turn | undefined {
+// pending: an owner conversation's staged approval (lib/server/approvals.ts).
+function prepare(d: Data, c: Conversation, now: Date, origin: string, pending?: PendingApproval): Turn | undefined {
   if (ownerHolds(c)) return undefined;
   const history = c.messages.slice(-HISTORY).map((m) => ({ ...m, body: m.body.slice(0, MESSAGE_CHARS) }));
   const last = history.at(-1)?.body ?? "";
@@ -112,8 +111,8 @@ function prepare(d: Data, c: Conversation, now: Date, origin: string): Turn | un
     const owner = d.owners.find((o) => o.id === c.ownerId);
     if (!owner) return undefined;
     const data = { ...ownerSnapshot(d, now), kb };
-    const ctx = (): OwnerCtx => ({ data, owner, now, actions: [], used: [] });
-    return { ...base, run: (client, rulesOnly) => engine(client, rulesOnly, (cl) => runOwnerClaude(ctx(), history, state(), cl), () => runOwnerRules(ctx(), last, state())) };
+    const ctx = (): OwnerCtx => ({ data, owner, now, actions: [], used: [], pending });
+    return { ...base, run: (client, rulesOnly) => engine(client, rulesOnly, (cl) => runOwnerClaude(ctx(), history, cl), () => runOwnerRules(ctx(), last)) };
   }
   const data = { ...snapshot(d, c.contact), kb };
   const ctx = (): ToolCtx => ({
@@ -203,18 +202,29 @@ function escalate(d: Data, c: Conversation, a: Extract<AgentAction, { type: "esc
   ops.log(d, `Escalated to owners: ${a.reason}`);
 }
 
-// Applies a turn's result to the stored data. Synchronous and repeatable, as repo.mutate needs (KTD10).
-export function applyTurn(d: Data, t: Pick<Turn, "convId" | "mark">, r: AgentResult, now: Date) {
+// Applies a turn's result to the stored data, with the approval writes an owner's turn makes (staged: the
+// conversation's staged approvals as they are now). Synchronous and repeatable, as repo.mutateApprovals needs
+// (KTD10).
+function applyTurn(d: Data, t: Pick<Turn, "convId" | "mark">, r: AgentResult, now: Date, staged: ApprovalRow[]): { value: boolean; writes?: ApprovalWrites } {
   const c = d.conversations.find((x) => x.id === t.convId);
-  if (!c || mark(c) !== t.mark) {
+  const owner = c?.ownerId ? d.owners.find((o) => o.id === c.ownerId) : undefined;
+  if (!c || mark(c) !== t.mark || (c.ownerId && !owner)) {
     // An owner took over, another message came in, or another turn answered first. This answer is out of date, so
     // none of it applies; the message waits for the owners or the newer turn.
     ops.log(d, `Agent reply to ${c?.name ?? "a conversation"} dropped: the conversation changed while the agent was answering`);
-    return false;
+    return { value: false };
   }
   // The reply goes in first so a hand-over row reads after what the agent told the customer.
   const reply: Msg = { id: uid("m"), from: "agent", body: r.reply, at: now.toISOString(), tools: r.tools };
   c.messages.push(reply);
+  // An owner's YES runs only if its approval still holds as this write sees the data (KTD4). If not, nothing of
+  // the turn applies and the reply says what happened instead of "Done" (R4).
+  const settled = owner ? settleApprovals(d, owner, r.approval, staged, now) : undefined;
+  if (settled?.refused) {
+    reply.body = settled.refused;
+    c.state = structuredClone(r.state);
+    return { value: true, writes: settled.writes };
+  }
   for (const a of r.actions) {
     // After a hand-over the agent books and cancels nothing (its tools refuse too).
     if ((a.type === "hold" || a.type === "cancel") && !c.agentActive) continue;
@@ -231,7 +241,7 @@ export function applyTurn(d: Data, t: Pick<Turn, "convId" | "mark">, r: AgentRes
     }
   }
   c.state = structuredClone(r.state);
-  return true;
+  return { value: true, writes: settled?.writes };
 }
 
 // ---------- the turn ----------
@@ -254,11 +264,13 @@ export async function agentTurn(repo: Repo, caller: Pick<Caller, "tenant" | "now
   const got = await repo.mutate(caller.tenant, (d) => receive(d, input, now));
   if (!got.ok) mutateFailed(got);
   const convId = got.value;
-  const turn = prepare(got.data, find(got.data, convId), now, opts.origin);
-  if (!turn) return { conversation: chatView(find(got.data, convId)) };
+  const c = find(got.data, convId);
+  const pending = c.ownerId ? await pendingApproval(repo, caller.tenant, convId, now) : undefined;
+  const turn = prepare(got.data, c, now, opts.origin, pending);
+  if (!turn) return { conversation: chatView(c) };
   const result = await turn.run(opts.client, opts.rulesOnly);
   if (result.tokens) await opts.onTokens?.(result.tokens);
-  const put = await repo.mutate(caller.tenant, (d) => applyTurn(d, turn, result, now));
+  const put = await repo.mutateApprovals(caller.tenant, convId, (d, staged) => applyTurn(d, turn, result, now, staged));
   if (!put.ok) mutateFailed(put);
   return { conversation: chatView(find(put.data, convId)), ...(put.value && { engine: result.engine }) };
 }

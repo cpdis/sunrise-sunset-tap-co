@@ -58,6 +58,11 @@ rules engine answers and the owners get one alert in the outbox (`lib/server/lim
   promise no time or call. Both engines cancel only after a quote and a clear YES to it, hold one unpaid date per
   contact, and treat someone else's SST- reference like an unknown one. After a hand-over it keeps answering FAQs but
   won't hold or cancel until handed back.
+- **Owner agent**: a text from an owner's own number gets the owner agent (`lib/agent/owner-*.ts`). Caller ID can be
+  spoofed, so only reads run at once. Every change is staged in the approvals table and runs only on a reply of YES
+  with the 4-digit code in the confirmation text. Money, settings, knowledge lines and draft sends also need the
+  6-digit code at the top of that owner's admin pages (`lib/server/approvals.ts`). A YES runs the exact change it
+  confirmed, once, within 10 minutes; if the change has moved on, the agent asks again.
 
 ## Production path
 

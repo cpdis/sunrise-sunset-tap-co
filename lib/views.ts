@@ -4,7 +4,7 @@
 import type { OwnerSnapshot } from "./agent/owner-tools";
 import type { Snapshot } from "./agent/tools";
 import { balance, cancelNeedsOwner, cashAt, freeCash, paidSoFar, periodTotals, reserveTarget } from "./domain";
-import type { Booking, Conversation, Data, KbPage, Settings, Slot } from "./types";
+import type { ApprovalCode, Booking, Conversation, Data, KbPage, Settings, Slot } from "./types";
 import { addDays, safeEqual, sameContact, todayISO } from "./util";
 
 // What anyone may see: prices, the knowledge base and which days are taken. No booking ids, refs or customers.
@@ -51,11 +51,12 @@ export function bookingView(d: Data, b: Booking, now = new Date()): BookingView 
   };
 }
 
-// The SMS widget's conversation, as its sender sees it: no owner draft and no internal ids.
-export type ChatView = Pick<Conversation, "id" | "channel" | "contact" | "name" | "agentActive" | "escalated" | "handledBy" | "state" | "messages">;
+// The SMS widget's conversation, as its sender sees it: no owner draft, no internal ids and no agent state (which
+// holds the code a customer's cancel must echo; that goes to the sender's handset only, in the message).
+export type ChatView = Pick<Conversation, "id" | "channel" | "contact" | "name" | "agentActive" | "escalated" | "handledBy" | "messages">;
 
-export function chatView({ id, channel, contact, name, agentActive, escalated, handledBy, state, messages }: Conversation): ChatView {
-  return { id, channel, contact, name, agentActive, escalated, handledBy, state, messages };
+export function chatView({ id, channel, contact, name, agentActive, escalated, handledBy, messages }: Conversation): ChatView {
+  return { id, channel, contact, name, agentActive, escalated, handledBy, messages };
 }
 
 // An owner has the conversation: they took it over or replied, and the agent stays out of it until it is handed
@@ -108,8 +109,8 @@ export function ownerSnapshot(d: Data, now = new Date()): OwnerSnapshot {
 // The whole answer to a state read. Each part is present only when the caller may see it.
 export interface StateView {
   pub: PublicView;
-  // A signed-in owner: the whole document.
-  owner?: { id: string; data: Data };
+  // A signed-in owner: the whole document, and the one-time codes for the changes they texted (KTD6).
+  owner?: { id: string; data: Data; codes: ApprovalCode[] };
   // A customer's booking link.
   booking?: BookingView;
   // The SMS widget's conversation with the contact it texts from.
@@ -122,6 +123,8 @@ export interface StateQuery {
   booking?: string;
   token?: string;
   chat?: string;
+  // demoMode() (KTD12): the widget may read a customer number's conversation without a session.
+  demo?: boolean;
 }
 
 export function stateFor(d: Data, q: StateQuery, now = new Date()): StateView {
@@ -130,9 +133,11 @@ export function stateFor(d: Data, q: StateQuery, now = new Date()): StateView {
   const c = q.chat ? d.conversations.find((x) => x.channel === "sms" && x.contact === q.chat) : undefined;
   return {
     pub: publicView(d, now),
-    ...(owner && { owner: { id: owner.id, data: d } }),
+    ...(owner && { owner: { id: owner.id, data: d, codes: [] } }),
     ...(b && { booking: bookingView(d, b, now) }),
-    // An owner's own number reaches the owner agent, so only a signed-in owner reads that conversation.
-    ...(c && (!c.ownerId || owner) && { chat: chatView(c) }),
+    // A phone number is no secret, so a conversation goes only to a signed-in owner, or to the demo's widget, whose
+    // simulator lets anyone text as any customer number anyway. An owner's own number reaches the owner agent, so
+    // only a signed-in owner reads that conversation, even in the demo.
+    ...(c && (owner || (q.demo && !c.ownerId)) && { chat: chatView(c) }),
   };
 }

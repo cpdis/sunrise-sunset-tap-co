@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { POST as previewPOST } from "@/app/api/agent/preview/route";
 import { POST as simulatePOST } from "@/app/api/dev/simulate/route";
 import { KB_CHARS, agentTurn } from "@/lib/server/agent";
+import { approvalCode } from "@/lib/server/approvals";
 import { sessionCookie } from "@/lib/server/auth";
 import { type Caller, CommandError, runCommand } from "@/lib/server/commands";
 import { type Connection, connect } from "@/lib/server/db/client";
@@ -243,11 +244,13 @@ describe("the apply checks again (KTD10)", () => {
       },
     });
     const phone = (await doc(repo)).owners.find((o) => o.id === "own_colin")!.phone;
-    await say(repo, phone, "$42 CO2 refill");
-    expect(conv(await doc(repo), phone).state.pending?.tool).toBe("add_expense");
+    const staged = await say(repo, phone, "$42 CO2 refill");
+    const [row] = await repo.stagedApprovals(DEMO_TENANT, staged.conversation.id);
+    expect(row.tool).toBe("add_expense");
+    const yes = `YES ${row.nonce} ${approvalCode(DEMO_TENANT, row.id)}`;
     saves = 0;
-    second = () => say(repo, phone, "yes");
-    await say(repo, phone, "yes");
+    second = () => say(repo, phone, yes);
+    await say(repo, phone, yes);
     expect(second).toBeUndefined();
     const d = await doc(repo);
     expect(d.ledger.filter((e) => e.account === "co2" && e.memo.startsWith("CO2 refill"))).toHaveLength(1);
@@ -305,7 +308,7 @@ describe("the inbound route ignores what the sender says about data (R14, review
     expect(after.owners).toEqual(before.owners);
     const c = conv(after, ATT);
     expect(c.ownerId).toBeUndefined();
-    expect(c.state.pending).toBeUndefined();
+    expect(await repo.stagedApprovals(DEMO_TENANT, c.id)).toEqual([]);
   });
 
   test("P1b: an injected pending expense on a real owner's number adds nothing", async () => {

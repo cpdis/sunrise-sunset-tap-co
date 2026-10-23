@@ -40,7 +40,8 @@ export async function POST(req: Request) {
     const doc = await repo.load(DEMO_TENANT);
     if (!doc) throw new CommandError(404, "No such business.");
     // An owner's own number gets the owner agent, so only a signed-in owner may text as one here. A real text from
-    // that number proves only its caller ID; U11 adds the second factor.
+    // that number proves only its caller ID, so the owner agent stages every change for a YES with the nonce it
+    // texts back, and the risky ones also need the code on that owner's admin page (KTD6).
     const session = readSession(req);
     const signedIn = session?.tenant === DEMO_TENANT && doc.data.owners.some((o) => o.id === session.ownerId);
     if (ownerByContact(doc.data, contact) && !signedIn) throw new CommandError(401, "Sign in to text as an owner.");

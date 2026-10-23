@@ -19,6 +19,7 @@ vi.mock("@/lib/server/db/repo", async (importOriginal) => ({ ...(await importOri
 
 const open: Connection[] = [];
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(open.splice(0).map((c) => c.close()));
 });
 
@@ -296,6 +297,30 @@ describe("/api/state", () => {
     expect((await get(`booking=${a.id}`)).booking).toBeUndefined();
     expect((await get(`booking=${a.id}&t=wrong`)).booking).toBeUndefined();
     expect((await get(`booking=${a.id}&t=${a.token}`)).booking.booking.id).toBe(a.id);
+  });
+
+  // A phone number is no secret: outside the demo, reading a number's conversation needs an owner's session.
+  test("a customer number's conversation needs an owner's session outside the demo; the demo widget still reads it", async () => {
+    const repo = await setup();
+    const number = "0400 000 321";
+    await agentTurn(repo, visitor, { channel: "sms", contact: number, body: "How many kegs fit?" }, { origin: BASE });
+    // SST-1052's customer, whose cancel quote carries the code a YES must echo.
+    await agentTurn(repo, visitor, { channel: "sms", contact: "0450 926 727", body: "cancel SST-1052" }, { origin: BASE });
+    const chatOf = async (contact: string, headers: Record<string, string> = {}) =>
+      (await (await stateGET(new Request(`${BASE}/api/state?chat=${encodeURIComponent(contact)}`, { headers }))).json()).chat;
+    // Development counts as the demo (KTD12).
+    expect((await chatOf(number))?.contact).toBe(number);
+    // The widget never sees agent state, which holds a cancel quote's code.
+    const quoted = await chatOf("0450 926 727");
+    expect(quoted.messages.at(-1).body).toMatch(/Reply YES \d{4} to cancel/);
+    expect(quoted).not.toHaveProperty("state");
+
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SESSION_SECRET", "a production secret for this test");
+    expect(await chatOf(number)).toBeUndefined();
+    expect((await chatOf(number, { cookie: cookieFor("own_colin") }))?.contact).toBe(number);
+    vi.stubEnv("DEMO_MODE", "on");
+    expect((await chatOf(number))?.contact).toBe(number);
   });
 
   test("the whole document goes only to an owner's session", async () => {

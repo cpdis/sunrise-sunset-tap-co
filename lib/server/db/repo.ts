@@ -7,7 +7,7 @@ import { DATA_VERSION, buildSeed } from "@/lib/seed";
 import type { Data } from "@/lib/types";
 import { uid } from "@/lib/util";
 import { type Db, getDb } from "./client";
-import { idempotencyKeys, outbox, rateLimits, tenantState, tenants } from "./schema";
+import { approvals, idempotencyKeys, outbox, rateLimits, tenantState, tenants } from "./schema";
 
 // The one business the demo runs (KTD12).
 export const DEMO_TENANT = "sunrise-sunset";
@@ -32,6 +32,18 @@ export type OnceResult<T> =
   | { ok: false; reason: "conflict" | "not_found" };
 
 export type OutboxMessage = Pick<typeof outbox.$inferSelect, "channel" | "to" | "subject" | "body">;
+
+export type ApprovalRow = typeof approvals.$inferSelect;
+export type NewApprovalRow = Omit<typeof approvals.$inferInsert, "tenantId" | "conversationId" | "status">;
+
+// What one owner turn writes to its conversation's approvals (mutateApprovals).
+export interface ApprovalWrites {
+  // A staged approval to consume. If another write got to it first, the whole write runs again on fresh data.
+  consume?: string;
+  close?: { id: string; status: "cancelled" | "invalidated" | "expired" }[];
+  // A new staged approval. It replaces any other still staged in the conversation.
+  add?: NewApprovalRow;
+}
 
 // Thrown inside mutateOnce's transaction when another write won, to roll it back and try again.
 const LOST_RACE = Symbol("lost race");
@@ -129,6 +141,68 @@ export function createRepo(db: Db, opts: RepoOptions = {}) {
     return { ok: false, reason: "conflict" };
   }
 
+  // One conversation's approvals that are still staged, newest first. Expired ones too: the caller compares
+  // expiresAt with its own clock.
+  function stagedApprovals(tenantId: string, conversationId: string) {
+    return db
+      .select()
+      .from(approvals)
+      .where(and(eq(approvals.tenantId, tenantId), eq(approvals.conversationId, conversationId), eq(approvals.status, "staged")))
+      .orderBy(desc(approvals.createdAt));
+  }
+
+  // One owner's approvals that are still staged, in every conversation.
+  function ownerApprovals(tenantId: string, ownerId: string) {
+    return db
+      .select()
+      .from(approvals)
+      .where(and(eq(approvals.tenantId, tenantId), eq(approvals.ownerId, ownerId), eq(approvals.status, "staged")))
+      .orderBy(desc(approvals.createdAt));
+  }
+
+  // Like mutate, with one conversation's staged approvals (KTD4). fn sees them, read again on every try, and says
+  // what to write to them. Those writes and the document's compare-and-swap save commit in one transaction, so an
+  // approval is consumed exactly when its actions are saved. A consume that another write got to first rolls it all
+  // back and runs fn again, on data where that approval is gone.
+  async function mutateApprovals<T>(tenantId: string, conversationId: string, fn: (d: Data, staged: ApprovalRow[]) => { value: T; writes?: ApprovalWrites }): Promise<MutateResult<T>> {
+    const staged = (id: string) => and(eq(approvals.tenantId, tenantId), eq(approvals.id, id), eq(approvals.status, "staged"));
+    for (let attempt = 1; attempt <= MUTATE_ATTEMPTS; attempt++) {
+      const cur = await load(tenantId);
+      if (!cur) return { ok: false, reason: "not_found" };
+      const out = fn(cur.data, await stagedApprovals(tenantId, conversationId));
+      if (out instanceof Promise) throw new Error("repo.mutateApprovals needs a synchronous function (KTD10).");
+      const w = out.writes ?? {};
+      await opts.beforeSave?.(attempt);
+      try {
+        const version = await db.transaction(async (tx) => {
+          if (w.consume) {
+            const used = await tx
+              .update(approvals)
+              .set({ status: "consumed", consumedAt: new Date() })
+              .where(and(staged(w.consume), eq(approvals.conversationId, conversationId)))
+              .returning({ id: approvals.id });
+            if (used.length === 0) throw LOST_RACE;
+          }
+          for (const c of w.close ?? []) await tx.update(approvals).set({ status: c.status }).where(staged(c.id));
+          if (w.add) {
+            await tx
+              .update(approvals)
+              .set({ status: "cancelled" })
+              .where(and(eq(approvals.tenantId, tenantId), eq(approvals.conversationId, conversationId), eq(approvals.status, "staged")));
+            await tx.insert(approvals).values({ ...w.add, tenantId, conversationId });
+          }
+          const v = await save(tenantId, cur.version, cur.data, tx);
+          if (v === null) throw LOST_RACE;
+          return v;
+        });
+        return { ok: true, value: out.value, version, data: cur.data };
+      } catch (err) {
+        if (err !== LOST_RACE) throw err;
+      }
+    }
+    return { ok: false, reason: "conflict" };
+  }
+
   // Spends a one-time key, such as a sign-in link's nonce. True only the first time.
   async function claimKey(tenantId: string, key: string, command: string) {
     const kept = await db.insert(idempotencyKeys).values({ tenantId, key, command, result: {} }).onConflictDoNothing().returning({ key: idempotencyKeys.key });
@@ -181,7 +255,7 @@ export function createRepo(db: Db, opts: RepoOptions = {}) {
     return create(DEMO_TENANT, BUSINESS.name, buildSeed(now));
   }
 
-  return { load, mutate, mutateOnce, claimKey, bump, counted, writeOutbox, readOutbox, create, seedDemo };
+  return { load, mutate, mutateOnce, mutateApprovals, stagedApprovals, ownerApprovals, claimKey, bump, counted, writeOutbox, readOutbox, create, seedDemo };
 }
 
 // The app's repo on the process-wide database, with the demo business seeded on first use.
