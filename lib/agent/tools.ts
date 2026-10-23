@@ -1,9 +1,9 @@
 // Agent tools. They run on the server against a snapshot of the client's data and
 // return actions that the client store applies (hold, cancel, escalate).
 import { BUSINESS, SUBURBS, defaultStart, findSuburb, startProblem } from "../config";
-import { cancelPolicy, dayStatus, isBookable, nextFreeDates, quote } from "../domain";
+import { cancelNeedsOwner, cancelPolicy, dayStatus, isBookable, nextFreeDates, quote } from "../domain";
 import type { AgentAction, Block, Channel, Data, KbPage, Settings } from "../types";
-import { addDays, daysBetween, fmtDate, fmtTime, isISODate, money, todayISO, uid } from "../util";
+import { addDays, daysBetween, fmtDate, fmtTime, isISODate, money, sameContact, todayISO, uid } from "../util";
 
 export type Snapshot = Pick<Data, "settings" | "bookings" | "customers" | "kb" | "blackouts" | "seq">;
 
@@ -48,10 +48,8 @@ export function kbPage(kb: KbPage[], s: Settings, slug: string): string {
   return p ? renderKb([p], s) : "";
 }
 
-const norm = (x?: string) => (x ?? "").replace(/\s+/g, "").toLowerCase();
-
 export function customerBookings(ctx: ToolCtx) {
-  const c = ctx.data.customers.find((x) => norm(x.phone) === norm(ctx.contact) || norm(x.email) === norm(ctx.contact));
+  const c = ctx.data.customers.find((x) => sameContact(x.phone, ctx.contact) || sameContact(x.email, ctx.contact));
   if (!c) return [];
   return ctx.data.bookings
     .filter((b) => b.customerId === c.id && b.state !== "cancelled" && b.date >= todayISO(ctx.now))
@@ -130,8 +128,9 @@ export function cancelBookingTool(ctx: ToolCtx, bookingId: string, confirmed: bo
   const b = customerBookings(ctx).find((x) => x.id === bookingId || x.ref === bookingId);
   if (!b) return { ok: false as const, reason: "No upcoming booking found for this sender." };
   const pol = cancelPolicy(ctx.data.settings, b, ctx.now);
-  if (pol.refund > ctx.data.settings.refundLimit) {
-    if (confirmed) ctx.actions.push({ type: "escalate", reason: `Cancellation of ${b.ref} with refund ${money(pol.refund)} needs owner approval` });
+  const needsOwner = cancelNeedsOwner(ctx.data.settings, b, ctx.now);
+  if (needsOwner) {
+    if (confirmed) ctx.actions.push({ type: "escalate", reason: needsOwner });
     return { ok: false as const, needsOwner: true, refund: pol.refund, ref: b.ref };
   }
   if (confirmed) ctx.actions.push({ type: "cancel", bookingId: b.id });

@@ -1,13 +1,14 @@
 import { describe, expect, test } from "vitest";
 import {
   BALANCE_RETRIES, balance, balanceStuck, cancelBooking, cashAt, completeBooking, computeDistribution, createHold,
-  dayStatus, heldFor, nextFreeDates, payDeposit, payDistribution, periodTotals, runJobs, truckBookValue,
+  dayStatus, heldFor, nextFreeDates, payDeposit, payDistribution, periodTotals, runJobs, truckBookValue, upsertCustomer,
 } from "@/lib/domain";
 import { DEFAULT_SETTINGS, fitStart, settingProblem, startProblem } from "@/lib/config";
-import { addExpense, approveDistribution, payOut, returnedClean, updateSettings } from "@/lib/ops";
+import { addExpense, approveDistribution, customerCancel, payOut, returnedClean, updateSettings } from "@/lib/ops";
 import { buildSeed } from "@/lib/seed";
 import type { Data, Distribution, Settings } from "@/lib/types";
-import { addDays, todayISO } from "@/lib/util";
+import { snapshot } from "@/lib/store";
+import { addDays, sameContact, todayISO } from "@/lib/util";
 import { NOW, seed } from "./helpers";
 
 const TODAY = todayISO(NOW);
@@ -306,6 +307,76 @@ describe("bond", () => {
 
   test("the seed's past hires were checked back, so none is left holding a bond", () => {
     expect(seed().bookings.filter((b) => b.state === "completed" && b.bondStatus === "held")).toEqual([]);
+  });
+});
+
+describe("customer identity", () => {
+  const PHONE = "0412 555 019";
+  const smsCustomer = (d: Data) => createHold(d, { date: freeDate(d, 60), block: 4, suburb: "Subiaco", name: "Sophie", phone: PHONE, via: "sms" }, NOW);
+
+  test("booking on /book with an SMS customer's phone and a new email makes a new customer", () => {
+    const d = seed();
+    const first = smsCustomer(d);
+    const second = createHold(d, { date: freeDate(d, 90), block: 4, suburb: "Subiaco", name: "Whoever", phone: PHONE, email: "attacker@evil.test", via: "web", agreed: true }, NOW);
+    const victim = d.customers.find((c) => c.id === first.customerId)!;
+    expect(second.customerId).not.toBe(first.customerId);
+    expect(victim.email).toBe("");
+    expect(d.customers.find((c) => c.id === second.customerId)).toMatchObject({ phone: PHONE, email: "attacker@evil.test" });
+  });
+
+  test("a contact already on the record still finds that customer", () => {
+    const d = seed();
+    const a = upsertCustomer(d, "Sophie", "sophie@example.com", PHONE);
+    expect(upsertCustomer(d, "Sophie", undefined, "0412555019").id).toBe(a.id);
+    expect(upsertCustomer(d, "Sophie", "SOPHIE@example.com", PHONE).id).toBe(a.id);
+    expect(upsertCustomer(d, "Sophie", "other@example.com", PHONE).id).not.toBe(a.id);
+    expect(a).toMatchObject({ email: "sophie@example.com", phone: PHONE });
+  });
+
+  test("a contact of '   ' matches no customer", () => {
+    const d = seed();
+    smsCustomer(d);
+    expect(d.customers.some((c) => !c.email)).toBe(true);
+    expect(sameContact("   ", "")).toBe(false);
+    expect(snapshot(d, "   ").customers).toEqual([]);
+    const n = d.customers.length;
+    upsertCustomer(d, "Blank", "   ", "");
+    expect(d.customers).toHaveLength(n + 1);
+  });
+
+  test("checkout's receipt email goes on the booking, not the customer", () => {
+    const d = seed();
+    const b = smsCustomer(d);
+    payDeposit(d, b.id, "Visa •• 4242", NOW, true, "attacker@evil.test");
+    expect(b.receiptEmail).toBe("attacker@evil.test");
+    expect(d.customers.find((c) => c.id === b.customerId)!.email).toBe("");
+  });
+
+  test("booking page cancel of a $1,000 balance-paid booking asks an owner, no refund", () => {
+    const d = seed();
+    const b = createHold(d, { date: freeDate(d, 9), block: 8, suburb: "Subiaco", name: "Sophie", phone: PHONE, via: "web", agreed: true }, NOW);
+    payDeposit(d, b.id, "Visa •• 4242", NOW);
+    expect([b.state, b.total]).toEqual(["balance_paid", 1000]);
+    const cash = cashAt(d);
+    const r = customerCancel(d, b.id, NOW);
+    expect(r).toEqual({ needsOwner: "Cancellation of " + b.ref + " with refund $750 needs owner approval" });
+    expect(b.state).toBe("balance_paid");
+    expect(d.payments.filter((p) => p.bookingId === b.id && p.type === "refund")).toEqual([]);
+    expect(cashAt(d)).toBe(cash);
+    const c = d.conversations.find((x) => x.customerId === b.customerId)!;
+    expect(c).toMatchObject({ escalated: (r as { needsOwner: string }).needsOwner, agentActive: false, unread: true });
+    // Asking twice raises one flag, not two.
+    customerCancel(d, b.id, NOW);
+    expect(d.conversations.filter((x) => x.customerId === b.customerId)).toHaveLength(1);
+    expect(c.messages).toHaveLength(1);
+  });
+
+  test("booking page cancel under the refund limit cancels as before", () => {
+    const d = seed();
+    const b = hold(d, freeDate(d, 20));
+    payDeposit(d, b.id, "Visa •• 4242", NOW);
+    expect(customerCancel(d, b.id, NOW)).toEqual({ refund: 0 });
+    expect(b.state).toBe("cancelled");
   });
 });
 

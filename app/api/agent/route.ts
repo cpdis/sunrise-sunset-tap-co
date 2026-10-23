@@ -6,6 +6,7 @@ import type { OwnerCtx, OwnerSnapshot } from "@/lib/agent/owner-tools";
 import { runRules } from "@/lib/agent/rules";
 import type { Snapshot, ToolCtx } from "@/lib/agent/tools";
 import type { AgentState, Conversation, Msg } from "@/lib/types";
+import { sameContact } from "@/lib/util";
 
 export const runtime = "nodejs";
 
@@ -80,8 +81,7 @@ export async function POST(req: Request) {
 
   // A text from an owner's own number goes to the owner agent. In production the number alone isn't enough for
   // anything that moves money (caller ID can be spoofed); here the whole demo runs in one browser.
-  const norm = (x: string) => x.replace(/\s+/g, "").toLowerCase();
-  const owner = "owners" in snapshot ? snapshot.owners.find((o) => norm(o.phone) === norm(conversation.contact) || norm(o.email) === norm(conversation.contact)) : undefined;
+  const owner = "owners" in snapshot ? snapshot.owners.find((o) => sameContact(o.phone, conversation.contact) || sameContact(o.email, conversation.contact)) : undefined;
   if (owner && "owners" in snapshot) {
     const octx: OwnerCtx = { data: snapshot, owner, now: new Date(), actions: [], used: [] };
     if (process.env.ANTHROPIC_API_KEY) {

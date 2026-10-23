@@ -6,16 +6,17 @@ import { useEffect, useState } from "react";
 import { SiteShell } from "@/components/SiteChrome";
 import { Loading, StatePill, useData } from "@/components/ui";
 import { BUSINESS } from "@/lib/config";
-import { RELEASE_UNPAID_DAYS, balanceDueDate, cancelPolicy, paidSoFar } from "@/lib/domain";
+import { RELEASE_UNPAID_DAYS, balanceDueDate, cancelNeedsOwner, cancelPolicy, paidSoFar } from "@/lib/domain";
 import { useApp } from "@/lib/store";
 import { addDays, fmtDate, fmtTime, money, todayISO } from "@/lib/util";
 
 export default function BookingPage() {
   const { id } = useParams<{ id: string }>();
   const data = useData();
-  const cancel = useApp((s) => s.cancel);
+  const customerCancel = useApp((s) => s.customerCancel);
   const [paid, setPaid] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [asked, setAsked] = useState(false);
   useEffect(() => setPaid(new URLSearchParams(window.location.search).has("paid")), []);
 
   if (!data) return <SiteShell><Loading /></SiteShell>;
@@ -31,6 +32,9 @@ export default function BookingPage() {
   const bondDate = [addDays(b.date, -s.bondHoldDaysBefore), created, today].sort().at(-1)!;
   const end = fmtTime(`${String((Number(b.startTime.slice(0, 2)) + b.block) % 24).padStart(2, "0")}:00`);
   const paidUpFront = balDate <= created;
+  // Over the refund limit the cancel goes to the owners, as it does by SMS. A flag already raised stays shown.
+  const ownerReason = cancelNeedsOwner(s, b);
+  const requested = asked || (!!ownerReason && data.conversations.some((c) => c.customerId === b.customerId && c.escalated === ownerReason));
   const balancePaid = b.state === "balance_paid" || b.state === "completed";
 
   const steps = [
@@ -53,7 +57,7 @@ export default function BookingPage() {
             <div className="card night stack" style={{ gap: 8 }}>
               <span className="eyebrow">You&apos;re booked</span>
               <span className="display" style={{ fontSize: 48 }}>See you on {fmtDate(b.date, { dow: true })}.</span>
-              <span>Receipt and hire agreement sent to {cust?.email}.</span>
+              <span>Receipt and hire agreement sent to {b.receiptEmail ?? cust?.email}.</span>
             </div>
           )}
           {b.state === "confirmed" && b.balanceFailedAt && (
@@ -101,10 +105,17 @@ export default function BookingPage() {
                     {pol.fullRefund
                       ? `You're more than ${s.cancelDays} days out, so you'd get a full refund of ${money(pol.refund)}.`
                       : `You're within ${s.cancelDays} days, so the ${money(b.deposit)} deposit is kept${pol.refund ? ` and ${money(pol.refund)} is refunded` : ""}.`}
+                    {ownerReason && !requested && " A refund this size needs one of the owners to approve it, so we'll pass your request on."}
                   </span>
-                  {confirming ? (
+                  {requested ? (
+                    <span className="notice info" role="status">
+                      A refund this size needs one of the owners to approve it. We&apos;ve sent them your request and they&apos;ll be in touch. Your booking stays as it is until then.
+                    </span>
+                  ) : confirming ? (
                     <div className="row">
-                      <button className="btn danger small" onClick={() => { cancel(b.id); setConfirming(false); }}>Yes, cancel {b.ref}</button>
+                      <button className="btn danger small" onClick={() => { const r = customerCancel(b.id); if (r && "needsOwner" in r) setAsked(true); setConfirming(false); }}>
+                        {ownerReason ? `Ask to cancel ${b.ref}` : `Yes, cancel ${b.ref}`}
+                      </button>
                       <button className="btn ghost small" onClick={() => setConfirming(false)}>Keep it</button>
                     </div>
                   ) : (

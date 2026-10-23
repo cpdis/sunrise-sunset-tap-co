@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { POST } from "@/app/api/agent/route";
-import { checkAvailability, holdAndLink, type ToolCtx } from "@/lib/agent/tools";
+import { checkAvailability, customerBookings, holdAndLink, type ToolCtx } from "@/lib/agent/tools";
 import { snapshot } from "@/lib/store";
 import { NOW, chat, seed } from "./helpers";
 
@@ -108,6 +108,26 @@ describe("confirmations", () => {
     const rs = chat(seed(), ME, ["Can I book the second Saturday in December?", "Cottesloe, 8 hours", "Sam"]);
     expect(rs.flatMap(types)).not.toContain("hold");
     expect(rs[2].reply).toMatch(/Want the link/);
+  });
+});
+
+describe("contact matching", () => {
+  test("a blank contact sees no bookings, even with customers missing an email", () => {
+    const d = seed();
+    d.customers[0].email = "";
+    const ctx = { data: d, contact: "   ", now: NOW } as unknown as ToolCtx;
+    expect(customerBookings(ctx)).toEqual([]);
+    const [r] = chat(d, "   ", ["what's my booking?"]);
+    expect(r.reply).not.toMatch(/SST-\d+/);
+  });
+
+  test("an SMS cancel over the refund limit still goes to an owner", () => {
+    const d = seed();
+    const b = d.bookings.find((x) => x.state === "balance_paid" && x.date > "2026-10-29")!;
+    const phone = d.customers.find((c) => c.id === b.customerId)!.phone;
+    const rs = chat(d, phone, [`cancel ${b.ref}`, "yes"]);
+    expect(rs.flatMap(types)).not.toContain("cancel");
+    expect(rs[1].actions).toContainEqual(expect.objectContaining({ type: "escalate", reason: expect.stringMatching(/needs owner approval/) }));
   });
 });
 

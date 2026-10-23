@@ -20,6 +20,7 @@ import {
   money,
   quarterLabel,
   quarterOf,
+  sameContact,
   stripeFee,
   todayISO,
   uid,
@@ -164,17 +165,17 @@ export function nextRef(d: Data) {
   return `SST-${d.seq}`;
 }
 
+// The customer this booking belongs to. A record matches only when every contact given is already on it, so
+// a form with someone's phone and a new email makes a new customer instead of adding that email to theirs.
+// Nothing here ever adds a contact to an existing record.
 export function upsertCustomer(d: Data, name: string, email?: string, phone?: string) {
-  const norm = (x?: string) => (x ?? "").replace(/\s+/g, "").toLowerCase();
-  let c = d.customers.find((x) => (phone && norm(x.phone) === norm(phone)) || (email && norm(x.email) === norm(email)));
-  if (!c) {
-    c = { id: uid("cus"), name, email: email ?? "", phone: phone ?? "" };
-    d.customers.push(c);
-  } else {
-    if (email && !c.email) c.email = email;
-    if (phone && !c.phone) c.phone = phone;
-  }
-  return c;
+  const e = email?.trim() ?? "";
+  const p = phone?.trim() ?? "";
+  const c = e || p ? d.customers.find((x) => (!e || sameContact(x.email, e)) && (!p || sameContact(x.phone, p))) : undefined;
+  if (c) return c;
+  const fresh = { id: uid("cus"), name, email: e, phone: p };
+  d.customers.push(fresh);
+  return fresh;
 }
 
 // Refuses a date that isn't bookable at `now` (R12: one live paid booking or hold per date) and a start time that
@@ -224,13 +225,15 @@ export function createHold(d: Data, n: NewBooking, now = new Date()): Booking {
   return b;
 }
 
-// The hire terms must have been accepted, either on the web form or at checkout.
-export function payDeposit(d: Data, bookingId: string, card: string, now = new Date(), agreed = false) {
+// The hire terms must have been accepted, either on the web form or at checkout. The receipt email goes on the
+// booking, never on the customer: whoever holds a checkout link can't change a customer's contacts.
+export function payDeposit(d: Data, bookingId: string, card: string, now = new Date(), agreed = false, receiptEmail?: string) {
   const b = d.bookings.find((x) => x.id === bookingId);
   if (!b) throw new Error("Booking not found");
   if (b.state !== "held") return b;
   if (agreed) b.agreementSigned = true;
   if (!b.agreementSigned) throw new Error("Hire terms not accepted");
+  if (receiptEmail?.trim()) b.receiptEmail = receiptEmail.trim();
   pay(d, b, "deposit", b.deposit, now.toISOString(), card);
   b.state = "confirmed";
   b.heldUntil = undefined;
@@ -273,6 +276,13 @@ export function cancelPolicy(s: Settings, b: Booking, now = new Date()) {
   const fullRefund = days > s.cancelDays;
   const refund = fullRefund ? paid : Math.max(0, paid - b.deposit);
   return { days, paid, refund, kept: paid - refund, fullRefund };
+}
+
+// Why a customer's own cancel needs an owner, or undefined when it doesn't. A refund over the agent's limit
+// needs an owner from every customer surface (R11): SMS, email and the booking page.
+export function cancelNeedsOwner(s: Settings, b: Booking, now = new Date()): string | undefined {
+  const pol = cancelPolicy(s, b, now);
+  if (pol.refund > s.refundLimit) return `Cancellation of ${b.ref} with refund ${money(pol.refund)} needs owner approval`;
 }
 
 export function cancelBooking(d: Data, bookingId: string, now = new Date()) {

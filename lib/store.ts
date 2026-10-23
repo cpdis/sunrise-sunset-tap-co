@@ -32,7 +32,7 @@ import type {
   Settings,
   TruckLog,
 } from "./types";
-import { addDays, quarterOf, todayISO, uid } from "./util";
+import { addDays, quarterOf, sameContact, todayISO, uid } from "./util";
 
 export const STORAGE_KEY = "sunrise-sunset-demo";
 
@@ -46,8 +46,9 @@ interface AppState {
   logout: () => void;
   mutate: (fn: (d: Data) => void) => void;
   book: (n: NewBooking) => string;
-  payDeposit: (bookingId: string, card: string, checkout?: { email?: string; name?: string; agreed?: boolean }) => void;
+  payDeposit: (bookingId: string, card: string, checkout?: { email?: string; agreed?: boolean }) => void;
   cancel: (bookingId: string) => void;
+  customerCancel: (bookingId: string) => ReturnType<typeof ops.customerCancel>;
   startConversation: (c: Pick<Conversation, "channel" | "contact" | "name">) => string;
   sendCustomer: (convId: string, body: string) => Promise<AgentResult | null>;
   ownerReply: (convId: string, body: string) => void;
@@ -93,16 +94,14 @@ function ensureDistributions(d: Data) {
 
 // What the agent endpoint sees: availability for every date, but only the sender's own contact details.
 export function snapshot(d: Data, contact?: string): Snapshot {
-  const customers = d.customers.filter((c) => contact && (norm(c.phone) === norm(contact) || norm(c.email) === norm(contact)));
+  const customers = d.customers.filter((c) => sameContact(c.phone, contact) || sameContact(c.email, contact));
   const bookings = d.bookings.map(({ notes, condition, guests, eventType, ...b }) => b) as Data["bookings"];
   return { settings: d.settings, bookings, customers, kb: d.kb, blackouts: d.blackouts, seq: d.seq };
 }
 
-const norm = (x?: string) => (x ?? "").replace(/\s+/g, "").toLowerCase();
-
 // An owner texting (or emailing) the business line from their own number gets the owner agent.
 export function ownerByContact(d: Data, contact: string) {
-  return d.owners.find((o) => norm(o.phone) === norm(contact) || norm(o.email) === norm(contact));
+  return d.owners.find((o) => sameContact(o.phone, contact) || sameContact(o.email, contact));
 }
 
 // What the owner agent sees: everything an owner sees in the admin, with ledger totals in place of the ledger.
@@ -187,11 +186,7 @@ export const useApp = create<AppState>()(
 
       payDeposit: (bookingId, card, checkout = {}) =>
         get().mutate((d) => {
-          const held = d.bookings.find((x) => x.id === bookingId);
-          const cust = d.customers.find((c) => c.id === held?.customerId);
-          if (cust && checkout.email) cust.email = checkout.email;
-          if (cust && checkout.name && !cust.name) cust.name = checkout.name;
-          const b = payDeposit(d, bookingId, card, new Date(), checkout.agreed);
+          const b = payDeposit(d, bookingId, card, new Date(), checkout.agreed, checkout.email);
           log(d, `Deposit paid for ${b.ref}`);
           for (const c of d.conversations) {
             if (c.customerId === b.customerId && c.agentActive) {
@@ -212,6 +207,14 @@ export const useApp = create<AppState>()(
           const b = d.bookings.find((x) => x.id === bookingId);
           if (pol && b) log(d, `Cancelled ${b.ref}; refunded $${pol.refund}`);
         }),
+
+      customerCancel: (bookingId) => {
+        let r: ReturnType<typeof ops.customerCancel> = null;
+        get().mutate((d) => {
+          r = ops.customerCancel(d, bookingId);
+        });
+        return r;
+      },
 
       startConversation: (c) => {
         const existing = get().data?.conversations.find((x) => x.contact === c.contact && x.channel === c.channel);

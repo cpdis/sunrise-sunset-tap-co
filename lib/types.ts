@@ -83,6 +83,8 @@ export interface Booking {
   guests?: number;
   notes?: string;
   agreementSigned: boolean;
+  // Where checkout sent the receipt. Kept on the booking: checkout never changes the customer's own contacts.
+  receiptEmail?: string;
   // Simulated card trouble: the saved card declines off-session charges until the customer updates it.
   cardDeclines?: boolean;
   balanceAttempts?: number;

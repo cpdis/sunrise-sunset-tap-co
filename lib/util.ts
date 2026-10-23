@@ -111,8 +111,16 @@ export function stripeFee(amount: number): number {
   return Math.round((amount * 0.017 + 0.3) * 100) / 100;
 }
 
+// Random ids from the platform CSPRNG, so one id can't be guessed from another.
 export function uid(prefix: string): string {
-  return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
+  return `${prefix}_${crypto.randomUUID()}`;
+}
+
+// One phone or email against another, ignoring spaces and case. A blank value matches nothing, so a
+// customer with no email on file is never "the customer whose email is empty".
+export function sameContact(a?: string, b?: string): boolean {
+  const n = (x?: string) => (x ?? "").replace(/\s+/g, "").toLowerCase();
+  return n(a) !== "" && n(a) === n(b);
 }
 
 export function cls(...xs: (string | false | null | undefined)[]): string {

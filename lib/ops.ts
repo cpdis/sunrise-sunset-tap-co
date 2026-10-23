@@ -1,7 +1,7 @@
 // Owner operations on a mutable draft of Data. The admin buttons and the owner SMS agent both call these,
 // so an action means the same thing whichever way an owner takes it.
 import { ADMIN_ONLY_SETTINGS, settingProblem } from "./config";
-import { ACCOUNT_LABEL, pay, payDistribution, post } from "./domain";
+import { ACCOUNT_LABEL, cancelBooking, cancelNeedsOwner, pay, payDistribution, post } from "./domain";
 import type { Account, AgentAction, Conversation, Data, KbPage, Settings, TruckLog } from "./types";
 import { money, todayISO, uid } from "./util";
 
@@ -162,6 +162,33 @@ export function ownerReply(d: Data, convId: string, body: string, ownerId: strin
   c.unread = false;
   c.escalated = undefined;
   c.draft = undefined;
+}
+
+// A customer cancelling from their booking page, under the same refund limit as SMS. Over the limit nothing is
+// cancelled: the owners get a flagged conversation for this customer, the same hand-over an SMS cancel makes.
+export function customerCancel(d: Data, bookingId: string, now = new Date()): { refund: number } | { needsOwner: string } | null {
+  const b = d.bookings.find((x) => x.id === bookingId);
+  if (!b) return null;
+  const reason = cancelNeedsOwner(d.settings, b, now);
+  if (!reason) {
+    const pol = cancelBooking(d, bookingId, now);
+    if (pol) log(d, `${b.ref} cancelled on the booking page; refunded $${pol.refund}`);
+    return pol && { refund: pol.refund };
+  }
+  const cust = d.customers.find((x) => x.id === b.customerId);
+  let c = d.conversations.find((x) => x.customerId === b.customerId && !x.ownerId);
+  if (!c) {
+    c = { id: uid("conv"), channel: "web", contact: cust?.phone || cust?.email || "", name: cust?.name ?? b.ref, customerId: b.customerId, agentActive: true, unread: true, state: {}, messages: [] };
+    d.conversations.unshift(c);
+  }
+  if (c.escalated !== reason) {
+    c.messages.push({ id: uid("m"), from: "system", body: `Asked to cancel on the booking page. ${reason}`, at: now.toISOString() });
+    log(d, `Escalated to owners: ${reason}`);
+  }
+  c.escalated = reason;
+  c.agentActive = false;
+  c.unread = true;
+  return { needsOwner: reason };
 }
 
 // Applies what the owner agent decided, as the owner who texted. Each op re-checks its own rules.
