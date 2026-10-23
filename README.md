@@ -10,6 +10,7 @@ Everything external is simulated. No accounts, keys or payments are needed to ru
 npm install
 npm run dev        # http://localhost:3000
 npm test           # domain rules and agent routing (vitest)
+npm run eval:injection  # review injection payloads against the live model (needs ANTHROPIC_API_KEY)
 ```
 
 Optional: set `ANTHROPIC_API_KEY` and the agent switches from the built-in rules engine to Claude, using the same tools.

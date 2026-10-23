@@ -212,10 +212,28 @@ export function cancelBookingTool(ctx: ToolCtx, bookingId: string, confirmed: bo
 // A cancel_booking answer that quotes terms (and the code a YES must echo) rather than cancelling.
 export type CancelQuote = Extract<ReturnType<typeof cancelBookingTool>, { code: string }>;
 
+// Opening line of a drafted owner reply: the customer's first name when it looks like one. The name is the
+// customer's own choice, so anything else gets a plain "Hi,".
+export const greeting = (ctx: ToolCtx) => {
+  const first = ctx.customerName?.split(" ")[0];
+  return first && /^[\p{L}'-]{1,30}$/u.test(first) ? `Hi ${first},` : "Hi,";
+};
+
+// What a draft gets replaced with when it offers something only an owner can (draftProblem).
+export const defaultDraft = (ctx: ToolCtx) => `${greeting(ctx)} one of the owners here. Thanks for your message. I've read it and I'll take it from here.`;
+
+// A draft prefills the owner's reply in the admin and goes out as the owner's own words, so a customer who talks the
+// model into writing one could put money or a promise in the business's mouth (R18). A draft with an amount or
+// refund, free, approved, discount or waive wording is replaced by the default one.
+const PROMISE = /\$\s?\d|\d\s?(?:dollars|bucks|aud)\b|\d\s?%|\brefund|\bfree\b|\bapprov|\bdiscount|\bwaiv/i;
+export const draftProblem = (draft: string) => PROMISE.test(draft);
+
 // Flags the conversation in the owners' inbox. Nobody is texted or called, so replies promise no time or call (R4).
 // draft: a reply the owner can send as-is. Written to the customer, no owner name, no prices the KB doesn't carry.
 export function escalate(ctx: ToolCtx, reason: string, keepAgent = false, draft?: string) {
   ctx.used.push("escalate_to_owner");
-  ctx.actions.push({ type: "escalate", reason, keepAgent, draft: draft?.trim() || undefined });
-  return { ok: true };
+  const text = draft?.trim() || undefined;
+  const replaced = !!text && draftProblem(text);
+  ctx.actions.push({ type: "escalate", reason, keepAgent, draft: replaced ? defaultDraft(ctx) : text });
+  return replaced ? { ok: true, note: "Your draft offered something only an owner can, so the owners get a plain one instead." } : { ok: true };
 }

@@ -8,6 +8,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "eval:injection": "vitest run --mode eval tests/injection.eval.ts",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {

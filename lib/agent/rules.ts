@@ -14,15 +14,13 @@ import {
   customerBookings,
   escalate,
   getQuote,
+  greeting,
   holdAndLink,
   kbLines,
   lookupBooking,
   myBookingByRef,
 } from "./tools";
 import { isRefusal, parseConfirm } from "./confirm";
-
-// Opening line of a drafted owner reply. The owner edits the rest before sending.
-const hi = (ctx: ToolCtx) => (ctx.customerName ? `Hi ${ctx.customerName.split(" ")[0]},` : "Hi,");
 
 const has = (t: string, ...words: (string | RegExp)[]) =>
   words.some((w) => (typeof w === "string" ? t.includes(w) : w.test(t)));
@@ -194,13 +192,13 @@ export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentRes
 
   // 2. A person, please. Only explicit asks: "someone", "staff" and "owner" also turn up in ordinary questions.
   if (PERSON.test(t)) {
-    escalate(ctx, `Customer asked for a person: "${text.slice(0, 120)}"`, false, `${hi(ctx)} one of the owners here. What can I help with?`);
+    escalate(ctx, `Customer asked for a person: "${text.slice(0, 120)}"`, false, `${greeting(ctx)} one of the owners here. What can I help with?`);
     return out("No worries, I've passed your message to the owners. Anything I can sort in the meantime?");
   }
 
   // Discounts, multi-day and sponsorship are owner decisions.
   if (OFF_POLICY.test(t)) {
-    escalate(ctx, `Wants something outside standard pricing: "${text.slice(0, 140)}"`, false, `${hi(ctx)} one of the owners here. Thanks for the message. Tell me a bit more about the event and the dates and I'll let you know what we can do.`);
+    escalate(ctx, `Wants something outside standard pricing: "${text.slice(0, 140)}"`, false, `${greeting(ctx)} one of the owners here. Thanks for the message. Tell me a bit more about the event and the dates and I'll let you know what we can do.`);
     return out("That one's up to the owners, so I've passed your message on to them.");
   }
 
@@ -220,7 +218,7 @@ export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentRes
   // start a new booking (review A12). Mid-booking, "change the date" is about the draft, so it carries on below.
   const drafting = !!prev.awaiting && prev.awaiting !== "confirm_cancel";
   if (RESCHEDULE.test(t) && (!drafting || mine || has(t, /\b(my|our) booking\b/))) {
-    escalate(ctx, `Wants to move ${mine?.ref ?? customerBookings(ctx)[0]?.ref ?? "a booking"} to another date: "${text.slice(0, 120)}"`, false, `${hi(ctx)} one of the owners here about moving your booking.`);
+    escalate(ctx, `Wants to move ${mine?.ref ?? customerBookings(ctx)[0]?.ref ?? "a booking"} to another date: "${text.slice(0, 120)}"`, false, `${greeting(ctx)} one of the owners here about moving your booking.`);
     const rule = kbLines(ctx, "booking-policy", /date change/i, 1);
     return out(["An owner makes date changes, so I've passed your request on to them.", ...rule].join(" "));
   }
