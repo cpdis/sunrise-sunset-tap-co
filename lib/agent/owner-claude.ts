@@ -28,6 +28,8 @@ import {
 
 const STAGED = "Doesn't run yet: it returns a summary, and the change runs only if the owner's next text is YES. Tell the owner the summary and ask them to reply YES.";
 const date = { type: "string", description: "YYYY-MM-DD" };
+// Names are chosen by customers, so two conversations can share one. Code, not the model, makes the pick.
+const PICK = "If the name matches more than one conversation, it does nothing and returns a numbered list with masked contacts. Send the owner that list as it is and stop; their reply with a number or the end of a contact picks one. Never guess or retry with another name.";
 
 const TOOLS: Tool[] = [
   { name: "whats_on", description: "The owner's runs and unclaimed runs in the next 30 days, conversations that need a person, payouts waiting, runner fees owed to them, cash.", input_schema: obj({}, []), strict: true },
@@ -58,19 +60,19 @@ const TOOLS: Tool[] = [
   { name: "inbox", description: "Customer conversations that need a person or that an owner is handling, with the agent's draft reply where it wrote one.", input_schema: obj({}, []), strict: true },
   {
     name: "reply_to_customer",
-    description: "Send a reply to a customer conversation as this owner, on the customer's channel. This takes the conversation off the agent until someone hands it back. Send exactly the words the owner gave; don't add promises.",
+    description: `Send a reply to a customer conversation as this owner, on the customer's channel. This takes the conversation off the agent until someone hands it back. Send exactly the words the owner gave; don't add promises. ${PICK}`,
     input_schema: obj({ who: { type: "string", description: "Customer name as shown in the inbox" }, text: { type: "string" } }, ["who", "text"]),
     strict: true,
   },
   {
     name: "hand_back",
-    description: "Give a customer conversation back to the agent. Refused while the customer is still owed the owner reply the agent promised; set without_reply only when the owner explicitly says to hand back without replying.",
+    description: `Give a customer conversation back to the agent. Refused while the customer is still owed the owner reply the agent promised; set without_reply only when the owner explicitly says to hand back without replying. ${PICK}`,
     input_schema: obj({ who: { type: "string" }, without_reply: { type: "boolean" } }, ["who", "without_reply"]),
     strict: true,
   },
   {
     name: "send_draft",
-    description: `Send the customer the reply the agent drafted when it handed over, as this owner. ${STAGED}`,
+    description: `Send the customer the reply the agent drafted when it handed over, as this owner. ${STAGED} ${PICK}`,
     input_schema: obj({ who: { type: "string", description: "Customer name as shown in the inbox" } }, ["who"]),
     strict: true,
   },
@@ -154,6 +156,7 @@ Rules:
 - Staged tools (expenses, payouts, cancellations, settings, knowledge, sending a draft) never run straight away. Stage one change per reply. Give the owner the returned summary and ask them to reply YES. Never say it's done.
 - If a tool says something must be done in the admin, say so. Refunds over the limit, bond captures, share transfers, the approvals setting and the refund limit are admin only.
 - When you reply to a customer, send only what the owner asked you to send.
+- If a customer tool returns a numbered list of conversations, send that list as it is and stop. Don't pick one yourself.
 - Knowledge base pages: ${ctx.data.kb.map((p) => `${p.slug} (${p.title})`).join(", ")}.`;
   const volatile = `Today is ${fmtDate(todayISO(ctx.now), { dow: true, year: true })} (${todayISO(ctx.now)}), Perth time. You're texting with ${ctx.owner.name}${ctx.owner.isDirector ? ", a director" : ""}.`;
   return [

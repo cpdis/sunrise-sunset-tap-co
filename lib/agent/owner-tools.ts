@@ -158,20 +158,54 @@ export function calendar(ctx: OwnerCtx, q: { action: "block" | "unblock" | "own_
   return { ok: true as const, label, done: "booked for your own use", note: "A paid booking on the same day still takes priority." };
 }
 
-function findConversation(ctx: OwnerCtx, who: string) {
+// The owner names a conversation by text, or a pick from an ambiguity list names it by id.
+export type Who = string | { id: string };
+
+// Customers choose their own names, so a name never picks one of two conversations that share it: an impostor
+// can book as "Harbour Collective (events)". One exact match still beats partial ones ("Sophie" over "Sophie Tran").
+function findConversation(ctx: OwnerCtx, who: Who): OwnerInboxItem | { ambiguous: OwnerInboxItem[] } | undefined {
+  if (typeof who !== "string") return ctx.data.inbox.find((c) => c.id === who.id);
   const w = who.toLowerCase().trim();
   const hits = ctx.data.inbox.filter((c) => c.name.toLowerCase().includes(w));
-  return hits.length === 1 ? hits[0] : hits.find((c) => c.name.toLowerCase() === w) ?? (hits.length ? { ambiguous: hits.map((c) => c.name) } : undefined);
+  const exact = hits.filter((c) => c.name.toLowerCase() === w);
+  const pool = exact.length ? exact : hits;
+  if (pool.length === 1) return pool[0];
+  return pool.length ? { ambiguous: pool } : undefined;
 }
 
-export function replyToCustomer(ctx: OwnerCtx, who: string, text: string) {
+const noMatch = (who: Who) => ({ ok: false as const, reason: typeof who === "string" ? `No conversation matches "${who}".` : "That conversation has gone." });
+
+const digits = (s: string) => s.replace(/\D/g, "");
+
+// "0413 ••• 818", "ev•••@harbourcollective.com.au": enough for the owner to tell two conversations apart.
+export function maskContact(contact: string) {
+  if (contact.includes("@")) {
+    const [user, domain] = contact.split("@");
+    return `${user.slice(0, 2)}•••@${domain}`;
+  }
+  const n = digits(contact);
+  return n.length < 7 ? `••• ${n.slice(-3)}` : `${n.slice(0, 4)} ••• ${n.slice(-3)}`;
+}
+
+// Lists the matches and stages the tool call; the owner's next text picks one by number or contact (resolvePick).
+function askWhich(ctx: OwnerCtx, tool: string, args: Record<string, unknown>, matches: OwnerInboxItem[]) {
+  const lines = matches.map((c, i) => `${i + 1}. ${c.name}, ${maskContact(c.contact)}`);
+  const reason = `That matches ${matches.length} conversations:\n${lines.join("\n")}\nReply with the number or the end of the contact.`;
+  ctx.staged = { tool: "pick_conversation", args: { tool, ids: matches.map((c) => c.id), args }, summary: reason };
+  return { ok: false as const, ambiguous: true, reason };
+}
+
+export function replyToCustomer(ctx: OwnerCtx, who: Who, text: string) {
   ctx.used.push("inbox");
   const c = findConversation(ctx, who);
-  if (!c) return { ok: false as const, reason: `No conversation matches "${who}".` };
-  if ("ambiguous" in c) return { ok: false as const, reason: `That matches ${c.ambiguous.join(", ")}. Which one?` };
+  if (!c) return noMatch(who);
+  if ("ambiguous" in c) return askWhich(ctx, "reply_to_customer", { text }, c.ambiguous);
   ctx.actions.push({ type: "owner_reply", convId: c.id, body: text.trim() });
   return { ok: true as const, to: c.name, ...route(c), body: text.trim() };
 }
+
+export const sentText = (r: { to: string; via: string; contact: string }) =>
+  `Sent to ${r.to} by ${r.via} to ${r.contact}. You have that chat now; text "hand back ${r.to.split(" ")[0]}" when you're done.`;
 
 // "by SMS to 0433 210 877": how a reply to this conversation really goes out.
 function route(c: OwnerInboxItem) {
@@ -179,11 +213,11 @@ function route(c: OwnerInboxItem) {
   return { via: r.via === "sms" ? "SMS" : "email", contact: r.to };
 }
 
-export function handBack(ctx: OwnerCtx, who: string, force = false) {
+export function handBack(ctx: OwnerCtx, who: Who, force = false) {
   ctx.used.push("inbox");
   const c = findConversation(ctx, who);
-  if (!c) return { ok: false as const, reason: `No conversation matches "${who}".` };
-  if ("ambiguous" in c) return { ok: false as const, reason: `That matches ${c.ambiguous.join(", ")}. Which one?` };
+  if (!c) return noMatch(who);
+  if ("ambiguous" in c) return askWhich(ctx, "hand_back", { force }, c.ambiguous);
   if (c.agentActive && !c.escalated) return { ok: false as const, reason: `The agent already has ${c.name}.` };
   // Dry run of the shared op, so the SMS refusal is the same guard the admin button and applyOwnerAction use.
   const dry = { owners: ctx.data.owners, conversations: [{ ...c, messages: [] }] } as unknown as Data;
@@ -196,6 +230,9 @@ export function handBack(ctx: OwnerCtx, who: string, force = false) {
   // The customer can still have been told an owner will reply ("They'll reply today"), so the warning stands.
   return { ok: true as const, to: c.name, flagOnly: c.agentActive, withoutReply: owesReply(c) };
 }
+
+export const handBackText = (r: { to: string; flagOnly: boolean; withoutReply: boolean }) =>
+  `${r.flagOnly ? `Cleared the flag on ${r.to}; the agent still has it.` : `Handed ${r.to} back to the agent.`}${r.withoutReply ? " Heads up: they were told an owner would reply, and nobody has." : ""}`;
 
 // ---------- staged: run only after YES ----------
 
@@ -289,17 +326,18 @@ export function addKnowledge(ctx: OwnerCtx, q: { page: string; line: string }, c
 const MIN_DRAFT = 40;
 
 // Sends a text the owner may not have read, so it is staged: the summary quotes the draft in full.
-export function sendDraft(ctx: OwnerCtx, who: string, commit = false) {
+export function sendDraft(ctx: OwnerCtx, who: Who, commit = false) {
   ctx.used.push("send_draft");
   const c = findConversation(ctx, who);
-  if (!c) return { ok: false as const, reason: `No conversation matches "${who}".` };
-  if ("ambiguous" in c) return { ok: false as const, reason: `That matches ${c.ambiguous.join(", ")}. Which one?` };
+  if (!c) return noMatch(who);
+  if ("ambiguous" in c) return askWhich(ctx, "send_draft", {}, c.ambiguous);
   if (!c.draft) return { ok: false as const, reason: `There's no draft reply for ${c.name}. Text "tell ${c.name.split(" ")[0]}: ..." to write one.` };
   // A greeting on its own ("Hi, one of the owners here.") would reach the customer as the whole reply.
   if (c.draft.trim().length < MIN_DRAFT) return { ok: false as const, reason: `The agent only drafted a greeting. Text "tell ${c.name.split(" ")[0]}: ..." instead.` };
   const r = route(c);
   const summary = `send ${c.name} the agent's draft by ${r.via} to ${r.contact}: "${c.draft}"`;
-  if (!commit) return stage(ctx, "send_draft", { who: c.name }, summary);
+  // Staged by id: the YES must send to this conversation, not whichever one the name finds next time.
+  if (!commit) return stage(ctx, "send_draft", { id: c.id }, summary);
   ctx.actions.push({ type: "send_draft", convId: c.id });
   return { ok: true as const, done: true, summary };
 }
@@ -312,6 +350,7 @@ export function resolvePending(ctx: OwnerCtx, state: AgentState, text: string): 
   const p = state.pending;
   if (!p) return undefined;
   state.pending = undefined;
+  if (p.tool === "pick_conversation") return resolvePick(ctx, p, text);
   // Any text but a clear yes drops the change; only a refusal gets its own reply.
   const c = parseConfirm(text);
   if (c === "no") return "No worries, I've left it.";
@@ -323,11 +362,55 @@ export function resolvePending(ctx: OwnerCtx, state: AgentState, text: string): 
     : p.tool === "cancel_booking" ? cancelForCustomer(ctx, (p.args as { ref: string }).ref, true)
     : p.tool === "change_setting" ? changeSetting(ctx, a, true)
     : p.tool === "add_knowledge" ? addKnowledge(ctx, a, true)
-    : p.tool === "send_draft" ? sendDraft(ctx, (p.args as { who: string }).who, true)
+    : p.tool === "send_draft" ? sendDraft(ctx, { id: String(p.args.id) }, true)
     : { ok: false as const, reason: "I've lost track of that one. Send it again?" };
   if (!r.ok) return `I didn't do it: ${r.reason}`;
   const extra = "ready" in r && r.ready ? " It has enough approvals now. Text PAY THE PAYOUT to send it." : "";
   return `Done. I ${pastTense(p.summary)}.${extra}`;
+}
+
+export const confirmText = (summary: string) => `To confirm: ${summary}. Reply YES to go ahead.`;
+
+// The owner's answer to an ambiguity list: "2", "#2", "818", "the email one", or the contact as listed.
+// Anything else is not a pick, so the list is dropped and the text is handled as a new message.
+function resolvePick(ctx: OwnerCtx, p: PendingOwnerAction, text: string): string | undefined {
+  const { tool, ids, args } = p.args as { tool: string; ids: string[]; args: { text?: string; force?: boolean } };
+  const matches = ids.map((id) => ctx.data.inbox.find((c) => c.id === id)).filter((c): c is OwnerInboxItem => !!c);
+  const i = pickIndex(text, matches);
+  if (i === undefined) return undefined;
+  const who = { id: matches[i].id };
+  if (tool === "reply_to_customer") {
+    const r = replyToCustomer(ctx, who, args.text ?? "");
+    return r.ok ? sentText(r) : r.reason;
+  }
+  if (tool === "hand_back") {
+    const r = handBack(ctx, who, args.force === true);
+    return r.ok ? handBackText(r) : r.reason;
+  }
+  if (tool === "send_draft") {
+    const r = sendDraft(ctx, who);
+    return r.ok ? confirmText(r.summary) : r.reason;
+  }
+  return undefined;
+}
+
+function pickIndex(text: string, matches: OwnerInboxItem[]): number | undefined {
+  const t = text.toLowerCase().replace(/[.!?]+\s*$/, "").replace(/^\s*(?:number|no\.?|option|#)\s*/, "").trim();
+  if (/^\d{1,2}$/.test(t)) {
+    const n = Number(t);
+    return n >= 1 && n <= matches.length ? n - 1 : undefined;
+  }
+  if (t.length < 3) return undefined;
+  const via = t.match(/^(?:the\s+)?(email|sms|text|phone|mobile)(?:\s+one)?$/)?.[1];
+  const tail = /^[\d\s]+$/.test(t) ? digits(t) : undefined;
+  const hits = matches.flatMap((c, i) => {
+    const ok = via ? replyRoute(c).via === (via === "email" ? "email" : "sms")
+      : tail ? digits(c.contact).endsWith(tail)
+      : maskContact(c.contact).toLowerCase() === t || c.contact.toLowerCase().endsWith(t);
+    return ok ? [i] : [];
+  });
+  // A tail both contacts share ("8") picks nothing.
+  return hits.length === 1 ? hits[0] : undefined;
 }
 
 // "add a $42 expense" -> "added a $42 expense"; the summaries all start with one of these verbs.

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { balance, cashAt } from "@/lib/domain";
+import type { Conversation } from "@/lib/types";
 import { chat, ownerChat, seed } from "./helpers";
 
 const COLIN = "own_colin";
@@ -197,5 +198,87 @@ describe("customer agent is unchanged", () => {
   test("a customer number still gets the customer agent", () => {
     const [r] = chat(seed(), "0499 000 111", ["What's on?"]);
     expect(r.reply).not.toMatch(/Unclaimed/);
+  });
+});
+
+describe("two conversations share a name", () => {
+  const REAL = "Harbour Collective (events)";
+  // A customer who books under a real customer's name gets a conversation with that name, placed first.
+  function withImpostor() {
+    const d = seed();
+    const real = d.conversations.find((x) => x.name === REAL)!;
+    const fake: Conversation = { ...real, id: "conv_fake", channel: "sms", contact: "0413 555 818", messages: [], draft: undefined };
+    d.conversations.unshift(fake);
+    return { d, real, fake };
+  }
+  const got = (c: { messages: { from: string; body: string }[] }) => c.messages.filter((m) => m.from === "owner" && /4471/.test(m.body));
+
+  test("a reply sends nothing and lists both with masked contacts", () => {
+    const { d, real, fake } = withImpostor();
+    const [r] = ownerChat(d, COLIN, [`tell ${REAL}: the gate code is 4471`]);
+    expect(r.actions).toEqual([]);
+    expect(r.reply).toBe(`That matches 2 conversations:\n1. ${REAL}, 0413 ••• 818\n2. ${REAL}, ev•••@harbourcollective.com.au\nReply with the number or the end of the contact.`);
+    expect(got(real)).toHaveLength(0);
+    expect(got(fake)).toHaveLength(0);
+  });
+
+  test.each(["2", "#2", "harbourcollective.com.au", "ev•••@harbourcollective.com.au", "the email one"])("picking the email one with %s sends only there", (pick) => {
+    const { d, real, fake } = withImpostor();
+    const [, r] = ownerChat(d, COLIN, [`tell ${REAL}: the gate code is 4471`, pick]);
+    expect(r.reply).toMatch(/^Sent to Harbour Collective \(events\) by email to events@harbourcollective\.com\.au/);
+    expect(got(real)).toHaveLength(1);
+    expect(got(fake)).toHaveLength(0);
+  });
+
+  test("the phone tail picks the SMS one", () => {
+    const { d, real, fake } = withImpostor();
+    ownerChat(d, COLIN, [`tell ${REAL}: the gate code is 4471`, "818"]);
+    expect(got(fake)).toHaveLength(1);
+    expect(got(real)).toHaveLength(0);
+  });
+
+  test("a text that is not a pick drops the list and runs as a new message", () => {
+    const { d, real, fake } = withImpostor();
+    const [, r, after] = ownerChat(d, COLIN, [`tell ${REAL}: the gate code is 4471`, "What's on?", "2"]);
+    expect(r.reply).toMatch(/Unclaimed/);
+    expect(after.actions).toEqual([]);
+    expect(got(real).length + got(fake).length).toBe(0);
+  });
+
+  test("an out-of-range number picks nothing", () => {
+    const { d, real, fake } = withImpostor();
+    const [, r] = ownerChat(d, COLIN, [`tell ${REAL}: the gate code is 4471`, "3"]);
+    expect(r.actions).toEqual([]);
+    expect(got(real).length + got(fake).length).toBe(0);
+  });
+
+  test("send the draft asks which, then stages the picked one by id", () => {
+    const { d, real, fake } = withImpostor();
+    fake.draft = "Hi, one of the owners here. We can do festival rates, call us on Monday to talk it through.";
+    const [ask, staged, done] = ownerChat(d, COLIN, ["send the draft for Harbour", "2", "yes"]);
+    expect(ask.reply).toMatch(/^That matches 2 conversations/);
+    expect(staged.reply).toMatch(/^To confirm: send Harbour Collective \(events\) the agent's draft by email to events@harbourcollective\.com\.au/);
+    expect(done.reply).toMatch(/^Done\. I sent Harbour/);
+    expect(real.messages.at(-1)).toMatchObject({ from: "owner", via: "email" });
+    expect(fake.messages).toHaveLength(0);
+  });
+
+  test("hand back asks which and keeps 'anyway' through the pick", () => {
+    const { d, real, fake } = withImpostor();
+    fake.agentActive = true;
+    fake.escalated = undefined;
+    const [ask, r] = ownerChat(d, COLIN, ["hand back Harbour anyway", "2"]);
+    expect(ask.reply).toMatch(/^That matches 2 conversations/);
+    expect(r.reply).toMatch(/^Handed Harbour Collective \(events\) back to the agent\. Heads up/);
+    expect(real.agentActive).toBe(true);
+  });
+
+  test("one exact match plus a partial match still sends to the exact one", () => {
+    const { d, real, fake } = withImpostor();
+    fake.name = `${REAL} 2`;
+    const [r] = ownerChat(d, COLIN, [`tell ${REAL}: the gate code is 4471`]);
+    expect(r.reply).toMatch(/^Sent to Harbour Collective \(events\) by email/);
+    expect(got(real)).toHaveLength(1);
+    expect(got(fake)).toHaveLength(0);
   });
 });

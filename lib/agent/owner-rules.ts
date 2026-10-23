@@ -9,14 +9,17 @@ import {
   cancelForCustomer,
   changeSetting,
   claimRun,
+  confirmText,
   findBookings,
   handBack,
+  handBackText,
   sendDraft,
   inboxList,
   logTruck,
   payout,
   replyToCustomer,
   resolvePending,
+  sentText,
   whatsOn,
 } from "./owner-tools";
 import { parseDate, parseSuburb } from "./rules";
@@ -83,7 +86,7 @@ export function runOwnerRules(ctx: OwnerCtx, text: string, prev: AgentState): Ag
     state.pending = ctx.staged ?? state.pending;
     return { reply, actions: ctx.actions, tools: ctx.used, state, engine: "rules" };
   };
-  const yes = (r: { summary: string }) => out(`To confirm: ${r.summary}. Reply YES to go ahead.`);
+  const yes = (r: { summary: string }) => out(confirmText(r.summary));
   const date = parseDate(text, ctx.now);
   const ref = refOf(t);
 
@@ -96,7 +99,7 @@ export function runOwnerRules(ctx: OwnerCtx, text: string, prev: AgentState): Ag
   const reply = text.match(/^\s*(?:reply to|tell|text|message)\s+(.+?)\s*[:\-–]\s*(.+)$/i);
   if (reply) {
     const r = replyToCustomer(ctx, reply[1], reply[2]);
-    return out(r.ok ? `Sent to ${r.to} by ${r.via} to ${r.contact}. You have that chat now; text "hand back ${r.to.split(" ")[0]}" when you're done.` : r.reason);
+    return out(r.ok ? sentText(r) : r.reason);
   }
   // "send the draft for Harbour", "send Harbour the draft".
   const draft = text.match(/^\s*send\s+(?:the\s+draft\s+(?:for|to)\s+(.+?)|(.+?)\s+the\s+draft)\s*$/i);
@@ -112,7 +115,7 @@ export function runOwnerRules(ctx: OwnerCtx, text: string, prev: AgentState): Ag
   if (back) {
     const raw = (back[1] ?? back[2]).trim();
     const r = handBack(ctx, raw, force);
-    return out(r.ok ? `${r.flagOnly ? `Cleared the flag on ${r.to}; the agent still has it.` : `Handed ${r.to} back to the agent.`}${r.withoutReply ? " Heads up: they were told an owner would reply, and nobody has." : ""}` : r.reason);
+    return out(r.ok ? handBackText(r) : r.reason);
   }
 
   // Knowledge: "add to keg guide: we now carry G-type couplers".
