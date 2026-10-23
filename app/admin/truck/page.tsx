@@ -48,7 +48,7 @@ export default function Truck() {
               {logs.map((l) => (
                 <tr key={l.id}>
                   <td style={{ whiteSpace: "nowrap" }}>{fmtDate(l.date, { year: true })}</td>
-                  <td data-label="Type"><span className={`pill ${l.type === "incident" ? "bad" : l.type === "service" ? "good" : ""}`}>{TYPE_LABEL[l.type]}</span></td>
+                  <td data-label="Type"><span className="pill">{TYPE_LABEL[l.type]}</span></td>
                   <td data-label="Notes">{l.notes}</td>
                   <td className="num" data-label="Odometer">{l.odometer?.toLocaleString() ?? ""}</td>
                 </tr>

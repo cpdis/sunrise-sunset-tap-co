@@ -12,7 +12,7 @@
   --a-line: color-mix(in srgb, var(--ink) 10%, white);      /* hairlines */
   --a-line-2: color-mix(in srgb, var(--ink) 18%, white);    /* input and button borders */
   --a-text-2: color-mix(in srgb, var(--ink) 72%, white);    /* secondary text, 6:1 on white */
-  --a-text-3: color-mix(in srgb, var(--ink) 52%, white);    /* axis ticks and icons only */
+  --a-text-3: color-mix(in srgb, var(--ink) 52%, white);    /* icons and dots only, never text (3.3:1) */
   --a-radius: 8px;
   --a-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 6%, transparent);
   --mono: var(--font-admin-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
@@ -32,10 +32,11 @@
 .admin .muted { color: var(--a-text-2); }
 .admin .mono, .admin .ref { font-family: var(--mono); font-size: 13px; letter-spacing: 0; font-variant-numeric: tabular-nums; }
 .admin .nowrap { white-space: nowrap; }
+.admin strong, .admin b { font-weight: 600; }
 .admin .num { font-variant-numeric: tabular-nums; }
 
 /* ---------- shell ---------- */
-.demo-bar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; padding: 6px 20px; font-size: 12px; color: var(--a-text-2); background: var(--a-subtle); border-bottom: 1px solid var(--a-line); }
+.demo-bar { display: flex; flex-wrap: nowrap; white-space: nowrap; justify-content: space-between; gap: 4px 16px; padding: 6px 20px; font-size: 12px; color: var(--a-text-2); background: var(--a-subtle); border-bottom: 1px solid var(--a-line); }
 .demo-bar .linkbtn { color: var(--azure); text-decoration: none; font-size: 12px; }
 .demo-bar .linkbtn:hover { text-decoration: underline; }
 /* the sidebar ground is painted on the shell so it runs the full page height under a sticky nav */
@@ -43,6 +44,8 @@
 .admin-nav { flex: none; width: 232px; padding: 14px 10px; display: flex; flex-direction: column; gap: 14px; position: sticky; top: 0; align-self: flex-start; height: calc(100vh - 31px); }
 .admin-nav .nav-home { display: flex; align-items: center; gap: 10px; padding: 4px 8px; color: var(--ink); font-weight: 600; font-size: 14px; letter-spacing: -0.01em; }
 .admin-nav .nav-home:hover { text-decoration: none; color: var(--ink); }
+.admin-nav .nav-bar { display: contents; }
+.menu-btn { display: none; }
 .nav-links { display: flex; flex-direction: column; gap: 1px; }
 .nav-links a { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; color: var(--a-text-2); font-size: 14px; transition: background-color 120ms ease, color 120ms ease; }
 .nav-links a:hover { text-decoration: none; color: var(--ink); }
@@ -58,7 +61,7 @@
 .admin h1 { font-weight: 600; font-size: 24px; line-height: 1.25; letter-spacing: -0.025em; margin: 0; }
 .admin .block { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .admin .block-head { display: flex; flex-wrap: wrap; gap: 8px 12px; justify-content: space-between; align-items: center; min-height: 32px; }
-.admin .block-title { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -0.005em; color: var(--ink); }
+.admin .block-title { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
 .admin .note { font-size: 13px; line-height: 1.5; color: var(--a-text-2); }
 .admin .meta { font-size: 12px; color: var(--a-text-2); font-variant-numeric: tabular-nums; }
 .admin .label { font-family: inherit; font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--a-text-2); }
@@ -113,7 +116,7 @@
 .admin .pill { height: 22px; padding: 0 8px; gap: 6px; border: 0; border-radius: 999px; font-size: 12px; font-weight: 500; color: var(--a-text-2); background: var(--a-muted); }
 .admin .pill.held, .admin .pill.warn { color: color-mix(in srgb, var(--warn) 70%, var(--ink)); background: color-mix(in srgb, var(--gold) 20%, white); }
 .admin .pill.confirmed { color: var(--azure); background: color-mix(in srgb, var(--azure) 10%, white); }
-.admin .pill.balance_paid, .admin .pill.good { color: var(--good); background: color-mix(in srgb, var(--good) 11%, white); }
+.admin .pill.balance_paid, .admin .pill.good { color: color-mix(in srgb, var(--good) 80%, var(--ink)); background: color-mix(in srgb, var(--good) 11%, white); }
 .admin .pill.completed { color: var(--a-text-2); background: var(--a-muted); }
 .admin .pill.cancelled, .admin .pill.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 9%, white); }
 .admin .pill.personal { color: var(--ink); background: color-mix(in srgb, var(--sand) 45%, white); }
@@ -150,6 +153,8 @@
 .admin .btn.primary { background: var(--azure); border-color: var(--azure); color: #fff; }
 .admin .btn.action { color: var(--azure); }
 .admin .btn.danger { color: var(--bad); }
+/* disabled is one look whatever the variant: grey, so a colour always means "you can press this" */
+.admin .btn:disabled, .admin .btn.primary:disabled, .admin .btn.danger:disabled { background: var(--a-subtle); border-color: var(--a-line); color: var(--a-text-2); box-shadow: none; opacity: 1; }
 /* one secondary style: .ghost reads the same as the default button here */
 .admin .btn.ghost { background: var(--a-bg); color: var(--ink); box-shadow: var(--a-shadow); }
 .admin .linkbtn { color: var(--azure); text-decoration: none; }
@@ -213,9 +218,9 @@
 /* ---------- calendar ---------- */
 .mcal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; background: var(--a-line); border: 1px solid var(--a-line); border-radius: var(--a-radius); overflow: hidden; box-shadow: var(--a-shadow); }
 .mcal .dow { background: var(--a-subtle); font-size: 12px; font-weight: 500; color: var(--a-text-2); padding: 8px 10px; }
-.mcal .cell { min-height: 104px; background: var(--a-bg); padding: 6px 6px 8px; display: flex; flex-direction: column; gap: 3px; font-size: 12px; cursor: pointer; transition: background-color 120ms ease; }
+.mcal .cell { min-height: 72px; background: var(--a-bg); padding: 6px 6px 8px; display: flex; flex-direction: column; gap: 3px; font-size: 12px; cursor: pointer; transition: background-color 120ms ease; }
 .mcal .cell.out { background: var(--a-subtle); }
-.mcal .cell.out .day-btn { color: var(--a-text-3); }
+.mcal .cell.out .day-btn { color: var(--a-text-2); }
 .mcal .cell.black { background: repeating-linear-gradient(135deg, var(--a-bg), var(--a-bg) 5px, var(--a-muted) 5px, var(--a-muted) 10px); }
 .mcal .cell.sel { box-shadow: inset 0 0 0 2px var(--azure); }
 .mcal .day-btn { align-self: flex-start; width: 24px; height: 24px; border: 0; border-radius: 50%; background: none; padding: 0; display: grid; place-items: center; cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
@@ -227,7 +232,7 @@
 .mcal .ev.paid::before { background: var(--azure); }
 .mcal .ev.held { background: color-mix(in srgb, var(--gold) 22%, white); }
 .mcal .ev.held::before { background: var(--warn); }
-.mcal .ev.personal { background: var(--a-muted); }
+.mcal .ev.personal { background: color-mix(in srgb, var(--ink) 9%, white); }
 .mcal .ev.personal::before { background: var(--a-text-3); }
 .cal-key { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px; color: var(--a-text-2); }
 .cal-key span { display: inline-flex; align-items: center; gap: 6px; }
@@ -280,7 +285,7 @@
 .steps li { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--a-text-2); }
 .steps li svg { color: var(--good); flex: none; }
 .steps li.handover svg { color: var(--warn); }
-.steps code { font-family: var(--mono); font-size: 12px; color: var(--a-text-3); }
+.steps code { font-family: var(--mono); font-size: 12px; color: var(--a-text-2); }
 .sysline { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--a-text-2); }
 .sysline::before, .sysline::after { content: ""; flex: 1; height: 1px; background: var(--a-line); }
 @keyframes turn-in { from { opacity: 0; transform: translateY(4px); } }
@@ -330,13 +335,18 @@
 /* phones and narrow tablets: the sidebar becomes a top bar with a tab strip */
 @media (max-width: 900px) {
   .admin-shell { flex-direction: column; min-height: 0; background: var(--a-bg); }
-  .admin-nav { width: auto; min-width: 0; align-self: stretch; height: auto; position: sticky; top: 0; z-index: 30; flex-direction: column; gap: 4px; padding: 10px 0 0; border-right: 0; border-bottom: 1px solid var(--a-line); background: var(--a-bg); }
-  .admin-nav .nav-home { padding: 2px 16px 4px; }
-  .nav-links { flex-direction: row; overflow-x: auto; gap: 0; padding: 0 24px 0 8px; scrollbar-width: none; mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent); }
-  .nav-links::-webkit-scrollbar { display: none; }
-  .nav-links a { height: 40px; padding: 0 10px; border-radius: 0; white-space: nowrap; flex: none; position: relative; }
-  .nav-links a.on { background: none; box-shadow: none; }
-  .nav-links a.on::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; background: var(--ink); }
+  /* phones and tablets: a top bar naming the page; the button opens a sheet with every page */
+  .admin-nav { width: auto; min-width: 0; align-self: stretch; height: auto; position: sticky; top: 0; z-index: 30; display: block; padding: 0; border-bottom: 1px solid var(--a-line); background: var(--a-bg); }
+  .admin-nav .nav-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 52px; padding: 0 8px 0 16px; }
+  .admin-nav .nav-home { padding: 0; }
+  .menu-btn { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px 0 12px; border: 1px solid var(--a-line-2); border-radius: 6px; background: var(--a-bg); color: var(--ink); font: inherit; font-weight: 500; cursor: pointer; box-shadow: var(--a-shadow); transition: transform 120ms var(--ease-out); }
+  .menu-btn:active { transform: scale(0.97); }
+  .menu-btn svg { transition: transform 200ms var(--ease-out); }
+  .admin-nav.open .menu-btn svg { transform: rotate(180deg); }
+  .nav-links { display: none; position: absolute; left: 0; right: 0; top: 100%; padding: 8px; gap: 2px; background: var(--a-bg); border-bottom: 1px solid var(--a-line); box-shadow: 0 12px 24px color-mix(in srgb, var(--ink) 10%, transparent); max-height: calc(100vh - 90px); overflow-y: auto; }
+  .admin-nav.open .nav-links { display: flex; animation: sheet-in 180ms var(--ease-out); }
+  .nav-links a { height: 44px; padding: 0 12px; }
+  .nav-links a.on { background: var(--a-muted); box-shadow: none; }
   .admin-main { padding-top: 20px; }
   .inbox { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 0; }
   .inbox-list { border-right: 0; }
@@ -347,8 +357,10 @@
   .pane-body { overflow: visible; padding: 16px 14px 8px; }
   .composer { margin: 8px 10px 10px; position: sticky; bottom: 10px; }
 }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(-4px); } }
 @media (max-width: 720px) {
   .demo-bar { padding: 6px 16px; }
+  .demo-bar .long { display: none; }
   .admin .stat { padding: 14px 16px; }
   .admin .stat .v { font-size: 22px; }
   .chart-card .ch-head { padding: 16px 16px 4px; }
@@ -361,7 +373,39 @@
   .admin h1 { font-size: 22px; }
 }
 
+/* columns that drop out as the table narrows */
+@media (max-width: 1100px) { .admin .hide-md { display: none !important; } }
+@media (max-width: 720px) { .admin .hide-sm { display: none !important; } }
+
+.admin .table-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--a-line); background: var(--a-subtle); }
+
+/* calendar agenda: phones only, where grid chips are dots */
+.admin .agenda { list-style: none; margin: 0; padding: 0; display: none; }
+.agenda .list-row { align-items: center; scroll-margin: 72px; }
+.agenda .list-row.on { background: color-mix(in srgb, var(--azure) 7%, white); }
+.agenda .ag-date { width: 72px; flex: none; font-size: 13px; color: var(--a-text-2); font-variant-numeric: tabular-nums; }
+li:last-child > .list-row { border-bottom: 0; }
+@media (max-width: 720px) { .admin .agenda { display: block; } }
+
+/* folded rows (paid payouts): the summary is a list row, the body opens under it */
+.fold > summary { list-style: none; cursor: pointer; align-items: center; }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary .num { font-weight: 600; }
+.fold:last-child > summary { border-bottom: 0; }
+.fold[open] > summary { border-bottom: 1px solid var(--a-line); background: var(--a-subtle); }
+.fold-body { padding: 12px; border-bottom: 1px solid var(--a-line); }
+.fold:last-child .fold-body { border-bottom: 0; }
+.fold-body .card { box-shadow: none; }
+
+/* a one-line notice that opens to the full explanation */
+.admin details.notice summary { cursor: pointer; color: var(--ink); list-style: none; }
+.admin details.notice summary::-webkit-details-marker { display: none; }
+.admin details.notice summary::after { content: " More"; color: var(--azure); }
+.admin details.notice[open] summary::after { content: " Less"; }
+.admin details.notice p { margin: 8px 0 0; }
+
 @media (prefers-reduced-motion: reduce) {
+  .admin-nav.open .nav-links { animation: none; }
   .admin .btn:active:not(:disabled), .admin .seg button:active { transform: none; }
   .turn { animation: none; }
   .chart-card .draw { animation: none; stroke-dashoffset: 0; }

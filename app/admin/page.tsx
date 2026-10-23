@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { CHANNEL_LABEL, Loading, Section, Stat, StatePill, useData } from "@/components/ui";
 import { BALANCE_RETRIES, RELEASE_UNPAID_DAYS, balanceStuck, cashAt, liveBookings, periodTotals } from "@/lib/domain";
-import { SCENARIOS } from "@/lib/seed";
 import { useApp } from "@/lib/store";
 import { addDays, daysBetween, fmtDate, fmtDateTime, fmtTime, money, perthHour, quarterLabel, todayISO } from "@/lib/util";
 
@@ -36,7 +35,6 @@ export default function Today() {
           <h1>{greeting}, {me?.name}.</h1>
         </div>
         <div className="row">
-          <span className="pill">Illustrative · {SCENARIOS[data.scenario].label.toLowerCase()} case</span>
           <Link href="/admin/calendar" className="btn small">Open calendar</Link>
         </div>
       </div>

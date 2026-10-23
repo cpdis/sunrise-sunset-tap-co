@@ -3,10 +3,11 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { SmsWidget } from "@/components/SmsWidget";
 import { Loading, useData } from "@/components/ui";
+import { SCENARIOS } from "@/lib/seed";
 import { useApp } from "@/lib/store";
 import "./admin.css";
 
@@ -33,6 +34,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const logout = useApp((s) => s.logout);
   const path = usePathname();
   const router = useRouter();
+  // phones: every page lives in a menu sheet under the top bar
+  const [menu, setMenu] = useState(false);
+  useEffect(() => setMenu(false), [path]);
+  useEffect(() => {
+    if (!menu) return;
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setMenu(false);
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [menu]);
 
   useEffect(() => {
     if (data && !ownerId) router.replace("/login");
@@ -43,22 +53,30 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const inbox = data.conversations.filter((c) => c.escalated || (c.unread && !c.agentActive)).length;
   const payouts = data.distributions.filter((d) => d.status === "awaiting" && !d.approvals.includes(ownerId)).length;
   const badge: Record<string, number> = { "/admin/inbox": inbox, "/admin/payouts": payouts };
+  const current = NAV.find((n) => (n.href === "/admin" ? path === "/admin" : path.startsWith(n.href)));
 
   return (
     <div className={`admin ${sans.variable} ${mono.variable}`}>
       <div className="demo-bar">
-        <span>Demo. Data lives in your browser; payments and bank transfers are simulated.</span>
+        <span>Demo · {SCENARIOS[data.scenario].label.toLowerCase()} case<span className="long">. Figures are illustrative; data lives in your browser and payments are simulated.</span></span>
         <span>
-          Signed in as {me?.name} · <button className="linkbtn" onClick={() => { logout(); router.push("/login"); }}>Switch owner</button>
+          {me?.name} · <button className="linkbtn" onClick={() => { logout(); router.push("/login"); }}>Switch owner</button>
         </span>
       </div>
       <div className="admin-shell">
-        <nav className="admin-nav" aria-label="Admin">
-          <Link href="/" className="nav-home" aria-label="Public site">
-            <Logo size={24} />
-            <span>Sunrise Sunset</span>
-          </Link>
-          <div className="nav-links">
+        <nav className={`admin-nav${menu ? " open" : ""}`} aria-label="Admin">
+          <div className="nav-bar">
+            <Link href="/" className="nav-home" aria-label="Public site">
+              <Logo size={24} />
+              <span>Sunrise Sunset</span>
+            </Link>
+            <button type="button" className="menu-btn" aria-expanded={menu} aria-controls="admin-pages" onClick={() => setMenu(!menu)}>
+              {current?.label ?? "Menu"}
+              {inbox + payouts > 0 && <span className="badge">{inbox + payouts}</span>}
+              <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </button>
+          </div>
+          <div className="nav-links" id="admin-pages">
             {NAV.map((n) => {
               const on = n.href === "/admin" ? path === "/admin" : path.startsWith(n.href);
               return (

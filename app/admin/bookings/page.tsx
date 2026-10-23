@@ -44,29 +44,29 @@ export default function Bookings() {
           {FILTERS.map((x) => <button key={x} className={cls(f === x && "on")} aria-pressed={f === x} onClick={() => setF(x)}>{x}</button>)}
         </div>
         <div className="table-wrap">
-          <table className="t">
+          <table className="t cards">
             <thead>
-              <tr><th>Date</th><th>Ref</th><th>Customer</th><th>Event</th><th>Where</th><th>Via</th><th className="num">Total</th><th className="num">Paid</th><th>Runs</th><th>Status</th></tr>
+              <tr><th>Date</th><th className="hide-sm">Ref</th><th>Customer</th><th className="num">Total</th><th className="num hide-sm">Paid</th><th className="hide-md">Runs</th><th>Status</th></tr>
             </thead>
             <tbody>
               {rows.map((b) => {
                 const c = cust(b.customerId);
+                const runner = (id?: string) => owner(id) ?? <span className="muted">Unclaimed</span>;
                 return (
                   <tr key={b.id} className="click" onClick={() => router.push(`/admin/bookings/${b.id}`)}>
-                    <td style={{ whiteSpace: "nowrap" }}>{fmtDate(b.date, { dow: true, year: true })}<br /><span className="muted">{b.block}h</span></td>
-                    <td className="mono"><Link href={`/admin/bookings/${b.id}`} onClick={(e) => e.stopPropagation()}>{b.ref}</Link></td>
-                    <td>{b.kind === "personal" ? `${owner(b.ownerId)} (owner)` : c?.name}</td>
-                    <td>{b.eventType}</td>
-                    <td>{b.suburb}</td>
-                    <td>{CHANNEL_LABEL[b.createdVia]}</td>
-                    <td className="num">{b.kind === "paid" ? money(b.total) : "—"}</td>
-                    <td className="num">{b.kind === "paid" ? money(paidSoFar(data, b.id)) : "—"}</td>
-                    <td style={{ whiteSpace: "nowrap" }}>{owner(b.deliver.ownerId) ?? "?"} / {owner(b.collect.ownerId) ?? "?"}</td>
-                    <td><StatePill b={b} /></td>
+                    <td className="nowrap">{fmtDate(b.date, { dow: true, year: true })}<br /><span className="muted">{b.block}h</span></td>
+                    <td className="hide-sm" data-label="Ref"><Link className="ref" href={`/admin/bookings/${b.id}`} onClick={(e) => e.stopPropagation()}>{b.ref}</Link></td>
+                    <td data-label="Customer">
+                      <span>{b.kind === "personal" ? `${owner(b.ownerId)} (owner)` : c?.name}<br /><span className="muted">{[b.eventType, b.suburb, CHANNEL_LABEL[b.createdVia]].filter(Boolean).join(" · ")}</span></span>
+                    </td>
+                    <td className="num" data-label="Total">{b.kind === "paid" ? money(b.total) : "—"}</td>
+                    <td className="num hide-sm" data-label="Paid">{b.kind === "paid" ? money(paidSoFar(data, b.id)) : "—"}</td>
+                    <td className="nowrap hide-md" data-label="Runs">{runner(b.deliver.ownerId)} / {runner(b.collect.ownerId)}</td>
+                    <td data-label="Status"><StatePill b={b} /></td>
                   </tr>
                 );
               })}
-              {rows.length === 0 && <tr><td colSpan={10} className="muted">Nothing here.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={7} className="muted">Nothing here.</td></tr>}
             </tbody>
           </table>
         </div>

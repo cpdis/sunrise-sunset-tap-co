@@ -4,7 +4,6 @@ import { useState } from "react";
 import { PaybackChart } from "@/components/PaybackChart";
 import { Loading, Section, Stat, useData } from "@/components/ui";
 import { ACCOUNT_LABEL, balance, cashAt, liveBookings, periodTotals } from "@/lib/domain";
-import { SCENARIOS } from "@/lib/seed";
 import { useApp } from "@/lib/store";
 import type { Account } from "@/lib/types";
 import { addDays, addMonths, fmtDate, money, quarterLabel, quarterOf, todayISO } from "@/lib/util";
@@ -12,6 +11,8 @@ import { addDays, addMonths, fmtDate, money, quarterLabel, quarterOf, todayISO }
 const EXPENSE_ACCOUNTS: Account[] = ["maintenance", "fuel", "co2", "cleaning", "breakage", "insurance", "rego", "software", "accounting", "marketing", "setup"];
 const GST_THRESHOLD = 75000;
 const MON3 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// the ledger shows a page at a time, newest first
+const LEDGER_PAGE = 15;
 const cum = (xs: number[]) => xs.map((_, i) => xs.slice(0, i + 1).reduce((a, b) => a + b, 0));
 
 export default function Money() {
@@ -20,6 +21,7 @@ export default function Money() {
   const today = todayISO();
   const [period, setPeriod] = useState(quarterOf(today).key);
   const [acct, setAcct] = useState<Account | "all">("all");
+  const [rowsShown, setRowsShown] = useState(LEDGER_PAGE);
   const [ex, setEx] = useState({ date: today, account: "maintenance" as Account, amount: "", memo: "" });
   if (!data) return <Loading />;
 
@@ -36,7 +38,6 @@ export default function Money() {
   const capital = balance(data, "capital");
   const margin = Math.round((year.profit / Math.max(1, year.revenue)) * 100);
   const payback = year.profit > 0 ? capital / year.profit : Infinity;
-  const scenario = SCENARIOS[data.scenario].label.toLowerCase();
   // The ATO tests projected turnover too: this month plus the next 11, which includes hires already booked.
   const monthStart = today.slice(0, 7) + "-01";
   const horizon = addDays(addMonths(monthStart, 12), -1);
@@ -54,11 +55,12 @@ export default function Money() {
   for (const e of inQ) byAcct.set(e.account, (byAcct.get(e.account) ?? 0) + e.amount);
   const rows = [...byAcct.entries()].sort((a, b) => b[1] - a[1]);
   const net = inQ.reduce((s, e) => s + e.amount, 0);
-  const ledger = [...data.ledger].filter((e) => acct === "all" || e.account === acct).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 60);
+  const ledger = [...data.ledger].filter((e) => acct === "all" || e.account === acct).sort((a, b) => b.date.localeCompare(a.date));
+  const more = Math.min(LEDGER_PAGE * 3, ledger.length - rowsShown);
 
   return (
     <div className="page">
-      <div className="admin-top"><div><h1>Money</h1></div><span className="pill">Illustrative · {scenario} case</span></div>
+      <div className="admin-top"><div><h1>Money</h1></div></div>
 
       <div className="stats">
         <Stat k="Cash in the bank" v={money(cash)} />
@@ -141,7 +143,7 @@ export default function Money() {
       <Section
         title="Ledger"
         aside={
-          <select className="input" aria-label="Ledger account" style={{ width: "auto" }} value={acct} onChange={(e) => setAcct(e.target.value as Account | "all")}>
+          <select className="input" aria-label="Ledger account" style={{ width: "auto" }} value={acct} onChange={(e) => { setAcct(e.target.value as Account | "all"); setRowsShown(LEDGER_PAGE); }}>
             <option value="all">All accounts</option>
             {(Object.keys(ACCOUNT_LABEL) as Account[]).map((k) => <option key={k} value={k}>{ACCOUNT_LABEL[k]}</option>)}
           </select>
@@ -151,7 +153,7 @@ export default function Money() {
           <table className="t cards">
             <thead><tr><th>Date</th><th>Account</th><th>Memo</th><th className="num">Amount</th></tr></thead>
             <tbody>
-              {ledger.map((e) => (
+              {ledger.slice(0, rowsShown).map((e) => (
                 <tr key={e.id}>
                   <td className="nowrap">{fmtDate(e.date, { year: true })}</td>
                   <td data-label="Account">{ACCOUNT_LABEL[e.account]}</td>
@@ -161,6 +163,12 @@ export default function Money() {
               ))}
             </tbody>
           </table>
+          {more > 0 && (
+            <div className="table-foot">
+              <span className="meta">{rowsShown} of {ledger.length} entries</span>
+              <button className="btn small" onClick={() => setRowsShown(rowsShown + more)}>Show {more} more</button>
+            </div>
+          )}
         </div>
       </Section>
     </div>

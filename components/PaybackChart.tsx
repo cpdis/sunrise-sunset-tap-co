@@ -58,11 +58,11 @@ export function PaybackChart({ months, profit, capital }: Props) {
         {ticks.map((v) => (
           <g key={v}>
             <line x1={pad.l} x2={w - pad.r} y1={Y(v)} y2={Y(v)} stroke="var(--a-line)" />
-            <text x={pad.l - 10} y={Y(v) + 4} textAnchor="end" fontSize={12} fill="var(--a-text-3)" style={{ fontVariantNumeric: "tabular-nums" }}>{short(v)}</text>
+            <text x={pad.l - 10} y={Y(v) + 4} textAnchor="end" fontSize={12} fill="var(--a-text-2)" style={{ fontVariantNumeric: "tabular-nums" }}>{short(v)}</text>
           </g>
         ))}
         {months.map((m, i) => (i % every === (months.length - 1) % every ? (
-          <text key={i} x={X(i)} y={H - 8} textAnchor={i === 0 ? "start" : i === months.length - 1 ? "end" : "middle"} fontSize={12} fill="var(--a-text-3)">{m}</text>
+          <text key={i} x={X(i)} y={H - 8} textAnchor={i === 0 ? "start" : i === months.length - 1 ? "end" : "middle"} fontSize={12} fill="var(--a-text-2)">{m}</text>
         ) : null))}
         <line x1={pad.l} x2={w - pad.r} y1={Y(capital)} y2={Y(capital)} stroke="var(--ink)" strokeWidth={1.5} strokeDasharray="4 4" />
         <path d={area} fill="color-mix(in srgb, var(--azure) 8%, white)" />
