@@ -16,18 +16,23 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [engine, setEngine] = useState("");
 
+  // fractions (unit "0–1", the tax rate) are edited as percentages and saved back as fractions
+  const pctKeys = new Set(GROUPS.flatMap((g) => g.fields).filter((f) => f.unit === "0–1").map((f) => f.k as string));
+  const toForm = (s: Settings) => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, pctKeys.has(k) ? String(Math.round(Number(v) * 10000) / 100) : String(v)]));
   useEffect(() => {
-    if (data) setForm(Object.fromEntries(Object.entries(data.settings).map(([k, v]) => [k, String(v)])));
+    if (data) setForm(toForm(data.settings));
   }, [data?.settings]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { fetch("/api/agent").then((r) => r.json()).then((j) => setEngine(j.engine)).catch(() => {}); }, []);
 
   if (!data) return <Loading />;
+  const saved0 = toForm(data.settings);
+  const dirty = GROUPS.some((g) => g.fields.some((f) => (form[f.k] ?? "") !== (saved0[f.k] ?? "")));
 
   function save() {
     const next: Partial<Settings> = {};
     for (const g of GROUPS) for (const f of g.fields) {
       const n = Number(form[f.k]);
-      if (Number.isFinite(n)) next[f.k] = n;
+      if (Number.isFinite(n)) next[f.k] = pctKeys.has(f.k) ? n / 100 : n;
     }
     update(next);
     setSaved(true);
@@ -46,18 +51,19 @@ export default function SettingsPage() {
     <div className="page">
       <div className="admin-top">
         <h1>Settings</h1>
-        <div className="row">
-          {saved && <span className="pill good">Saved</span>}
-          <button className="btn primary" onClick={save}>Save changes</button>
-        </div>
+        {saved && !dirty && <span className="pill good">Saved</span>}
       </div>
       {GROUPS.map((g) => (
         <Section key={g.title} title={g.title}>
           <div className="card grid cols-3">
             {g.fields.map((f) => (
               <div key={f.k} className="field">
-                <label htmlFor={`set-${f.k}`}>{f.label} <span className="meta">{f.unit}</span></label>
-                <input id={`set-${f.k}`} className="input" inputMode="decimal" value={form[f.k] ?? ""} onChange={(e) => { setForm({ ...form, [f.k]: e.target.value }); setSaved(false); }} />
+                <label htmlFor={`set-${f.k}`}>{f.label}</label>
+                <span className="adorn">
+                  {f.unit === "$" && <i>$</i>}
+                  <input id={`set-${f.k}`} className="input" inputMode="decimal" value={form[f.k] ?? ""} onChange={(e) => { setForm({ ...form, [f.k]: e.target.value }); setSaved(false); }} />
+                  {f.unit && f.unit !== "$" && <i>{f.unit === "0–1" ? "%" : f.unit}</i>}
+                </span>
               </div>
             ))}
           </div>
@@ -85,6 +91,15 @@ export default function SettingsPage() {
           </div>
         </div>
       </Section>
+      {dirty && (
+        <div className="save-bar" role="region" aria-label="Unsaved changes">
+          <span>You have unsaved changes.</span>
+          <div className="row">
+            <button className="btn small" onClick={() => setForm(saved0)}>Discard</button>
+            <button className="btn small primary" onClick={save}>Save changes</button>
+          </div>
+        </div>
+      )}
       <Section title="Demo data">
         <div className="card stack" style={{ gap: 12 }}>
           <span className="note">Regenerates a fresh simulated year of trading and wipes anything you&apos;ve done in this browser.</span>

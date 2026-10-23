@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { DateField } from "@/components/DateField";
 import { Loading, Section, Stat, useData } from "@/components/ui";
 import type { TruckLog } from "@/lib/types";
 import { useApp } from "@/lib/store";
@@ -12,6 +13,7 @@ const TYPE_LABEL: Record<TruckLog["type"], string> = { service: "Service", clean
 export default function Truck() {
   const data = useData();
   const addLog = useApp((s) => s.addTruckLog);
+  const [logging, setLogging] = useState(false);
   const [f, setF] = useState({ date: todayISO(), type: "clean" as TruckLog["type"], notes: "", odometer: "" });
   if (!data) return <Loading />;
   const logs = [...data.truck].sort((a, b) => b.date.localeCompare(a.date));
@@ -23,32 +25,35 @@ export default function Truck() {
   return (
     <div className="page">
       <div className="admin-top"><h1>Truck</h1></div>
-      <div className="grid cols-4">
+      <div className="stats">
         <Stat k="Odometer (last logged)" v={`${odo.toLocaleString()} km`} />
         <Stat k="Since last service" v={`${sinceService.toLocaleString()} km`} />
         <Stat k="Driven for hires, last 12 months" v={`${yearKm.toLocaleString()} km`} />
         <Stat k="Next service" v={sinceService > 4000 ? "Due now" : `${(5000 - sinceService).toLocaleString()} km`} />
       </div>
-      <Section title="Log something">
-        <form className="card stack" onSubmit={(e) => { e.preventDefault(); if (!f.notes) return; addLog({ date: f.date, type: f.type, notes: f.notes, odometer: Number(f.odometer) || undefined }); setF({ ...f, notes: "", odometer: "" }); }}>
-          <div className="grid cols-4">
-            <div className="field"><label htmlFor="tl-1">Date</label><input id="tl-1" type="date" className="input" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></div>
-            <div className="field"><label htmlFor="tl-2">Type</label><select id="tl-2" className="input" value={f.type} onChange={(e) => setF({ ...f, type: e.target.value as TruckLog["type"] })}>{TYPES.map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}</select></div>
-            <div className="field"><label htmlFor="tl-3">Odometer</label><input id="tl-3" className="input" inputMode="numeric" value={f.odometer} onChange={(e) => setF({ ...f, odometer: e.target.value })} /></div>
-            <div className="field"><label htmlFor="tl-4">Notes</label><input id="tl-4" className="input" value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></div>
-          </div>
-          <button className="btn small primary" style={{ alignSelf: "flex-start" }}>Add to log</button>
-        </form>
-      </Section>
-      <Section title="History">
+      <Section title="History" aside={!logging && <button className="btn small" onClick={() => setLogging(true)}>+ Log</button>}>
+        {logging && (
+          <form className="card stack drawer" onSubmit={(e) => { e.preventDefault(); if (!f.notes) return; addLog({ date: f.date, type: f.type, notes: f.notes, odometer: Number(f.odometer) || undefined }); setF({ ...f, notes: "", odometer: "" }); setLogging(false); }}>
+            <div className="grid cols-4">
+              <div className="field"><label htmlFor="tl-1">Date</label><DateField id="tl-1" value={f.date} onChange={(d) => setF({ ...f, date: d })} /></div>
+              <div className="field"><label htmlFor="tl-2">Type</label><select id="tl-2" className="input" value={f.type} onChange={(e) => setF({ ...f, type: e.target.value as TruckLog["type"] })}>{TYPES.map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}</select></div>
+              <div className="field"><label htmlFor="tl-3">Odometer</label><span className="adorn"><input id="tl-3" className="input" inputMode="numeric" value={f.odometer} onChange={(e) => setF({ ...f, odometer: e.target.value })} /><i>km</i></span></div>
+              <div className="field"><label htmlFor="tl-4">Notes</label><input id="tl-4" className="input" value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></div>
+            </div>
+            <div className="row">
+              <button className="btn small primary">Add to log</button>
+              <button type="button" className="btn small" onClick={() => setLogging(false)}>Cancel</button>
+            </div>
+          </form>
+        )}
         <div className="table-wrap">
           <table className="t cards">
             <thead><tr><th>Date</th><th>Type</th><th>Notes</th><th className="num">Odometer</th></tr></thead>
             <tbody>
               {logs.map((l) => (
                 <tr key={l.id}>
-                  <td style={{ whiteSpace: "nowrap" }}>{fmtDate(l.date, { year: true })}</td>
-                  <td data-label="Type"><span className={`pill ${l.type === "incident" ? "bad" : l.type === "service" ? "good" : ""}`}>{TYPE_LABEL[l.type]}</span></td>
+                  <td className="nowrap">{fmtDate(l.date, { year: true })}</td>
+                  <td data-label="Type"><span className="pill">{TYPE_LABEL[l.type]}</span></td>
                   <td data-label="Notes">{l.notes}</td>
                   <td className="num" data-label="Odometer">{l.odometer?.toLocaleString() ?? ""}</td>
                 </tr>

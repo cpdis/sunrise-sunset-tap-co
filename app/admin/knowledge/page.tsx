@@ -50,8 +50,8 @@ export default function Knowledge() {
         <h1>Agent knowledge</h1>
         <span className="note">What the agent knows. Numbers in {"{{braces}}"} come from Settings, so prices stay in one place.</span>
       </div>
-      <div className="stack">
-        <div className="seg">
+      <div className="kb">
+        <div className="seg kb-pages" role="group" aria-label="Knowledge pages">
           {data.kb.map((p) => <button key={p.slug} className={cls(p.slug === slug && "on")} aria-pressed={p.slug === slug} onClick={() => setSlug(p.slug)}>{p.title}</button>)}
         </div>
         <div className="grid cols-2" style={{ alignItems: "start" }}>

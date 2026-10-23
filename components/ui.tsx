@@ -79,9 +79,10 @@ export function Linkify({ text }: { text: string }) {
   );
 }
 
+// One figure in a .stats strip: label over number, no caption.
 export function Stat({ k, v }: { k: string; v: React.ReactNode }) {
   return (
-    <div className="card stat">
+    <div className="stat">
       <span className="k">{k}</span>
       <span className="v">{v}</span>
     </div>
@@ -93,7 +94,7 @@ export function Section({ title, aside, children }: { title: React.ReactNode; as
   return (
     <section className="block">
       <div className="block-head">
-        <h2 className="eyebrow muted">{title}</h2>
+        <h2 className="block-title">{title}</h2>
         {aside}
       </div>
       {children}

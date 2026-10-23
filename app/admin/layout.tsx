@@ -1,12 +1,19 @@
 "use client";
 
+import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { SmsWidget } from "@/components/SmsWidget";
 import { Loading, useData } from "@/components/ui";
+import { SCENARIOS } from "@/lib/seed";
 import { useApp } from "@/lib/store";
+import "./admin.css";
+
+// The owners' admin reads like a finance console: Geist on white, Golden Hour inks as accents only.
+const sans = Geist({ subsets: ["latin"], variable: "--font-admin", display: "swap" });
+const mono = Geist_Mono({ subsets: ["latin"], variable: "--font-admin-mono", display: "swap" });
 
 const NAV = [
   { href: "/admin", label: "Today" },
@@ -27,6 +34,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const logout = useApp((s) => s.logout);
   const path = usePathname();
   const router = useRouter();
+  // phones: every page lives in a menu sheet under the top bar
+  const [menu, setMenu] = useState(false);
+  useEffect(() => setMenu(false), [path]);
+  useEffect(() => {
+    if (!menu) return;
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setMenu(false);
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [menu]);
 
   useEffect(() => {
     if (data && !ownerId) router.replace("/login");
@@ -37,29 +53,46 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const inbox = data.conversations.filter((c) => c.escalated || (c.unread && !c.agentActive)).length;
   const payouts = data.distributions.filter((d) => d.status === "awaiting" && !d.approvals.includes(ownerId)).length;
   const badge: Record<string, number> = { "/admin/inbox": inbox, "/admin/payouts": payouts };
+  const current = NAV.find((n) => (n.href === "/admin" ? path === "/admin" : path.startsWith(n.href)));
 
   return (
-    <>
+    <div className={`admin ${sans.variable} ${mono.variable}`}>
       <div className="demo-bar">
-        Demo: data lives in your browser, payments and bank transfers are simulated. Signed in as {me?.name}.{" "}
-        <button className="linkbtn" style={{ color: "var(--ink)" }} onClick={() => { logout(); router.push("/login"); }}>Switch owner</button>
+        Demo · {SCENARIOS[data.scenario].label.toLowerCase()} case<span className="long">. Figures are illustrative; data lives in your browser and payments are simulated.</span>
       </div>
-      <div className="admin">
-        <nav className="admin-nav">
-          <Link href="/" className="nav-home" aria-label="Public site" style={{ marginBottom: 12, gap: 10, justifyContent: "flex-start" }}><Logo size={34} /><span className="display" style={{ fontSize: 22, color: "var(--paper)", lineHeight: 0.95 }}>Sunrise<br />Sunset</span></Link>
-          {NAV.map((n) => {
-            const on = n.href === "/admin" ? path === "/admin" : path.startsWith(n.href);
-            return (
-              <Link key={n.href} href={n.href} className={on ? "on" : ""}>
-                {n.label}
-                {badge[n.href] ? <span className="badge">{badge[n.href]}</span> : null}
-              </Link>
-            );
-          })}
+      <div className="admin-shell">
+        <nav className={`admin-nav${menu ? " open" : ""}`} aria-label="Admin">
+          <div className="nav-bar">
+            <Link href="/" className="nav-home" aria-label="Public site">
+              <Logo size={24} />
+              <span>Sunrise Sunset</span>
+            </Link>
+            <button type="button" className="menu-btn" aria-expanded={menu} aria-controls="admin-pages" onClick={() => setMenu(!menu)}>
+              {current?.label ?? "Menu"}
+              {inbox + payouts > 0 && <span className="badge">{inbox + payouts}</span>}
+              <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </button>
+          </div>
+          <div className="nav-links" id="admin-pages">
+            {NAV.map((n) => {
+              const on = n.href === "/admin" ? path === "/admin" : path.startsWith(n.href);
+              return (
+                <Link key={n.href} href={n.href} className={on ? "on" : ""} aria-current={on ? "page" : undefined}>
+                  {n.label}
+                  {badge[n.href] ? <span className="badge">{badge[n.href]}</span> : null}
+                </Link>
+              );
+            })}
+            <div className="nav-foot">
+              <span className="avatar sm owner" aria-hidden="true">{me?.name.slice(0, 1)}</span>
+              <span className="who">{me?.name}</span>
+              <button type="button" className="btn small" onClick={() => { logout(); router.push("/login"); }}>Switch owner</button>
+            </div>
+          </div>
         </nav>
         <main className="admin-main">{children}</main>
       </div>
       <SmsWidget as={ownerId} />
-    </>
+    </div>
   );
 }
