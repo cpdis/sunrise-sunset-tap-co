@@ -4,7 +4,7 @@
 // idempotency key. An inbound message and the agent's turn on it run in lib/server/agent.ts, not here: the model
 // call is too slow for a write (KTD10).
 import { DEFAULT_SETTINGS, SUBURBS } from "@/lib/config";
-import { ACCOUNT_LABEL, cancelBooking, chargeBalance, createHold, ensureDistributions, pay, payDeposit, runJobs } from "@/lib/domain";
+import { ACCOUNT_LABEL, cancelBooking, chargeBalance, createHold, pay, payDeposit } from "@/lib/domain";
 import * as ops from "@/lib/ops";
 import { SCENARIOS, buildSeed } from "@/lib/seed";
 import type { Account, Data, Owner, Scenario, Settings, TruckLog } from "@/lib/types";
@@ -67,19 +67,9 @@ function linked(d: Data, bookingId: string, token: string) {
 
 const me = (ctx: Ctx) => ctx.owner as Owner;
 
-// Due jobs (expired holds, balances, bonds) and the latest quarter's payout record. U13 moves this off the browser.
-function tick(d: Data, now: Date) {
-  const ran = runJobs(d, now);
-  ran.forEach((t) => ops.log(d, t));
-  ensureDistributions(d, now);
-  return { ran: ran.length };
-}
-
 // ---------- the commands ----------
 
 const COMMANDS: Record<string, Command<unknown>> = {
-  tick: command({ role: "public", args: () => ({}), run: (d, _a, ctx) => tick(d, ctx.now) }),
-
   book: command({
     role: "public",
     args: (r) => ({
@@ -296,9 +286,13 @@ const COMMANDS: Record<string, Command<unknown>> = {
     args: (r) => ({ scenario: r.scenario === undefined ? undefined : oneOf(r, "scenario", Object.keys(SCENARIOS) as Scenario[]) }),
     run(d, a, ctx) {
       Object.assign(d, buildSeed(ctx.now, a.scenario ?? d.scenario));
-      tick(d, ctx.now);
+      ops.runScheduled(d, ctx.now);
     },
   }),
+
+  // The demo's "Run daily jobs now": the same jobs the daily cron runs (app/api/jobs), so a demo can move on
+  // without waiting for it. Returns what ran.
+  runJobs: command({ role: "owner", demoOnly: true, args: () => ({}), run: (d, _a, ctx) => ({ ran: ops.runScheduled(d, ctx.now) }) }),
 };
 
 export const COMMAND_NAMES = Object.keys(COMMANDS);

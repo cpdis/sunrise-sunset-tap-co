@@ -12,6 +12,9 @@ export default function SettingsPage() {
   const data = useData();
   const update = useApp((s) => s.updateSettings);
   const reset = useApp((s) => s.reset);
+  const runJobs = useApp((s) => s.runJobs);
+  // What the last "Run daily jobs now" ran: null before any run.
+  const [ran, setRan] = useState<string[] | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
   const [engine, setEngine] = useState("");
@@ -125,6 +128,11 @@ export default function SettingsPage() {
         <div className="card stack" style={{ gap: 12 }}>
           <span className="note">Regenerates a fresh simulated year of trading and wipes every change made in the demo, for everyone using it.</span>
           <button className="btn small danger" style={{ alignSelf: "flex-start" }} onClick={() => { if (confirm("Reset all demo data?")) reset(); }}>Reset demo data</button>
+        </div>
+        <div className="card stack" style={{ gap: 12 }}>
+          <span className="note">The server runs the daily jobs every morning: expired holds, balances due, bond holds and closing finished hires. Run them now to move the demo on without waiting.</span>
+          <button className="btn small" style={{ alignSelf: "flex-start" }} onClick={async () => setRan(await runJobs())}>Run daily jobs now</button>
+          {ran && <span className="note" role="status">{ran.length ? ran.join(". ") + "." : "Nothing was due."}</span>}
         </div>
       </Section>
     </div>

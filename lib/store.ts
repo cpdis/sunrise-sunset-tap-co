@@ -31,12 +31,13 @@ interface AppState {
   // Why the last command failed, for the page to show.
   error: string | null;
   refresh: () => Promise<void>;
-  ensure: () => Promise<void>;
   openLink: (id: string, token: string) => Promise<void>;
   watchChat: (contact: string) => Promise<void>;
   logout: () => Promise<void>;
   dismissError: () => void;
   reset: (scenario?: Scenario) => Promise<void>;
+  // The demo's "Run daily jobs now". What ran, or null when it failed.
+  runJobs: () => Promise<string[] | null>;
   book: (n: Omit<NewBooking, "via" | "id" | "ref" | "token">) => Promise<Booked | null>;
   payDeposit: (bookingId: string, card: string, checkout?: { email?: string; agreed?: boolean }) => Promise<boolean>;
   payBalance: (bookingId: string, card: string) => Promise<boolean>;
@@ -127,12 +128,6 @@ export const useApp = create<AppState>()((set, get) => {
       set({ pub: s.pub, data: s.owner?.data ?? null, ownerId: s.owner?.id ?? null, codes: s.owner?.codes ?? [], booking: s.booking ?? null, bookingFor: link?.id ?? null, chat: s.chat ?? null, hydrated: true });
     },
 
-    // Runs the due jobs on the server, then reads the state again.
-    ensure: async () => {
-      await call("tick", {}).catch(() => undefined);
-      await get().refresh();
-    },
-
     openLink: async (id, token) => {
       set({ link: { id, token } });
       await get().refresh();
@@ -153,6 +148,7 @@ export const useApp = create<AppState>()((set, get) => {
     dismissError: () => set({ error: null }),
 
     reset: (scenario) => done("reset", { scenario }),
+    runJobs: async () => ((await run("runJobs"))?.result as { ran?: string[] } | undefined)?.ran ?? null,
 
     // null when the hold was refused (the date was taken since the page checked it).
     book: async (n) => {

@@ -480,3 +480,9 @@ li:last-child > .list-row { border-bottom: 0; }
   .turn, .admin .drawer, .save-bar, .pane .confirm, .code-row { animation: none; }
   .chart-card .draw { animation: none; stroke-dashoffset: 0; }
 }
+
+/* outbox: one sent message per row, its head on one line and the body under it */
+.admin .feed.outbox li { flex-direction: column; align-items: stretch; gap: 4px; padding: 12px 16px; }
+.admin .feed.outbox li + li { border-top: 1px solid var(--a-line); }
+.admin .feed.outbox .outbox-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.admin .feed.outbox p { margin: 0; overflow-wrap: anywhere; }

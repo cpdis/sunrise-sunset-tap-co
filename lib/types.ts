@@ -321,7 +321,13 @@ export interface Data {
   jobs: JobLog[];
   seq: number;
   scenario: Scenario;
+  // What a change sends (lib/ops.ts send). Never stored: the repo turns these into outbox rows in the same
+  // transaction as the save, and drops them from the document (lib/server/outbox.ts).
+  outgoing?: Outgoing[];
 }
+
+// A message a change sends: an owner's reply to a customer, or the owners' notice that a conversation needs them.
+export type Outgoing = { kind: "reply"; channel: "sms" | "email"; to: string; body: string } | { kind: "escalation"; convId: string; reason: string };
 
 export type Scenario = "bear" | "base" | "bull";
 

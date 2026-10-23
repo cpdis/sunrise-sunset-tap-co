@@ -70,7 +70,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "escalate_to_owner",
-    description: "Hand the conversation to a human owner. Use for complaints, damage disputes, discounts, multi-day or sponsorship requests, date changes to a booking, media, legal questions beyond the FAQ, or whenever the customer asks for a person. It flags the conversation in the owners' inbox; nobody is texted or called.",
+    description: "Hand the conversation to a human owner. Use for complaints, damage disputes, discounts, multi-day or sponsorship requests, date changes to a booking, media, legal questions beyond the FAQ, or whenever the customer asks for a person. It flags the conversation in the owners' inbox and notifies the owners; nobody texts or calls the customer for you.",
     input_schema: obj(
       {
         reason: { type: "string", description: "One line for the owners: what the customer wants and why you stopped." },
@@ -93,7 +93,7 @@ Rules:
 - To book: confirm date, 4 or 8 hours, suburb and name, state the total, then call hold_and_send_deposit_link and send the link exactly as returned.
 - Never ask for card numbers. Payment only happens through the link.
 - To cancel: call cancel_booking with confirmed=false, tell the customer the terms and ask them to reply YES and the code it returns, for example "Reply YES 4821 to cancel." Call it with confirmed=true only when their next message is YES with that code. If done is false, nothing was cancelled, so don't say it was.
-- Say only what tools did. A refund is requested, not sent. Escalating flags the conversation for the owners and nothing else: say the owners have the message, and never promise a text, a call, an email or a time.
+- Say only what tools did. A refund is requested, not sent. Escalating flags the conversation and notifies the owners, nothing else: say an owner has been notified, and never promise a text, a call, an email or a time.
 - Moving a booking to another date is an owner's job. Escalate it, and don't hold the new date.
 - Only bookings from lookup_booking are the sender's. For any other reference, say you can't find it for this number, the same way every time.
 - You can't give discounts, change policies or promise anything outside the knowledge base.

@@ -128,7 +128,8 @@ export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentRes
   const out = (reply: string): AgentResult => ({ reply, actions: ctx.actions, tools: ctx.used, state, engine: "rules" });
   const refM = t.match(/\bsst-?\s?(\d{3,})\b/);
   const ref = refM ? `SST-${refM[1]}` : undefined;
-  // Escalating only flags the conversation in the owners' inbox, so these replies promise no time, text or call (R4).
+  // Escalating flags the conversation in the owners' inbox and emails the owners one notice (lib/server/outbox.ts).
+  // Nobody contacts the customer from it, so these replies may say the owners know but promise no time, text or call (R4).
   const unsure = () => {
     // No draft here: the agent has nothing to say, and a bare greeting would get sent as the whole reply.
     escalate(ctx, `Agent couldn't answer: "${text.slice(0, 160)}"`);
@@ -193,13 +194,13 @@ export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentRes
   // 2. A person, please. Only explicit asks: "someone", "staff" and "owner" also turn up in ordinary questions.
   if (PERSON.test(t)) {
     escalate(ctx, `Customer asked for a person: "${text.slice(0, 120)}"`, false, `${greeting(ctx)} one of the owners here. What can I help with?`);
-    return out("No worries, I've passed your message to the owners. Anything I can sort in the meantime?");
+    return out("No worries, an owner has been notified. Anything I can sort in the meantime?");
   }
 
   // Discounts, multi-day and sponsorship are owner decisions.
   if (OFF_POLICY.test(t)) {
     escalate(ctx, `Wants something outside standard pricing: "${text.slice(0, 140)}"`, false, `${greeting(ctx)} one of the owners here. Thanks for the message. Tell me a bit more about the event and the dates and I'll let you know what we can do.`);
-    return out("That one's up to the owners, so I've passed your message on to them.");
+    return out("That one's up to the owners, so I've passed your message on and an owner has been notified.");
   }
 
   // A reference counts only if it is one of the sender's own bookings. One that doesn't exist and someone else's get

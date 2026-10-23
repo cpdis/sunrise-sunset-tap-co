@@ -83,7 +83,8 @@ describe("inbox hand-overs", () => {
   });
 });
 
-// Escalating only flags a conversation in this inbox. Nobody is texted, so no hand-over may promise when (R4).
+// Escalating flags a conversation in this inbox and notifies the owners. Nobody contacts the customer, so no
+// hand-over may promise when (R4).
 describe("hand-over text promises no time", () => {
   const TIME_PROMISE = /\b(today|tomorrow|tonight|this (morning|arvo|afternoon|evening)|hours?|soon|by \w+day)\b/i;
   const NEW = "0499 120 554";

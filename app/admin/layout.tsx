@@ -49,6 +49,7 @@ const NAV = [
   { href: "/admin/calendar", label: "Calendar" },
   { href: "/admin/bookings", label: "Bookings" },
   { href: "/admin/inbox", label: "Inbox" },
+  { href: "/admin/outbox", label: "Outbox" },
   { href: "/admin/money", label: "Money" },
   { href: "/admin/payouts", label: "Payouts" },
   { href: "/admin/owners", label: "Owners" },

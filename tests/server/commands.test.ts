@@ -143,7 +143,6 @@ function argsFor(d: Data): Record<string, object> {
   const conv = d.conversations[0];
   const dist = d.distributions.find((x) => x.status === "awaiting")!;
   return {
-    tick: {},
     book: { date: "2027-01-09", block: 4, suburb: "Subiaco", name: "Ann", phone: "0400 000 111", agreed: true },
     payDeposit: { bookingId: a.id, token: a.token, card: "Visa •• 4242" },
     payBalance: { bookingId: a.id, token: a.token, card: "Visa •• 4242" },
@@ -168,6 +167,7 @@ function argsFor(d: Data): Record<string, object> {
     addTruckLog: { log: { date: "2026-10-20", type: "clean", notes: "clean" } },
     transferShares: { fromId: "own_colin", toId: "own_aaron", shares: 1 },
     reset: {},
+    runJobs: {},
   };
 }
 

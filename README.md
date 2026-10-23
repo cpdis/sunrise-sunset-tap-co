@@ -31,19 +31,21 @@ rules engine answers and the owners get one alert in the outbox (`lib/server/lim
 | `/login` | Simulated magic link. Pick any owner. |
 | `/admin` | Today: cash, unclaimed delivery and collection runs, conversations that need a person, payouts awaiting approval, job log. |
 | `/admin/inbox` | All channels. Simulate an inbound email, call or web form; take over from the agent; hand back. |
+| `/admin/outbox` | Every simulated SMS and email: owner notices for hand-overs, owners' replies to customers, alerts. |
 | `/admin/payouts` | Quarterly distribution. Approve as one owner, "Switch owner", approve as a second, then pay (mock bank transfer). |
 | `/admin/money` | 12-month revenue vs costs, quarterly P&L, GST threshold watch, ledger, add expense. |
 | `/admin/knowledge` | Edit what the agent knows and test it against the draft. |
-| `/admin/settings` | Prices and rules. Changes flow to the site, checkout and agent immediately. "Reset demo data" regenerates the year. "Demo scenario" switches between bear, base and bull seeds; every KPI is labelled illustrative. |
+| `/admin/settings` | Prices and rules. Changes flow to the site, checkout and agent immediately. "Reset demo data" regenerates the year; "Run daily jobs now" runs the scheduled jobs. "Demo scenario" switches between bear, base and bull seeds; every KPI is labelled illustrative. |
 
 ## How it works
 
 - **Data**: one simulated year of trading is generated on first load (`lib/seed.ts`, deterministic) and kept in
-  `localStorage`. Every browser has its own copy. Scheduled jobs (`runJobs` in `lib/domain.ts`) run on load and every
-  minute: expire unpaid holds after 30 minutes, charge balances 14 days out (a declined card retries daily for 3 days,
-  then flags an owner; still unpaid 7 days out releases the date and keeps the deposit), place bond holds 2 days out,
-  close past bookings and post their costs, post monthly truck depreciation (8-year straight line). Open the demo in
-  one tab at a time; other tabs reload from storage when it changes.
+  `localStorage`. Every browser has its own copy. Scheduled jobs (`runScheduled` in `lib/ops.ts`) run on the server
+  once a day from `/api/jobs` (see "Scheduled jobs" below), never in the browser: release expired unpaid holds (an
+  expired hold frees its date at once; the job only tidies it up), charge balances 14 days out (a declined card retries
+  daily for 3 days, then flags an owner; still unpaid 7 days out releases the date and keeps the deposit), place bond
+  holds 2 days out, close past bookings and post their costs, post monthly truck depreciation (8-year straight line),
+  and keep the latest quarter's payout record. In the demo, Settings has "Run daily jobs now", which runs the same jobs.
 - **Money**: every payment posts to a simple ledger (`post`, `pay`). Customer payments sit in a deposits liability and
   become revenue when the hire happens or the deposit is forfeited. Runner fees are an expense owed to the owner who
   ran it and go out with the quarterly payout. Distributions take quarterly profit, set aside a tax
@@ -55,8 +57,9 @@ rules engine answers and the owners get one alert in the outbox (`lib/server/lim
   (`lib/agent/claude.ts`); without, a deterministic intent matcher (`lib/agent/rules.ts`) that answers FAQs from the
   knowledge base pages, so an owner's edit changes both engines. Refunds above the configured limit, discounts,
   multi-day and sponsor requests, date changes, dates inside 7 days' notice and anything it can't pin down after two
-  re-asks go to an owner. A hand-over only flags the conversation in the inbox (nobody is notified yet), so replies
-  promise no time or call. Both engines cancel only after a quote and a clear YES to it, hold one unpaid date per
+  re-asks go to an owner. A hand-over flags the conversation in the inbox and puts one notice for the owners in the
+  outbox (who, why and a link to the conversation), so replies say an owner has been notified but promise no time or
+  call. Both engines cancel only after a quote and a clear YES to it, hold one unpaid date per
   contact, and treat someone else's SST- reference like an unknown one. After a hand-over it keeps answering FAQs but
   won't hold or cancel until handed back.
 - **Owner agent**: a text from an owner's own number gets the owner agent (`lib/agent/owner-*.ts`). Caller ID can be
@@ -64,6 +67,21 @@ rules engine answers and the owners get one alert in the outbox (`lib/server/lim
   with the 4-digit code in the confirmation text. Money, settings, knowledge lines and draft sends also need the
   6-digit code at the top of that owner's admin pages (`lib/server/approvals.ts`). A YES runs the exact change it
   confirmed, once, within 10 minutes; if the change has moved on, the agent asks again.
+
+## Scheduled jobs and the outbox
+
+- `GET /api/jobs` runs the daily jobs for every business, each in one compare-and-swap write. It needs
+  `Authorization: Bearer <CRON_SECRET>`; without it the answer is 401 and nothing runs. Outside production the dev
+  default `dev-only-cron-secret` works, for example
+  `curl -H "Authorization: Bearer dev-only-cron-secret" http://localhost:3000/api/jobs`. Production without
+  `CRON_SECRET` refuses every call. Running it twice in a day charges nothing twice.
+- `vercel.json` holds the cron entry: `/api/jobs` at 22:00 UTC (06:00 Perth) every day, the most a Hobby plan allows.
+  To enable it at deploy: set `CRON_SECRET` in the Vercel project's environment (Vercel Cron sends it as the bearer
+  token), then deploy. Vercel registers the cron from `vercel.json` on the production deployment.
+- Everything the business would send goes to the `outbox` table, written in the same transaction as the change that
+  sent it: sign-in links, owner notices when a conversation needs an owner, owners' replies to customers (as the SMS or
+  email they would be) and the model budget alert. Owners read it at `/admin/outbox` (mail to another owner, such as
+  their sign-in link, is left out). The public `/outbox` page exists only in demo mode, for sign-in links.
 
 ## Production path
 
@@ -74,7 +92,7 @@ rules engine answers and the owners get one alert in the outbox (`lib/server/lim
 | Mock bank | Business account with a payments API (e.g. Airwallex) for owner payouts |
 | SMS simulator | Twilio number (SMS + voice with transcription) |
 | Inbox email | Resend inbound/outbound |
-| In-tab job runner | Vercel Cron |
+| Simulated outbox (`/admin/outbox`) | Twilio and Resend send what the outbox holds |
 
 ## Stack
 

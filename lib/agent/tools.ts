@@ -228,7 +228,8 @@ export const defaultDraft = (ctx: ToolCtx) => `${greeting(ctx)} one of the owner
 const PROMISE = /\$\s?\d|\d\s?(?:dollars|bucks|aud)\b|\d\s?%|\brefund|\bfree\b|\bapprov|\bdiscount|\bwaiv/i;
 export const draftProblem = (draft: string) => PROMISE.test(draft);
 
-// Flags the conversation in the owners' inbox. Nobody is texted or called, so replies promise no time or call (R4).
+// Flags the conversation in the owners' inbox, and the owners get one notice in the outbox (lib/server/agent.ts). The
+// customer is not contacted, so replies may say an owner has been notified but promise no time, text or call (R4).
 // draft: a reply the owner can send as-is. Written to the customer, no owner name, no prices the KB doesn't carry.
 export function escalate(ctx: ToolCtx, reason: string, keepAgent = false, draft?: string) {
   ctx.used.push("escalate_to_owner");

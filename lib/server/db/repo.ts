@@ -6,6 +6,7 @@ import { BUSINESS } from "@/lib/config";
 import { DATA_VERSION, buildSeed } from "@/lib/seed";
 import type { Data } from "@/lib/types";
 import { uid } from "@/lib/util";
+import { drain } from "../outbox";
 import { type Db, getDb } from "./client";
 import { approvals, idempotencyKeys, outbox, rateLimits, tenantState, tenants } from "./schema";
 
@@ -69,12 +70,16 @@ export function createRepo(db: Db, opts: RepoOptions = {}) {
   }
 
   // Saves d only if the stored version is still `version`. Returns the new version, or null when another write won.
+  // The messages the change queued (lib/ops.ts send) come off the document and go to the outbox with the save, so
+  // `q` must be a transaction whenever d may have queued any.
   async function save(tenantId: string, version: number, d: Data, q: Db = db) {
+    const sent = drain(d);
     const [row] = await q
       .update(tenantState)
       .set({ version: version + 1, dataVersion: d.version, data: d, updatedAt: new Date() })
       .where(and(eq(tenantState.tenantId, tenantId), eq(tenantState.version, version)))
       .returning({ version: tenantState.version });
+    if (row && sent.length) await q.insert(outbox).values(sent.map((m) => ({ id: uid("ob"), tenantId, ...m })));
     return row?.version ?? null;
   }
 
@@ -106,7 +111,7 @@ export function createRepo(db: Db, opts: RepoOptions = {}) {
       const value = fn(cur.data);
       if (value instanceof Promise) throw new Error("repo.mutate needs a synchronous function (KTD10).");
       await opts.beforeSave?.(attempt);
-      const version = await save(tenantId, cur.version, cur.data);
+      const version = await db.transaction((tx) => save(tenantId, cur.version, cur.data, tx));
       if (version !== null) return { ok: true, value, version, data: cur.data };
     }
     return { ok: false, reason: "conflict" };
@@ -239,6 +244,11 @@ export function createRepo(db: Db, opts: RepoOptions = {}) {
     return db.select().from(outbox).where(eq(outbox.tenantId, tenantId)).orderBy(desc(outbox.createdAt)).limit(limit);
   }
 
+  // Every business's id, for the scheduled jobs.
+  async function tenantIds() {
+    return (await db.select({ id: tenants.id }).from(tenants)).map((t) => t.id);
+  }
+
   // Adds a tenant with its first document. False when the tenant already exists, so a second start never reseeds.
   function create(tenantId: string, name: string, data: Data) {
     return db.transaction(async (tx) => {
@@ -255,7 +265,7 @@ export function createRepo(db: Db, opts: RepoOptions = {}) {
     return create(DEMO_TENANT, BUSINESS.name, buildSeed(now));
   }
 
-  return { load, mutate, mutateOnce, mutateApprovals, stagedApprovals, ownerApprovals, claimKey, bump, counted, writeOutbox, readOutbox, create, seedDemo };
+  return { load, mutate, mutateOnce, mutateApprovals, stagedApprovals, ownerApprovals, claimKey, bump, counted, writeOutbox, readOutbox, tenantIds, create, seedDemo };
 }
 
 // The app's repo on the process-wide database, with the demo business seeded on first use.

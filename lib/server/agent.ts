@@ -151,6 +151,7 @@ function hold(d: Data, c: Conversation, a: Extract<AgentAction, { type: "hold" }
   const refuse = (why: string) => {
     // The link the agent sent won't open, so the owners take it.
     c.escalated = `Hold ${a.ref} for ${a.name} refused: ${why}`;
+    ops.send(d, { kind: "escalation", convId: c.id, reason: c.escalated });
     c.messages.push({ id: uid("m"), from: "system", body: `Hold refused: ${why}`, at: now.toISOString() });
     ops.log(d, `Agent hold ${a.ref} refused: ${why}`);
     return why;
@@ -197,8 +198,12 @@ function escalate(d: Data, c: Conversation, a: Extract<AgentAction, { type: "esc
   c.escalated = a.reason;
   if (!a.keepAgent) c.agentActive = false;
   if (a.draft) c.draft = a.draft;
-  // The reason stays in the thread after an owner replies and the flag clears. Written once per reason.
-  if (!repeat) c.messages.push({ id: uid("m"), from: "system", body: `Agent handed over: ${a.reason}`, at: now.toISOString() });
+  // The reason stays in the thread after an owner replies and the flag clears, and the owners get one notice
+  // (lib/server/outbox.ts). Both once per reason.
+  if (!repeat) {
+    c.messages.push({ id: uid("m"), from: "system", body: `Agent handed over: ${a.reason}`, at: now.toISOString() });
+    ops.send(d, { kind: "escalation", convId: c.id, reason: a.reason });
+  }
   ops.log(d, `Escalated to owners: ${a.reason}`);
 }
 

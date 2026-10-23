@@ -1,13 +1,30 @@
 // Owner operations on a mutable draft of Data. The admin buttons and the owner SMS agent both call these,
 // so an action means the same thing whichever way an owner takes it.
 import { ADMIN_ONLY_SETTINGS, settingProblem } from "./config";
-import { ACCOUNT_LABEL, cancelBooking, cancelNeedsOwner, pay, payDistribution, post } from "./domain";
-import type { Account, AgentAction, Conversation, Data, KbPage, Settings, TruckLog } from "./types";
+import { ACCOUNT_LABEL, cancelBooking, cancelNeedsOwner, ensureDistributions, pay, payDistribution, post, runJobs } from "./domain";
+import type { Account, AgentAction, Conversation, Data, KbPage, Outgoing, Settings, TruckLog } from "./types";
 import { money, todayISO, uid } from "./util";
 
 export function log(d: Data, text: string) {
   d.jobs.unshift({ at: new Date().toISOString(), text });
   d.jobs = d.jobs.slice(0, 60);
+}
+
+// Queues a message this change sends. The repo writes it to the outbox only if the change is saved, in the same
+// transaction, so a change saved once sends once and a change refused or retried sends nothing extra.
+export function send(d: Data, m: Outgoing) {
+  (d.outgoing ??= []).push(m);
+}
+
+// The scheduled jobs: expired holds, balances, bonds, closing finished hires, depreciation, then the latest
+// quarter's payout record. The jobs route runs this for each business (app/api/jobs). Each job checks its own state
+// first (a balance charges only while unpaid, a quarter's record is made once), so a second run the same day
+// changes nothing.
+export function runScheduled(d: Data, now = new Date()) {
+  const ran = runJobs(d, now);
+  ran.forEach((t) => log(d, t));
+  ensureDistributions(d, now);
+  return ran;
 }
 
 const ownerName = (d: Data, id: string) => d.owners.find((o) => o.id === id)?.name ?? "An owner";
@@ -158,7 +175,10 @@ export function ownerReply(d: Data, convId: string, body: string, ownerId: strin
   if (!c) return;
   if (c.agentActive) setAgentActive(d, convId, false, ownerId);
   c.handledBy = ownerId;
-  c.messages.push({ id: uid("m"), from: "owner", body, at: new Date().toISOString(), ownerId, ...replyRoute(c) });
+  const route = replyRoute(c);
+  c.messages.push({ id: uid("m"), from: "owner", body, at: new Date().toISOString(), ownerId, ...route });
+  // The simulated send: the reply goes to the outbox as the SMS or email it would be.
+  if (route.to) send(d, { kind: "reply", channel: route.via, to: route.to, body });
   c.unread = false;
   c.escalated = undefined;
   c.draft = undefined;
@@ -184,6 +204,7 @@ export function customerCancel(d: Data, bookingId: string, now = new Date()): { 
   if (c.escalated !== reason) {
     c.messages.push({ id: uid("m"), from: "system", body: `Asked to cancel on the booking page. ${reason}`, at: now.toISOString() });
     log(d, `Escalated to owners: ${reason}`);
+    send(d, { kind: "escalation", convId: c.id, reason });
   }
   c.escalated = reason;
   c.agentActive = false;
