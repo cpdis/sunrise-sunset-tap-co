@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.1.0",
+    "@vercel/analytics": "^2.0.1",
     "chrono-node": "^2.10.3",
     "next": "15.5.28",
     "react": "19.1.1",
