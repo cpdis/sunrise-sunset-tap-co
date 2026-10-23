@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { Loading, Section, useData } from "@/components/ui";
-import { snapshot, useApp } from "@/lib/store";
+import { useApp } from "@/lib/store";
 import type { AgentResult, AgentState, Msg } from "@/lib/types";
 import { cls, uid } from "@/lib/util";
+import { snapshot } from "@/lib/views";
 
 export default function Knowledge() {
   const data = useData();

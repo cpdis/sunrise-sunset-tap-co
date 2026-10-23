@@ -3,7 +3,7 @@ import { POST } from "@/app/api/agent/route";
 import { runClaude } from "@/lib/agent/claude";
 import { checkAvailability, customerBookings, holdAndLink, type ToolCtx } from "@/lib/agent/tools";
 import { createHold } from "@/lib/domain";
-import { snapshot } from "@/lib/store";
+import { snapshot } from "@/lib/views";
 import { NOW, chat, seed } from "./helpers";
 
 const ME = "0499 000 111";

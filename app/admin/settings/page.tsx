@@ -56,7 +56,7 @@ export default function SettingsPage() {
     { name: "Agent", now: engine === "claude" ? "Claude (ANTHROPIC_API_KEY is set)" : "Rules engine (no API key)", prod: "Claude with tool use, same tools" },
     { name: "SMS and phone", now: "On-site simulator", prod: "Twilio number, voice transcription" },
     { name: "Email", now: "Simulated in the inbox", prod: "Resend inbound and outbound" },
-    { name: "Data and login", now: "Your browser (localStorage)", prod: "Supabase Postgres and email sign-in" },
+    { name: "Data and login", now: "Demo database (PGlite) and simulated sign-in emails", prod: "Hosted Postgres and emailed sign-in links" },
   ];
 
   return (
@@ -105,7 +105,7 @@ export default function SettingsPage() {
           </span>
           <div className="seg" role="group" aria-label="Demo scenario">
             {(Object.keys(SCENARIOS) as Scenario[]).map((k) => (
-              <button key={k} className={cls(data.scenario === k && "on")} aria-pressed={data.scenario === k} onClick={() => { if (data.scenario !== k && confirm(`Switch to the ${SCENARIOS[k].label.toLowerCase()} case? This regenerates the demo data.`)) { reset(k); useApp.getState().ensure(); } }}>
+              <button key={k} className={cls(data.scenario === k && "on")} aria-pressed={data.scenario === k} onClick={() => { if (data.scenario !== k && confirm(`Switch to the ${SCENARIOS[k].label.toLowerCase()} case? This regenerates the demo data for everyone using it.`)) reset(k); }}>
                 {SCENARIOS[k].label}
               </button>
             ))}
@@ -123,8 +123,8 @@ export default function SettingsPage() {
       )}
       <Section title="Demo data">
         <div className="card stack" style={{ gap: 12 }}>
-          <span className="note">Regenerates a fresh simulated year of trading and wipes anything you&apos;ve done in this browser.</span>
-          <button className="btn small danger" style={{ alignSelf: "flex-start" }} onClick={() => { if (confirm("Reset all demo data?")) { reset(); useApp.getState().ensure(); } }}>Reset demo data</button>
+          <span className="note">Regenerates a fresh simulated year of trading and wipes every change made in the demo, for everyone using it.</span>
+          <button className="btn small danger" style={{ alignSelf: "flex-start" }} onClick={() => { if (confirm("Reset all demo data?")) reset(); }}>Reset demo data</button>
         </div>
       </Section>
     </div>

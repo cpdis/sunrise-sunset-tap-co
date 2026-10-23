@@ -5,7 +5,7 @@ import { cancelBooking } from "@/lib/domain";
 import { applyOwnerAction } from "@/lib/ops";
 import type { ToolCtx } from "@/lib/agent/tools";
 import { buildSeed } from "@/lib/seed";
-import { ownerSnapshot, snapshot } from "@/lib/store";
+import { ownerSnapshot, snapshot } from "@/lib/views";
 import type { AgentState, Data } from "@/lib/types";
 
 export const NOW = new Date("2026-10-22T12:00:00+08:00");
@@ -34,7 +34,7 @@ export function chat(d: Data, contact: string, lines: string[], opts: { handover
   });
 }
 
-// Runs an owner's texts through the owner rules engine and applies the actions to d, like the store does.
+// Runs an owner's texts through the owner rules engine and applies the actions to d, as the agentReply command does.
 export function ownerChat(d: Data, ownerId: string, lines: string[]) {
   let state: AgentState = {};
   return lines.map((text) => {

@@ -275,7 +275,7 @@ export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentRes
           Object.assign(state, { awaiting: undefined, misses: 0 });
           return out("Sorry, I'm not getting it, so I've passed this to the owners.");
         }
-        const free = nextFreeDates(ctx.data as never, todayISO(ctx.now), 3, true, ctx.now).map((x) => fmtDate(x, { dow: true }));
+        const free = nextFreeDates(ctx.data, todayISO(ctx.now), 3, true, ctx.now).map((x) => fmtDate(x, { dow: true }));
         return out(`I didn't catch a date.${free.length ? ` The next free weekend days are ${free.join(", ")}.` : ""} Which suits? Something like "Sat 14 March" works.`);
       }
       return out("Which date are you thinking? You can just say something like \"Sat 14 March\".");

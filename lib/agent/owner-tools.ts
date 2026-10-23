@@ -3,7 +3,7 @@
 // - money, settings, knowledge and sending the agent's draft are staged and run only when the owner's next text is YES;
 // - refunds over the agent limit, expenses over the SMS cap, bond captures, share transfers, and the money and
 //   guardrail settings (ADMIN_ONLY_SETTINGS) stay in the admin.
-// Like the customer tools, these run on the server against a snapshot and return actions for the client store.
+// Like the customer tools, these run on the server against a snapshot and return actions that the server applies.
 import { ADMIN_ONLY_SETTINGS, SETTING_GROUPS, settingProblem } from "../config";
 import { ACCOUNT_LABEL, cancelPolicy, dayStatus, directorApprovals, payoutRefusal, payoutTotal } from "../domain";
 import type { Account, AgentAction, AgentState, Channel, Data, Distribution, Owner, PendingOwnerAction, Settings, TruckLog } from "../types";
@@ -23,7 +23,7 @@ export interface OwnerInboxItem {
   draft?: string;
 }
 
-// Owners see everything in the admin, so the owner agent does too, except the ledger: the client sends totals instead.
+// Owners see everything in the admin, so the owner agent does too, except the ledger: the snapshot carries totals instead.
 export type OwnerSnapshot = Pick<Data, "settings" | "owners" | "bookings" | "customers" | "distributions" | "truck" | "kb" | "blackouts" | "seq"> & {
   inbox: OwnerInboxItem[];
   // free: domain freeCash today, which a payout's dividends must fit in (payoutRefusal).
@@ -40,7 +40,6 @@ export interface OwnerCtx {
   staged?: PendingOwnerAction;
 }
 
-const d = (ctx: OwnerCtx) => ctx.data as unknown as Data;
 const today = (ctx: OwnerCtx) => todayISO(ctx.now);
 const ownerName = (ctx: OwnerCtx, id?: string) => ctx.data.owners.find((o) => o.id === id)?.name;
 const customerName = (ctx: OwnerCtx, id?: string) => ctx.data.customers.find((c) => c.id === id)?.name ?? "Customer";
@@ -93,7 +92,7 @@ export function findBookings(ctx: OwnerCtx, q: { ref?: string; date?: string; su
       deliver: ownerName(ctx, b.deliver.ownerId) ?? "unclaimed",
       collect: ownerName(ctx, b.collect.ownerId) ?? "unclaimed",
     }));
-  return { bookings: hits, day: q.date ? dayStatus(d(ctx), q.date, ctx.now) : undefined };
+  return { bookings: hits, day: q.date ? dayStatus(ctx.data, q.date, ctx.now) : undefined };
 }
 
 export function inboxList(ctx: OwnerCtx) {
@@ -140,7 +139,7 @@ export function logTruck(ctx: OwnerCtx, q: { type: TruckLog["type"]; odometer?: 
 
 export function calendar(ctx: OwnerCtx, q: { action: "block" | "unblock" | "own_use"; date: string; note?: string }) {
   ctx.used.push("calendar");
-  const st = dayStatus(d(ctx), q.date, ctx.now);
+  const st = dayStatus(ctx.data, q.date, ctx.now);
   if (st === "invalid") return { ok: false as const, reason: "That isn't a real date." };
   const label = fmtDate(q.date, { dow: true, year: true });
   if (st === "past") return { ok: false as const, reason: `${label} has passed.` };

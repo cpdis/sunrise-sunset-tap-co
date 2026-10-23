@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { dayStatus, type DayStatus } from "@/lib/domain";
-import type { Data } from "@/lib/types";
+import { type Avail, dayStatus, type DayStatus } from "@/lib/domain";
 import { addDays, addMonths, cls, fmtDate, todayISO, weekday } from "@/lib/util";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -16,7 +15,7 @@ function statusText(st: DayStatus, notice: number) {
   return "past";
 }
 
-export function DatePicker({ data, value, onChange }: { data: Data; value?: string; onChange: (d: string) => void }) {
+export function DatePicker({ data, value, onChange }: { data: Avail; value?: string; onChange: (d: string) => void }) {
   const today = todayISO();
   const [month, setMonth] = useState((value ?? addDays(today, 1)).slice(0, 7) + "-01");
   // A date can arrive after mount (from the query string), so follow it to its month.

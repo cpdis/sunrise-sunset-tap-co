@@ -1,4 +1,4 @@
-// Business rules. Every function takes a mutable draft of Data (the store clones first).
+// Business rules. Every function takes a mutable draft of Data (repo.mutate loads a fresh copy for each write).
 import { defaultStart, findSuburb, startProblem } from "./config";
 import type {
   Account,
@@ -11,6 +11,7 @@ import type {
   Payment,
   PaymentType,
   Settings,
+  Slot,
 } from "./types";
 import {
   addDays,
@@ -20,6 +21,7 @@ import {
   money,
   quarterLabel,
   quarterOf,
+  randomToken,
   sameContact,
   stripeFee,
   todayISO,
@@ -51,15 +53,18 @@ export function quote(s: Settings, block: Block, suburb: string) {
 }
 
 // An unpaid hold past its time. The daily job cancels it; until then it no longer counts.
-export const holdExpired = (b: Booking, now = new Date()) => b.state === "held" && !!b.heldUntil && Date.parse(b.heldUntil) < now.getTime();
+export const holdExpired = (b: Slot, now = new Date()) => b.state === "held" && !!b.heldUntil && Date.parse(b.heldUntil) < now.getTime();
 
-export function liveBookings(d: Data, now = new Date()) {
+export function liveBookings<B extends Slot>(d: { bookings: B[] }, now = new Date()): B[] {
   return d.bookings.filter((b) => b.state !== "cancelled" && !holdExpired(b, now));
 }
 
+// What availability is worked out from. The whole Data fits, and so does a public view that carries only slots.
+export type Avail = Pick<Data, "settings" | "blackouts"> & { bookings: Slot[] };
+
 export type DayStatus = "free" | "booked" | "held" | "personal" | "blackout" | "past" | "too_far" | "short_notice" | "invalid";
 
-export function dayStatus(d: Data, date: string, now = new Date()): DayStatus {
+export function dayStatus(d: Avail, date: string, now = new Date()): DayStatus {
   // Every check below compares date strings, so anything but a real YYYY-MM-DD is refused first.
   if (!isISODate(date)) return "invalid";
   const today = todayISO(now);
@@ -77,12 +82,12 @@ export function dayStatus(d: Data, date: string, now = new Date()): DayStatus {
 }
 
 // Personal-use bookings yield to paid ones, so they count as free for customers.
-export function isBookable(d: Data, date: string, now = new Date()): boolean {
+export function isBookable(d: Avail, date: string, now = new Date()): boolean {
   const s = dayStatus(d, date, now);
   return s === "free" || s === "personal";
 }
 
-export function nextFreeDates(d: Data, from: string, count: number, weekendsOnly = false, now = new Date()): string[] {
+export function nextFreeDates(d: Avail, from: string, count: number, weekendsOnly = false, now = new Date()): string[] {
   const out: string[] = [];
   let cur = from;
   for (let i = 0; i < 200 && out.length < count; i++) {
@@ -159,6 +164,8 @@ export interface NewBooking {
   via: Channel;
   id?: string;
   ref?: string;
+  // The link token, when the agent already put it in the link it sent. Otherwise createHold makes one.
+  token?: string;
   agreed?: boolean;
 }
 
@@ -214,6 +221,7 @@ export function createHold(d: Data, n: NewBooking, now = new Date()): Booking {
     guests: n.guests,
     notes: n.notes,
     agreementSigned: !!n.agreed,
+    token: n.token ?? randomToken(),
     deliver: { done: false },
     collect: { done: false },
   };
@@ -367,6 +375,20 @@ export function runJobs(d: Data, now = new Date()): string[] {
     }
   }
   return log;
+}
+
+// Keeps a distribution record for the most recent completed quarter, and recomputes one nobody has approved yet.
+export function ensureDistributions(d: Data, now = new Date()) {
+  const lastEnd = addDays(quarterOf(todayISO(now)).start, -1);
+  const q = quarterOf(lastEnd);
+  if (!d.distributions.some((x) => x.quarter === q.key) && q.start >= d.ledger[0]?.date) {
+    d.distributions.push(computeDistribution(d, q.key));
+  }
+  for (const dist of d.distributions) {
+    if (dist.status === "awaiting" && dist.approvals.length === 0) {
+      Object.assign(dist, computeDistribution(d, dist.quarter), { approvals: [] });
+    }
+  }
 }
 
 // ---------- money ----------

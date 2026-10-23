@@ -80,6 +80,8 @@
 .admin .empty-note { color: var(--a-text-2); }
 .admin .notice { position: static; background: var(--a-subtle); border: 1px solid var(--a-line); border-radius: var(--a-radius); padding: 12px 16px; font-size: 13px; color: var(--a-text-2); line-height: 1.55; }
 .admin .notice::before { content: none; }
+/* A command the server refused, above the page until dismissed. */
+.admin .admin-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; color: var(--bad); border-color: color-mix(in srgb, var(--bad) 30%, white); }
 
 /* stats: one strip, cells split by hairlines (the 1px gap shows the strip's line colour) */
 .admin .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--a-line); border: 1px solid var(--a-line); border-radius: var(--a-radius); overflow: hidden; box-shadow: var(--a-shadow); }

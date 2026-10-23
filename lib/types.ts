@@ -85,6 +85,9 @@ export interface Booking {
   agreementSigned: boolean;
   // Where checkout sent the receipt. Kept on the booking: checkout never changes the customer's own contacts.
   receiptEmail?: string;
+  // The secret in the customer's checkout and booking links. Random and separate from the id, so a booking id
+  // alone (in a log, a screenshot, an owner's view) opens nothing. Paid bookings always have one.
+  token?: string;
   // Simulated card trouble: the saved card declines off-session charges until the customer updates it.
   cardDeclines?: boolean;
   balanceAttempts?: number;
@@ -94,6 +97,10 @@ export interface Booking {
   condition?: string;
   cancelledAt?: string;
 }
+
+// What availability needs from a booking: the day it takes and whether it still counts. Public views carry only
+// this, so nobody learns who booked or for how much.
+export type Slot = Pick<Booking, "date" | "kind" | "state" | "heldUntil">;
 
 export type PaymentType =
   | "deposit"
@@ -278,7 +285,7 @@ export interface Data {
 
 export type Scenario = "bear" | "base" | "bull";
 
-// Commands the agent (server) returns for the client store to apply.
+// Actions the agent returns. The agentReply command applies them on the server (lib/server/agent.ts).
 export type AgentAction =
   | {
       type: "hold";
@@ -291,6 +298,8 @@ export type AgentAction =
       name: string;
       contact: string;
       channel: Channel;
+      // The booking's link token, made with the hold so the link in the reply opens it.
+      token: string;
     }
   | { type: "cancel"; bookingId: string }
   // keepAgent: flag it for an owner but let the agent carry on (short notice, date changes, unknown suburbs).

@@ -1,12 +1,16 @@
-// Agent tools. They run on the server against a snapshot of the client's data and
-// return actions that the client store applies (hold, cancel, escalate).
+// Agent tools. They run on the server against a snapshot (lib/views.ts) and return actions that the server
+// applies through the agentReply command (lib/server/commands.ts): hold, cancel, escalate.
 import { BUSINESS, SUBURBS, defaultStart, findSuburb, startProblem } from "../config";
 import { cancelNeedsOwner, cancelPolicy, dayStatus, holdExpired, isBookable, nextFreeDates, quote } from "../domain";
-import type { AgentAction, AgentState, Block, Channel, Data, KbPage, Settings } from "../types";
-import { addDays, daysBetween, fmtDate, fmtTime, isISODate, money, sameContact, todayISO, uid } from "../util";
+import type { AgentAction, AgentState, Block, Booking, Channel, Data, KbPage, Settings, Slot } from "../types";
+import { addDays, daysBetween, fmtDate, fmtTime, isISODate, money, randomToken, sameContact, todayISO, uid } from "../util";
 import { parseConfirm } from "./confirm";
 
-export type Snapshot = Pick<Data, "settings" | "bookings" | "customers" | "kb" | "blackouts" | "seq">;
+// Availability for every date (slots), and only the sender's own customer records and bookings (mine).
+export type Snapshot = Pick<Data, "settings" | "customers" | "kb" | "blackouts" | "seq"> & { bookings: Slot[]; mine: Booking[] };
+
+// The customer's own checkout page. The token opens it; the id alone does not.
+export const checkoutLink = (origin: string, b: { id: string; token?: string }) => `${origin}/checkout/${b.id}?t=${b.token ?? ""}`;
 
 export interface ToolCtx {
   data: Snapshot;
@@ -75,7 +79,7 @@ export function kbLines(ctx: ToolCtx, slug: string, match: RegExp, max = 3): str
 export function customerBookings(ctx: ToolCtx) {
   const c = ctx.data.customers.find((x) => sameContact(x.phone, ctx.contact) || sameContact(x.email, ctx.contact));
   if (!c) return [];
-  return ctx.data.bookings
+  return ctx.data.mine
     .filter((b) => b.customerId === c.id && b.state !== "cancelled" && b.date >= todayISO(ctx.now))
     .sort((a, b) => a.date.localeCompare(b.date));
 }
@@ -86,14 +90,12 @@ export function myBookingByRef(ctx: ToolCtx, ref: string) {
   return customerBookings(ctx).find((x) => x.ref.toUpperCase() === ref.toUpperCase());
 }
 
-const d = (ctx: ToolCtx) => ctx.data as unknown as Data;
-
 export function checkAvailability(ctx: ToolCtx, date: string) {
   ctx.used.push("check_availability");
   if (!isISODate(date)) return { date, label: date, free: false, status: "invalid" as const, alternatives: [] as string[], reason: "That isn't a real date. Send it as YYYY-MM-DD." };
-  const status = dayStatus(d(ctx), date, ctx.now);
-  const free = isBookable(d(ctx), date, ctx.now);
-  const alternatives = free ? [] : nextFreeDates(d(ctx), date < todayISO(ctx.now) ? todayISO(ctx.now) : addDays(date, -1), 3, true, ctx.now);
+  const status = dayStatus(ctx.data, date, ctx.now);
+  const free = isBookable(ctx.data, date, ctx.now);
+  const alternatives = free ? [] : nextFreeDates(ctx.data, date < todayISO(ctx.now) ? todayISO(ctx.now) : addDays(date, -1), 3, true, ctx.now);
   return { date, label: fmtDate(date, { dow: true, year: true }), free, status, alternatives };
 }
 
@@ -109,18 +111,18 @@ export function holdAndLink(ctx: ToolCtx, date: string, block: Block, suburb: st
   // One contact holds one unpaid date at a time (R13). A second request gets the first hold's link back.
   const held = customerBookings(ctx).find((b) => b.state === "held" && !holdExpired(b, ctx.now));
   const pushed = ctx.actions.find((a) => a.type === "hold");
-  const first = held ? { id: held.id, ref: held.ref, date: held.date } : pushed?.type === "hold" ? { id: pushed.bookingId, ref: pushed.ref, date: pushed.date } : undefined;
+  const first = held ? { id: held.id, ref: held.ref, date: held.date, token: held.token } : pushed?.type === "hold" ? { id: pushed.bookingId, ref: pushed.ref, date: pushed.date, token: pushed.token } : undefined;
   if (first) {
     return {
       ok: false as const,
       reason: `You already have ${first.ref} held for ${fmtDate(first.date, { dow: true })}, and I can hold one date at a time until its deposit is paid.`,
       heldRef: first.ref,
-      link: `${ctx.origin}/checkout/${first.id}`,
+      link: checkoutLink(ctx.origin, first),
     };
   }
   if (!isISODate(date)) return { ok: false as const, reason: "That isn't a real date." };
   if (block !== 4 && block !== 8) return { ok: false as const, reason: "The truck goes out for 4 or 8 hours." };
-  if (!isBookable(d(ctx), date, ctx.now)) return { ok: false as const, reason: "That date is no longer free." };
+  if (!isBookable(ctx.data, date, ctx.now)) return { ok: false as const, reason: "That date is no longer free." };
   // A missing time gets the default; a given one must be a real HH:MM that finishes by closing.
   const start = startTime || defaultStart(block);
   const late = startProblem(block, start);
@@ -128,13 +130,14 @@ export function holdAndLink(ctx: ToolCtx, date: string, block: Block, suburb: st
   const q = getQuote(ctx, block, suburb);
   if (!q.inArea) return { ok: false as const, reason: "That suburb is outside the service area." };
   const bookingId = uid("bk");
+  const token = randomToken();
   const ref = `SST-${ctx.data.seq + 1 + ctx.actions.filter((a) => a.type === "hold").length}`;
-  ctx.actions.push({ type: "hold", bookingId, ref, date, block, startTime: start, suburb: q.suburb, name, contact: ctx.contact, channel: ctx.channel });
+  ctx.actions.push({ type: "hold", bookingId, ref, date, block, startTime: start, suburb: q.suburb, name, contact: ctx.contact, channel: ctx.channel, token });
   ctx.used.push("hold_and_send_deposit_link");
   return {
     ok: true as const,
     ref,
-    link: `${ctx.origin}/checkout/${bookingId}`,
+    link: checkoutLink(ctx.origin, { id: bookingId, token }),
     deposit: q.deposit,
     total: q.total,
     // Inside the balance window the checkout takes the full amount.

@@ -116,6 +116,19 @@ export function uid(prefix: string): string {
   return `${prefix}_${crypto.randomUUID()}`;
 }
 
+// A bearer secret for a link: 122 random bits, URL-safe.
+export function randomToken(): string {
+  return crypto.randomUUID().replace(/-/g, "");
+}
+
+// Compares two secrets in time that depends only on their length, so a wrong guess learns nothing from timing.
+export function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 // One phone or email against another, ignoring spaces and case. A blank value matches nothing, so a
 // customer with no email on file is never "the customer whose email is empty".
 export function sameContact(a?: string, b?: string): boolean {

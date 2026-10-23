@@ -262,10 +262,10 @@ function Simulator({ onSent }: { onSent: (id: string) => void }) {
   async function go() {
     const s = SAMPLES[sim];
     setBusy(true);
-    const id = a.startConversation({ channel: sim, contact: s.contact, name: s.name });
-    await a.sendCustomer(id, body);
+    const id = await a.startConversation({ channel: sim, contact: s.contact, name: s.name });
+    if (id) await a.sendCustomer(id, body);
     setBusy(false);
-    onSent(id);
+    if (id) onSent(id);
   }
   return (
     <details className="sim">

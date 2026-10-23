@@ -35,11 +35,11 @@ export function approveDistribution(d: Data, distId: string, ownerId: string) {
 }
 
 // Only directors pay. payDistribution refuses too few director approvals or too little free cash; the reason is logged.
-export function payOut(d: Data, distId: string, ownerId: string) {
+export function payOut(d: Data, distId: string, ownerId: string, now = new Date()) {
   const q = distId.replace("dist_", "");
   if (!d.owners.find((o) => o.id === ownerId)?.isDirector) return log(d, `Payout ${q} not paid: ${ownerName(d, ownerId)} isn't a director`);
   try {
-    payDistribution(d, distId);
+    payDistribution(d, distId, now);
     log(d, `Paid ${q} dividends via bank API (simulated)`);
   } catch (e) {
     log(d, `Payout ${q} not paid: ${(e as Error).message}`);

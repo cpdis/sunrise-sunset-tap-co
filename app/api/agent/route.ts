@@ -5,6 +5,7 @@ import { runOwnerRules } from "@/lib/agent/owner-rules";
 import type { OwnerCtx, OwnerSnapshot } from "@/lib/agent/owner-tools";
 import { runRules } from "@/lib/agent/rules";
 import type { Snapshot, ToolCtx } from "@/lib/agent/tools";
+import { sameOrigin } from "@/lib/server/auth";
 import type { AgentState, Conversation, Msg } from "@/lib/types";
 import { sameContact } from "@/lib/util";
 
@@ -15,8 +16,9 @@ interface Body {
   conversation: Pick<Conversation, "channel" | "contact" | "name" | "state" | "escalated" | "agentActive"> & { messages: Msg[] };
 }
 
-// The client supplies the snapshot (including the knowledge base that becomes the system prompt), so the endpoint
-// only answers this site's own pages, rate-limits each address and caps what it will read.
+// The client forwards the snapshot the customerMessage command built (including the knowledge base that becomes the
+// system prompt), so the endpoint only answers this site's own pages, rate-limits each address and caps what it
+// will read. Its actions change nothing until the agentReply command applies them; U9 moves the agent server side.
 const MAX_BYTES = 256_000;
 const WINDOW_MS = 60_000;
 const PER_WINDOW = 20;
@@ -28,17 +30,6 @@ function limited(ip: string, now: number) {
   hits.set(ip, recent);
   if (hits.size > 5000) hits.clear();
   return recent.length > PER_WINDOW;
-}
-
-function sameOrigin(req: Request) {
-  const origin = req.headers.get("origin");
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
-  if (!origin || !host) return false;
-  try {
-    return new URL(origin).host === host;
-  } catch {
-    return false;
-  }
 }
 
 const isObj = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
@@ -54,7 +45,7 @@ function parseBody(raw: string): Body | undefined {
   if (!isObj(b) || !isObj(b.snapshot) || !isObj(b.conversation)) return undefined;
   const { snapshot: s, conversation: c } = b;
   if (!isObj(s.settings) || !Array.isArray(s.bookings) || !Array.isArray(s.customers) || !Array.isArray(s.kb) || !Array.isArray(s.blackouts)) return undefined;
-  if ("owners" in s && !Array.isArray(s.owners)) return undefined;
+  if ("owners" in s ? !Array.isArray(s.owners) : !Array.isArray(s.mine)) return undefined;
   if (typeof c.contact !== "string" || !["web", "sms", "email", "phone"].includes(c.channel as string)) return undefined;
   if (!Array.isArray(c.messages) || !c.messages.every((m) => isObj(m) && typeof m.from === "string")) return undefined;
   if (c.state !== undefined && !isObj(c.state)) return undefined;

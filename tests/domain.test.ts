@@ -7,7 +7,7 @@ import { DEFAULT_SETTINGS, fitStart, settingProblem, startProblem } from "@/lib/
 import { addExpense, addPersonalUse, approveDistribution, customerCancel, payOut, returnedClean, updateSettings } from "@/lib/ops";
 import { buildSeed } from "@/lib/seed";
 import type { Data, Distribution, Settings } from "@/lib/types";
-import { snapshot } from "@/lib/store";
+import { snapshot } from "@/lib/views";
 import { addDays, sameContact, todayISO } from "@/lib/util";
 import { NOW, seed } from "./helpers";
 

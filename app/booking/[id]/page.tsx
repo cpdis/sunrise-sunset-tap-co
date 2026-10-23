@@ -4,26 +4,38 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { SiteShell } from "@/components/SiteChrome";
-import { Loading, StatePill, useData } from "@/components/ui";
+import { Loading, StatePill, useBooking, usePublic } from "@/components/ui";
 import { BUSINESS } from "@/lib/config";
-import { RELEASE_UNPAID_DAYS, balanceDueDate, cancelNeedsOwner, cancelPolicy, paidSoFar } from "@/lib/domain";
+import { RELEASE_UNPAID_DAYS, balanceDueDate, cancelNeedsOwner, cancelPolicy } from "@/lib/domain";
 import { useApp } from "@/lib/store";
 import { addDays, fmtDate, fmtTime, money, todayISO } from "@/lib/util";
 
 export default function BookingPage() {
   const { id } = useParams<{ id: string }>();
-  const data = useData();
+  const { view, token, loading } = useBooking(id);
+  const pub = usePublic();
   const customerCancel = useApp((s) => s.customerCancel);
   const [paid, setPaid] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [asked, setAsked] = useState(false);
   useEffect(() => setPaid(new URLSearchParams(window.location.search).has("paid")), []);
 
-  if (!data) return <SiteShell><Loading /></SiteShell>;
-  const b = data.bookings.find((x) => x.id === id);
-  if (!b) return <SiteShell><div className="wrap section"><h1 className="display">Booking not found</h1></div></SiteShell>;
-  const s = data.settings;
-  const cust = data.customers.find((c) => c.id === b.customerId);
+  if (loading || !pub) return <SiteShell><Loading /></SiteShell>;
+  // A booking id without its link token opens nothing, the same as an id that doesn't exist.
+  const b = view?.booking;
+  if (!b) {
+    return (
+      <SiteShell>
+        <section className="section">
+          <div className="wrap stack">
+            <h1 className="display">Booking not found</h1>
+            <span className="muted">Open the link from your booking text or email. It carries the code that shows your booking.</span>
+          </div>
+        </section>
+      </SiteShell>
+    );
+  }
+  const s = pub.settings;
   const pol = cancelPolicy(s, b);
   const today = todayISO();
   const balDate = balanceDueDate(s, b);
@@ -34,7 +46,7 @@ export default function BookingPage() {
   const paidUpFront = balDate <= created;
   // Over the refund limit the cancel goes to the owners, as it does by SMS. A flag already raised stays shown.
   const ownerReason = cancelNeedsOwner(s, b);
-  const requested = asked || (!!ownerReason && data.conversations.some((c) => c.customerId === b.customerId && c.escalated === ownerReason));
+  const requested = asked || view.ownerAsked;
   const balancePaid = b.state === "balance_paid" || b.state === "completed";
 
   const steps = [
@@ -57,14 +69,14 @@ export default function BookingPage() {
             <div className="card night stack" style={{ gap: 8 }}>
               <span className="eyebrow">You&apos;re booked</span>
               <span className="display" style={{ fontSize: 48 }}>See you on {fmtDate(b.date, { dow: true })}.</span>
-              <span>Receipt and hire agreement sent to {b.receiptEmail ?? cust?.email}.</span>
+              <span>Receipt and hire agreement sent to {view.receiptTo}.</span>
             </div>
           )}
           {b.state === "confirmed" && b.balanceFailedAt && (
             <div className="notice">
               <strong>Your card was declined for the {money(b.total - b.deposit)} balance.</strong> Update it by{" "}
               {fmtDate(addDays(b.date, -RELEASE_UNPAID_DAYS), { dow: true })} to keep your date.{" "}
-              <Link href={`/checkout/${b.id}`}>Update card and pay</Link>
+              <Link href={`/checkout/${b.id}?t=${token}`}>Update card and pay</Link>
             </div>
           )}
           <div className="row between">
@@ -92,7 +104,7 @@ export default function BookingPage() {
                 <div className="summary-row"><span>Hire</span><span>{money(b.price)}</span></div>
                 {b.travelFee > 0 && <div className="summary-row"><span>Travel</span><span>{money(b.travelFee)}</span></div>}
                 <div className="summary-row"><strong>Total</strong><strong>{money(b.total)}</strong></div>
-                <div className="summary-row"><span>Paid so far</span><span>{money(paidSoFar(data, b.id))}</span></div>
+                <div className="summary-row"><span>Paid so far</span><span>{money(view.paid)}</span></div>
               </div>
               <div className="card stack" style={{ gap: 8 }}>
                 <strong>Before the day</strong>
@@ -113,7 +125,7 @@ export default function BookingPage() {
                     </span>
                   ) : confirming ? (
                     <div className="row">
-                      <button className="btn danger small" onClick={() => { const r = customerCancel(b.id); if (r && "needsOwner" in r) setAsked(true); setConfirming(false); }}>
+                      <button className="btn danger small" onClick={async () => { const r = await customerCancel(b.id); if (r && "needsOwner" in r) setAsked(true); setConfirming(false); }}>
                         {ownerReason ? `Ask to cancel ${b.ref}` : `Yes, cancel ${b.ref}`}
                       </button>
                       <button className="btn ghost small" onClick={() => setConfirming(false)}>Keep it</button>
@@ -123,7 +135,7 @@ export default function BookingPage() {
                   )}
                 </div>
               )}
-              {b.state === "held" && <Link href={`/checkout/${b.id}`} className="btn gold">Pay deposit</Link>}
+              {b.state === "held" && <Link href={`/checkout/${b.id}?t=${token}`} className="btn gold">Pay deposit</Link>}
             </div>
           </div>
         </div>

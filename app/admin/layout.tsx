@@ -31,7 +31,10 @@ const NAV = [
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const data = useData();
   const ownerId = useApp((s) => s.ownerId);
+  const hydrated = useApp((s) => s.hydrated);
   const logout = useApp((s) => s.logout);
+  const error = useApp((s) => s.error);
+  const dismissError = useApp((s) => s.dismissError);
   const path = usePathname();
   const router = useRouter();
   // phones: every page lives in a menu sheet under the top bar
@@ -44,9 +47,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return () => window.removeEventListener("keydown", esc);
   }, [menu]);
 
+  // The admin needs an owner's session; the server sends the business's data only with one.
   useEffect(() => {
-    if (data && !ownerId) router.replace("/login");
-  }, [data, ownerId, router]);
+    if (hydrated && !ownerId) router.replace("/login");
+  }, [hydrated, ownerId, router]);
 
   if (!data || !ownerId) return <Loading />;
   const me = data.owners.find((o) => o.id === ownerId);
@@ -58,7 +62,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className={`admin ${sans.variable} ${mono.variable}`}>
       <div className="demo-bar">
-        Demo · {SCENARIOS[data.scenario].label.toLowerCase()} case<span className="long">. Figures are illustrative; data lives in your browser and payments are simulated.</span>
+        Demo · {SCENARIOS[data.scenario].label.toLowerCase()} case<span className="long">. Figures are illustrative, everyone using the demo shares its data, and payments are simulated.</span>
       </div>
       <div className="admin-shell">
         <nav className={`admin-nav${menu ? " open" : ""}`} aria-label="Admin">
@@ -86,11 +90,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <div className="nav-foot">
               <span className="avatar sm owner" aria-hidden="true">{me?.name.slice(0, 1)}</span>
               <span className="who">{me?.name}</span>
-              <button type="button" className="btn small" onClick={() => { logout(); router.push("/login"); }}>Switch owner</button>
+              <button type="button" className="btn small" onClick={async () => { await logout(); router.push("/login"); }}>Switch owner</button>
             </div>
           </div>
         </nav>
-        <main className="admin-main">{children}</main>
+        <main className="admin-main">
+          {error && (
+            <div className="notice admin-error" role="alert">
+              <span>{error}</span>
+              <button type="button" className="btn small" onClick={dismissError}>Dismiss</button>
+            </div>
+          )}
+          {children}
+        </main>
       </div>
       <SmsWidget as={ownerId} />
     </div>

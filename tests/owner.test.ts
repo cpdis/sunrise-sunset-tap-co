@@ -4,7 +4,7 @@ import { runOwnerRules } from "@/lib/agent/owner-rules";
 import type { OwnerCtx } from "@/lib/agent/owner-tools";
 import { balance, cashAt } from "@/lib/domain";
 import { addExpense, applyOwnerAction } from "@/lib/ops";
-import { ownerSnapshot } from "@/lib/store";
+import { ownerSnapshot } from "@/lib/views";
 import type { AgentState, Conversation } from "@/lib/types";
 import { NOW, chat, ownerChat, seed } from "./helpers";
 
