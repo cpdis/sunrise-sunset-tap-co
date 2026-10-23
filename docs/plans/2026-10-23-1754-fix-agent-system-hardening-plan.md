@@ -11,7 +11,7 @@ execution: code
 
 ## Goal Capsule
 
-- **Objective:** No customer, stranger or impostor can make the business cancel, refund, pay out, change prices or message anyone they should not, and a second business could run on the same system.
+- **Objective:** No customer, stranger or impostor can make the business cancel, refund, pay out, change prices or message anyone they should not, and the design would let another business run on it later without a rewrite.
 - **Means:** Fix the cheap logic bugs first, then move data, conversation state and approvals to the server behind signed inbound channels and owner second-factor checks (KTD1, KTD2, KTD3).
 - **Authority:** Colin's word, then this plan's Requirements, then its Key Technical Decisions, then the repo's `AGENTS.md`. Where this plan changes an `AGENTS.md` rule (U14), the plan wins and U14 updates the file.
 - **Stop conditions:** Stop and ask before any real provider account, key, webhook or deploy. Stop if a money change cannot show before and after numbers from the seed. Stop if the forged-request probes in the Verification Contract still pass after U9. Do not merge U8 or later until Colin confirms hosted Postgres and its migrations for the deployed site.
@@ -76,13 +76,12 @@ Colin wants the system production grade and good enough to sell to other busines
 
 - Every reproduction from the review fails after the fix: the 3 simulator attacks, the forged-request probes and the code probes, each run 3 times.
 - A forged POST to any agent or command endpoint, with no valid signature or session, returns 401 or 403 and changes nothing.
-- Two businesses seeded side by side cannot see or change each other's data through any endpoint.
 
 ### Scope Boundaries
 
 - Real Twilio, email, Stripe or bank accounts, keys and webhooks. The adapters stay simulated.
 - Deploys, Vercel settings and DNS. Colin does these.
-- Tenant sign-up, billing and a tenant admin console.
+- A second business, tenant sign-up, billing and a tenant admin console. Records carry a business id so this stays possible later, but no second business is seeded, demoed or planned for now.
 - Normalising the business data into many relational tables. Phase 2 stores each business's data as one versioned document (KTD1).
 
 Considered and not built:
@@ -94,10 +93,6 @@ Considered and not built:
 
 - GST liability posting (review finding 22). It matters only once the business is GST registered.
 - Hosted Postgres provisioning and the production migration run. Colin does this when he deploys.
-
-### Open Questions
-
-- **Blocking for U10 and U8:** What is the deployed site after Phase 2? Once the magic-link outbox and the simulate route are closed in production, the public demo has no way to sign in or text. Recommended: a demo-only tenant with fake seeded data that resets daily, where the outbox and simulate route are enabled by an explicit env flag for that tenant only and rate limited per KTD8. The alternative is no public demo.
 
 ### Sources
 
@@ -121,6 +116,7 @@ Considered and not built:
 - KTD7. **Admin sessions use a signed, tenant-bound cookie (httpOnly, Secure, SameSite=Strict) from a simulated magic link.** The demo login picker becomes "send link", and the link appears in a simulated outbox. Cookie-authenticated routes reject a foreign Origin and any body that is not `application/json`. Governs R5, R14.
 - KTD8. **Rate limits and spend ceilings live in Postgres, keyed by tenant and sender.** A per-instance in-memory map cannot hold across serverless instances, and keying on IP locks out every customer behind Twilio's shared IPs. Governs R17.
 - KTD9. **Confirmation parsing is one shared module for both agents.** A whole-message affirmative list, checked after a refusal list, used by `rules.ts` and `owner-tools.ts`. Two copies of the parser are how the two agents drifted. Governs R1, R2.
+- KTD12. **The deployed site stays the one Sunrise Sunset demo, behind a `DEMO_MODE` flag.** With the flag on, the simulated sign-in links and the SMS simulator work on the live site, limited to the demo business and rate limited per KTD8. With it off, both return 404. This keeps the public demo working without an open signing route on a real deployment. Governs R15, R17.
 
 ### High-Level Technical Design
 
@@ -193,7 +189,7 @@ stateDiagram-v2
 | U11 | Owner approvals and second factor | `lib/server/approvals.ts`, `lib/agent/owner-tools.ts` | U9 |
 | U12 | Prompt-injection boundary | `lib/agent/owner-claude.ts`, `lib/agent/claude.ts`, `tests/injection.eval.ts` | U11 |
 | U13 | Server jobs and notifications | `app/api/jobs/route.ts`, `lib/server/outbox.ts` | U8 |
-| U14 | Tenancy proof and docs | `lib/server/db/schema.ts`, `AGENTS.md`, `README.md` | U7 to U13 |
+| U14 | Business-id check and docs | `lib/server/db/repo.ts`, `AGENTS.md`, `README.md` | U7 to U13 |
 
 ### Phase 1: logic fixes on the current architecture
 
@@ -423,7 +419,7 @@ stateDiagram-v2
 - Test: `tests/server/commands.test.ts`
 
 **Approach:**
-1. Admin login moves to the simulated magic link and the signed session cookie (KTD7). Commands and the state route take tenant and role from that session from this first PR.
+1. Admin login moves to the simulated magic link and the signed session cookie (KTD7). Commands and the state route take tenant and role from that session from this first PR. The outbox that shows sign-in links is visible only outside production or with `DEMO_MODE` on (KTD12).
 2. Each existing store action (`payDeposit`, `cancel`, `approveDistribution`, `updateSettings` and the rest in `lib/store.ts`) maps to a named command that runs the same `domain` or `ops` function inside `repo.mutate`.
 3. Each command declares who may run it: a customer link token, an owner session, or a director session. The customer link token is a random value on the booking, separate from its id.
 4. Commands take an idempotency key, so a retry does not repeat a payment.
@@ -484,14 +480,14 @@ stateDiagram-v2
 
 **Approach:**
 1. The SMS route verifies the HMAC per KTD3. The tenant comes from the called number and the sender from the signed From.
-2. The dev simulate route exists only outside production and signs messages for the widget.
+2. The simulate route signs messages for the widget. It exists outside production, or in production only when `DEMO_MODE` is on (KTD12).
 3. Limits: per sender per minute, per tenant per minute, and a per-tenant daily token budget recorded after each model call.
 4. Delete `app/api/agent/route.ts` once the widget and inbound routes call `lib/server/agent.ts`.
 
 **Test scenarios:**
 - A valid signature is accepted.
 - One changed form field, a changed URL or a missing header returns 403.
-- The simulate route returns 404 in production mode.
+- The simulate route returns 404 in production mode with `DEMO_MODE` off, and works with it on.
 - 21 messages a minute from one sender get limited while another sender on the same tenant still gets replies.
 - A tenant over its daily token budget gets the rules engine and an owner alert, not a model call.
 
@@ -578,29 +574,27 @@ stateDiagram-v2
 
 **Verification:** Jobs tests pass. The admin shows the outbox entries.
 
-### U14. Tenancy proof and docs
+### U14. Business-id check and docs
 
-**Goal:** Two businesses run side by side without seeing each other, and the docs match the new architecture (R16).
+**Goal:** Every query filters on the business id, so a second business stays possible later, and the docs match the new architecture (R16).
 
 **Requirements:** R16
 
 **Dependencies:** U7 to U13
 
 **Files:**
-- Modify: `lib/server/db/schema.ts`, `lib/seed.ts`, `AGENTS.md`, `README.md`
+- Modify: `lib/server/db/repo.ts`, `AGENTS.md`, `README.md`
 - Test: `tests/server/tenancy.test.ts`
 
 **Approach:**
-1. Seed a second demo business with its own numbers and owners.
-2. Run every command, the state route and both inbound routes as tenant A against tenant B's ids.
-3. Update `AGENTS.md`: data lives on the server, the local database, env vars, and new verify steps. Update `README.md` install and run.
+1. Check that every repo read and write takes a business id and filters on it. No second business is seeded.
+2. Update `AGENTS.md`: data lives on the server, the local database, env vars, `DEMO_MODE` (KTD12), and new verify steps. Update `README.md` install and run.
 
 **Test scenarios:**
-- Each command with tenant B's ids under tenant A's session returns 404.
-- An SMS to tenant A's number from tenant B's owner is treated as a customer of A.
-- The state route for tenant A lists no tenant B data.
+- A command, a state read and an inbound message with an unknown business id return 404 and change nothing.
+- A repo read with the wrong business id returns no data.
 
-**Verification:** Tenancy tests pass. Colin reads the updated `AGENTS.md`.
+**Verification:** The business-id tests pass. Colin reads the updated `AGENTS.md`.
 
 ---
 
