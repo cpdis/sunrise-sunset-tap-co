@@ -329,4 +329,6 @@ export interface AgentResult {
   tools: string[];
   state: AgentState;
   engine: "claude" | "rules";
+  // Model tokens the turn spent, for the daily budget (lib/server/limits.ts). The rules engine spends none.
+  tokens?: number;
 }

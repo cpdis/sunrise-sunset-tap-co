@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { nextFreeDates } from "@/lib/domain";
 import { useApp } from "@/lib/store";
 import { fmtDate, todayISO } from "@/lib/util";
+import { ownerHolds } from "@/lib/views";
 import { Roundel } from "./Logo";
 import { Linkify, useData, usePublic } from "./ui";
 
@@ -74,7 +75,7 @@ export function SmsWidget({ as: initialAs = "customer" }: { as?: string }) {
     setText("");
     setBusy(true);
     try {
-      await sendCustomer(conv ? { convId: conv.id } : { channel: "sms", contact: phone }, msg);
+      await sendCustomer({ channel: "sms", contact: phone }, msg);
     } finally {
       setBusy(false);
     }
@@ -122,7 +123,7 @@ export function SmsWidget({ as: initialAs = "customer" }: { as?: string }) {
               </div>
             ))}
             {busy && <div className="typing">typing…</div>}
-            {conv && !conv.agentActive && !conv.escalated && !busy && (
+            {conv && ownerHolds(conv) && !busy && (
               <div className="bubble sys">An owner is looking at this and will reply here.</div>
             )}
           </div>

@@ -232,13 +232,12 @@ describe("what each caller sees (state scoping)", () => {
     for (const b of d.bookings) expect(slots).not.toContain(b.id);
   });
 
-  test("an owner's conversation and the whole document need an owner's session", async () => {
+  test("an owner's conversation and the whole document need an owner's session to read", async () => {
     const repo = await setup();
     const d = (await doc(repo)).data;
     const colin = d.owners.find((o) => o.id === "own_colin")!;
     const text = (caller: Caller) => agentTurn(repo, caller, { channel: "sms", contact: colin.phone, body: "What's on?" }, { origin: BASE });
     await text(as("own_colin"));
-    await refusedWith(text(visitor), 401);
     const d1 = (await doc(repo)).data;
     expect(stateFor(d1, { chat: colin.phone }, NOW).chat).toBeUndefined();
     expect(stateFor(d1, { chat: colin.phone, ownerId: "own_colin" }, NOW).chat?.contact).toBe(colin.phone);

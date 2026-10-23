@@ -22,7 +22,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (data) setForm(toForm(data.settings));
   }, [data?.settings]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { fetch("/api/agent").then((r) => r.json()).then((j) => setEngine(j.engine)).catch(() => {}); }, []);
+  useEffect(() => { fetch("/api/agent/preview").then((r) => r.json()).then((j) => setEngine(j.engine)).catch(() => {}); }, []);
 
   if (!data) return <Loading />;
   const saved0 = toForm(data.settings);

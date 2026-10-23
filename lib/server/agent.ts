@@ -16,8 +16,8 @@ import { cancelBooking, cancelNeedsOwner, cancelPolicy, createHold, holdExpired 
 import * as ops from "@/lib/ops";
 import type { AgentAction, AgentResult, AgentState, Conversation, Data, KbPage, Msg } from "@/lib/types";
 import { sameContact, uid } from "@/lib/util";
-import { type ChatView, chatView, ownerByContact, ownerSnapshot, snapshot } from "@/lib/views";
-import { CHANNELS, CommandError, type Raw, bad, id, isObj, maybeText, oneOf, text } from "./args";
+import { type ChatView, chatView, ownerByContact, ownerHolds, ownerSnapshot, snapshot } from "@/lib/views";
+import { CommandError, type Raw, bad, isObj, maybeText, oneOf, text } from "./args";
 import type { Caller } from "./commands";
 import type { Repo } from "./db/repo";
 
@@ -28,9 +28,15 @@ const MESSAGE_CHARS = 1000;
 export const KB_CHARS = 60_000;
 export const BODY_CHARS = 2000;
 
-// Which conversation a message is for: one the sender already has, or the one for its channel and contact, made
-// if new. Until U10 signs inbound messages, the SMS widget may claim any number.
-export type TurnInput = ({ convId: string } | { channel: Conversation["channel"]; contact: string; name?: string }) & { body: string };
+// One inbound message: its channel, its sender and what it says. The message goes in the sender's conversation on
+// that channel, made if new. The caller vouches for the sender: a signed webhook, or the demo simulator
+// (lib/server/inbound.ts).
+export interface TurnInput {
+  channel: Conversation["channel"];
+  contact: string;
+  name?: string;
+  body: string;
+}
 
 export interface TurnOptions {
   // This site's origin, for the checkout links the agent sends.
@@ -38,6 +44,10 @@ export interface TurnOptions {
   // The model client. Left out, it is made from the environment when ANTHROPIC_API_KEY is set; otherwise the rules
   // engine answers. Tests pass a scripted one.
   client?: Anthropic;
+  // The business is over its daily model budget (lib/server/limits.ts): the rules engine answers.
+  rulesOnly?: boolean;
+  // Called with the tokens a turn's model calls spent.
+  onTokens?: (tokens: number) => Promise<void>;
 }
 
 export interface TurnOutput {
@@ -46,35 +56,16 @@ export interface TurnOutput {
   engine?: AgentResult["engine"];
 }
 
-// The request body: only these fields count. A snapshot, a state or anything else in it is ignored.
-export function turnInput(r: Raw): TurnInput {
-  const body = text(r, "body", BODY_CHARS);
-  if (r.convId !== undefined) return { convId: id(r, "convId"), body };
-  return { channel: oneOf(r, "channel", CHANNELS), contact: text(r, "contact", 120), name: maybeText(r, "name", 80), body };
-}
-
-// An owner has the conversation: they took it over or replied, and the agent stays out of it until it is handed
-// back. A hand-over the owners haven't picked up yet still gets the agent's general answers.
-export const ownerHolds = (c: Conversation) => !c.agentActive && (!!c.handledBy || !c.escalated);
-
 // ---------- 1. the message goes in ----------
 
-function receive(d: Data, ownerId: string | undefined, input: TurnInput, now: Date) {
-  let c: Conversation | undefined;
-  if ("convId" in input) {
-    c = d.conversations.find((x) => x.id === input.convId);
-    if (!c) throw new CommandError(404, "No such conversation.");
-  } else {
-    c = d.conversations.find((x) => x.contact === input.contact && x.channel === input.channel);
-    if (!c) {
-      const owner = ownerByContact(d, input.contact);
-      c = { id: uid("conv"), channel: input.channel, contact: input.contact, name: owner?.name ?? input.name ?? "New contact", ...(owner && { ownerId: owner.id }), agentActive: true, unread: !owner, state: {}, messages: [] };
-      d.conversations.unshift(c);
-    }
+function receive(d: Data, input: TurnInput, now: Date) {
+  let c = d.conversations.find((x) => x.contact === input.contact && x.channel === input.channel);
+  if (!c) {
+    // An owner's own number gets the owner agent. U11 adds the second factor for anything risky.
+    const owner = ownerByContact(d, input.contact);
+    c = { id: uid("conv"), channel: input.channel, contact: input.contact, name: owner?.name ?? input.name ?? "New contact", ...(owner && { ownerId: owner.id }), agentActive: true, unread: !owner, state: {}, messages: [] };
+    d.conversations.unshift(c);
   }
-  // A conversation with an owner's own number is the owner agent, so only a signed-in owner drives it. In the demo the
-  // SMS widget lets an owner text as any owner; U10 and U11 tie a text to the real handset.
-  if (c.ownerId && !d.owners.some((o) => o.id === ownerId)) throw new CommandError(401, "Sign in to text as an owner.");
   c.messages.push({ id: uid("m"), from: "customer", body: input.body, at: now.toISOString() });
   c.unread = !c.ownerId;
   return c.id;
@@ -105,7 +96,7 @@ const mark = (c: Conversation) => canon([c.messages.at(-1)?.id, c.agentActive, c
 interface Turn {
   convId: string;
   mark: string;
-  run(client?: Anthropic): Promise<AgentResult>;
+  run(client?: Anthropic, rulesOnly?: boolean): Promise<AgentResult>;
 }
 
 // The agent for this conversation, on what the server stored. Undefined when the agent doesn't answer.
@@ -122,7 +113,7 @@ function prepare(d: Data, c: Conversation, now: Date, origin: string): Turn | un
     if (!owner) return undefined;
     const data = { ...ownerSnapshot(d, now), kb };
     const ctx = (): OwnerCtx => ({ data, owner, now, actions: [], used: [] });
-    return { ...base, run: (client) => engine(client, (cl) => runOwnerClaude(ctx(), history, state(), cl), () => runOwnerRules(ctx(), last, state())) };
+    return { ...base, run: (client, rulesOnly) => engine(client, rulesOnly, (cl) => runOwnerClaude(ctx(), history, state(), cl), () => runOwnerRules(ctx(), last, state())) };
   }
   const data = { ...snapshot(d, c.contact), kb };
   const ctx = (): ToolCtx => ({
@@ -136,11 +127,11 @@ function prepare(d: Data, c: Conversation, now: Date, origin: string): Turn | un
     origin,
     handover: !!c.escalated && !c.agentActive,
   });
-  return { ...base, run: (client) => engine(client, (cl) => runClaude(ctx(), history, state(), cl), () => runRules(ctx(), last, state())) };
+  return { ...base, run: (client, rulesOnly) => engine(client, rulesOnly, (cl) => runClaude(ctx(), history, state(), cl), () => runRules(ctx(), last, state())) };
 }
 
-async function engine(client: Anthropic | undefined, claude: (c: Anthropic) => Promise<AgentResult>, rules: () => AgentResult) {
-  const cl = client ?? (process.env.ANTHROPIC_API_KEY ? new Anthropic() : undefined);
+async function engine(client: Anthropic | undefined, rulesOnly: boolean | undefined, claude: (c: Anthropic) => Promise<AgentResult>, rules: () => AgentResult) {
+  const cl = rulesOnly ? undefined : (client ?? (process.env.ANTHROPIC_API_KEY ? new Anthropic() : undefined));
   if (cl) {
     try {
       return await claude(cl);
@@ -256,16 +247,17 @@ function find(d: Data, convId: string) {
   return c;
 }
 
-// One inbound message and the agent's answer to it. The business and the owner come from the caller's session.
-export async function agentTurn(repo: Repo, caller: Pick<Caller, "tenant" | "ownerId" | "now">, input: TurnInput, opts: TurnOptions): Promise<TurnOutput> {
+// One inbound message and the agent's answer to it. The business comes from the number or address it was sent to.
+export async function agentTurn(repo: Repo, caller: Pick<Caller, "tenant" | "now">, input: TurnInput, opts: TurnOptions): Promise<TurnOutput> {
   const now = caller.now ?? new Date();
   // The message is stored first, so it stays for the owners even if the agent fails.
-  const got = await repo.mutate(caller.tenant, (d) => receive(d, caller.ownerId, input, now));
+  const got = await repo.mutate(caller.tenant, (d) => receive(d, input, now));
   if (!got.ok) mutateFailed(got);
   const convId = got.value;
   const turn = prepare(got.data, find(got.data, convId), now, opts.origin);
   if (!turn) return { conversation: chatView(find(got.data, convId)) };
-  const result = await turn.run(opts.client);
+  const result = await turn.run(opts.client, opts.rulesOnly);
+  if (result.tokens) await opts.onTokens?.(result.tokens);
   const put = await repo.mutate(caller.tenant, (d) => applyTurn(d, turn, result, now));
   if (!put.ok) mutateFailed(put);
   return { conversation: chatView(find(put.data, convId)), ...(put.value && { engine: result.engine }) };
@@ -304,6 +296,7 @@ export async function previewTurn(repo: Repo, caller: Pick<Caller, "tenant" | "o
   };
   const turn = prepare({ ...doc.data, kb: input.kb }, c, now, opts.origin);
   if (!turn) throw new CommandError(409, "The agent can't answer that.");
-  const r = await turn.run(opts.client);
+  const r = await turn.run(opts.client, opts.rulesOnly);
+  if (r.tokens) await opts.onTokens?.(r.tokens);
   return { reply: r.reply, tools: r.tools, engine: r.engine, state: r.state, actions: r.actions.map((a) => a.type) };
 }

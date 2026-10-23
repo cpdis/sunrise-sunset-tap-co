@@ -13,8 +13,12 @@ npm test           # domain rules and agent routing (vitest)
 ```
 
 Optional: set `ANTHROPIC_API_KEY` and the agent switches from the built-in rules engine to Claude, using the same tools.
-`/api/agent` only accepts same-origin requests and is rate limited per IP (20/min), so a public deploy can't be used
-as a free Claude proxy.
+Messages reach the agent only through signed webhooks, `/api/inbound/sms` and `/api/inbound/email` (Twilio's
+HMAC scheme over `PUBLIC_BASE_URL` plus the route path). Production needs `PUBLIC_BASE_URL`, `TWILIO_AUTH_TOKEN` and
+`EMAIL_WEBHOOK_SECRET`; outside production clearly named dev defaults apply. The SMS widget and the inbox simulator
+post to `/api/dev/simulate`, which signs on the server and works outside production or with `DEMO_MODE` on. Limits
+live in Postgres: 20 messages a minute per sender, 120 per business, and a daily model token budget, past which the
+rules engine answers and the owners get one alert in the outbox (`lib/server/limits.ts`).
 
 ## What to try
 
@@ -44,9 +48,9 @@ as a free Claude proxy.
   ran it and go out with the quarterly payout. Distributions take quarterly profit, set aside a tax
   provision and a reserve (3 months fixed costs + $/km driven + $500 buffer), keep back customer money and runner fees owed,
   split by shareholding rounded down to $10, and need 2 director approvals before paying out.
-- **Agent**: `/api/agent` receives a snapshot of availability plus the conversation, runs tools
+- **Agent**: a signed inbound message runs the agent on the server (`lib/server/inbound.ts`, `lib/server/agent.ts`). It runs tools
   (`check_availability`, `get_quote`, `hold_and_send_deposit_link`, `lookup_booking`, `cancel_booking`,
-  `escalate_to_owner`) and returns a reply plus actions the client applies. With an API key it's Claude
+  `escalate_to_owner`) and applies its actions on the server after checking them again. With an API key it's Claude
   (`lib/agent/claude.ts`); without, a deterministic intent matcher (`lib/agent/rules.ts`) that answers FAQs from the
   knowledge base pages, so an owner's edit changes both engines. Refunds above the configured limit, discounts,
   multi-day and sponsor requests, date changes, dates inside 7 days' notice and anything it can't pin down after two

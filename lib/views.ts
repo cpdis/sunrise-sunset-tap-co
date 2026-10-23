@@ -52,11 +52,15 @@ export function bookingView(d: Data, b: Booking, now = new Date()): BookingView 
 }
 
 // The SMS widget's conversation, as its sender sees it: no owner draft and no internal ids.
-export type ChatView = Pick<Conversation, "id" | "channel" | "contact" | "name" | "agentActive" | "escalated" | "state" | "messages">;
+export type ChatView = Pick<Conversation, "id" | "channel" | "contact" | "name" | "agentActive" | "escalated" | "handledBy" | "state" | "messages">;
 
-export function chatView({ id, channel, contact, name, agentActive, escalated, state, messages }: Conversation): ChatView {
-  return { id, channel, contact, name, agentActive, escalated, state, messages };
+export function chatView({ id, channel, contact, name, agentActive, escalated, handledBy, state, messages }: Conversation): ChatView {
+  return { id, channel, contact, name, agentActive, escalated, handledBy, state, messages };
 }
+
+// An owner has the conversation: they took it over or replied, and the agent stays out of it until it is handed
+// back. A hand-over the owners haven't picked up yet still gets the agent's general answers.
+export const ownerHolds = (c: Pick<Conversation, "agentActive" | "escalated" | "handledBy">) => !c.agentActive && (!!c.handledBy || !c.escalated);
 
 // An owner texting (or emailing) the business line from their own number gets the owner agent.
 export function ownerByContact(d: Data, contact: string) {

@@ -9,8 +9,8 @@ import type { BookingView, ChatView, PublicView, StateView } from "./views";
 
 type Booked = { id: string; token: string };
 
-// Where an inbound message goes: a conversation by id, or the one for a channel and contact (made if new).
-export type To = { convId: string } | (Pick<Conversation, "channel" | "contact"> & { name?: string });
+// Where a simulated inbound message comes from: the sender's conversation on that channel (made if new).
+export type To = Pick<Conversation, "channel" | "contact"> & { name?: string };
 
 interface AppState {
   // A signed-in owner's whole business document, and who they are.
@@ -165,12 +165,13 @@ export const useApp = create<AppState>()((set, get) => {
     },
     cancel: (bookingId) => done("cancel", { bookingId }),
 
-    // The message goes to /api/agent, where the server stores it and runs the agent's turn (lib/server/agent.ts).
-    // Not retried: a second post would be a second message. Returns the conversation id, or "" when refused (for
-    // example an owner's number without an owner signed in).
+    // The message goes to /api/dev/simulate, which signs it and posts it through the inbound webhook, where the server
+    // stores it and runs the agent's turn (lib/server/inbound.ts). Not retried: a second post would be a second
+    // message. Returns the conversation id, or "" when refused (for example an owner's number without an owner
+    // signed in, or too many messages a minute).
     sendCustomer: async (to, body) => {
       try {
-        const res = await post(JSON.stringify({ ...to, body }), "/api/agent");
+        const res = await post(JSON.stringify({ ...to, body }), "/api/dev/simulate");
         const out = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(out.error ?? `Something went wrong (${res.status}).`);
         return (out.conversation as ChatView | undefined)?.id ?? "";

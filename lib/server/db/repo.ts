@@ -7,7 +7,7 @@ import { DATA_VERSION, buildSeed } from "@/lib/seed";
 import type { Data } from "@/lib/types";
 import { uid } from "@/lib/util";
 import { type Db, getDb } from "./client";
-import { idempotencyKeys, outbox, tenantState, tenants } from "./schema";
+import { idempotencyKeys, outbox, rateLimits, tenantState, tenants } from "./schema";
 
 // The one business the demo runs (KTD12).
 export const DEMO_TENANT = "sunrise-sunset";
@@ -135,6 +135,27 @@ export function createRepo(db: Db, opts: RepoOptions = {}) {
     return kept.length > 0;
   }
 
+  // Adds `by` to a counter's window (KTD8) and returns its new count. The first hit of a window also drops the
+  // tenant's windows older than two days, so the table stays small.
+  async function bump(tenantId: string, bucket: string, windowStart: Date, by = 1) {
+    const [row] = await db
+      .insert(rateLimits)
+      .values({ tenantId, bucket, windowStart, count: by })
+      .onConflictDoUpdate({ target: [rateLimits.tenantId, rateLimits.bucket, rateLimits.windowStart], set: { count: sql`${rateLimits.count} + ${by}` } })
+      .returning({ count: rateLimits.count });
+    if (row.count === by) await db.delete(rateLimits).where(and(eq(rateLimits.tenantId, tenantId), lt(rateLimits.windowStart, new Date(windowStart.getTime() - 2 * 86_400_000))));
+    return row.count;
+  }
+
+  // A counter's count in one window, 0 when nothing was counted.
+  async function counted(tenantId: string, bucket: string, windowStart: Date) {
+    const [row] = await db
+      .select({ count: rateLimits.count })
+      .from(rateLimits)
+      .where(and(eq(rateLimits.tenantId, tenantId), eq(rateLimits.bucket, bucket), eq(rateLimits.windowStart, windowStart)));
+    return row?.count ?? 0;
+  }
+
   // The simulated outbox: what would have gone out by SMS or email, newest first.
   async function writeOutbox(tenantId: string, m: OutboxMessage) {
     await db.insert(outbox).values({ id: uid("ob"), tenantId, ...m });
@@ -160,7 +181,7 @@ export function createRepo(db: Db, opts: RepoOptions = {}) {
     return create(DEMO_TENANT, BUSINESS.name, buildSeed(now));
   }
 
-  return { load, mutate, mutateOnce, claimKey, writeOutbox, readOutbox, create, seedDemo };
+  return { load, mutate, mutateOnce, claimKey, bump, counted, writeOutbox, readOutbox, create, seedDemo };
 }
 
 // The app's repo on the process-wide database, with the demo business seeded on first use.

@@ -171,14 +171,16 @@ Rules:
 
 export async function runOwnerClaude(ctx: OwnerCtx, history: Msg[], prev: AgentState, client?: Anthropic): Promise<AgentResult> {
   const state: AgentState = { ...prev };
+  let tokens = 0;
   const done = (reply: string): AgentResult => {
     state.pending = ctx.staged ?? state.pending;
-    return { reply, actions: ctx.actions, tools: ctx.used, state, engine: "claude" };
+    return { reply, actions: ctx.actions, tools: ctx.used, state, engine: "claude", tokens };
   };
   const last = [...history].reverse().find((m) => m.from === "customer");
   const confirmed = last ? resolvePending(ctx, state, last.body) : undefined;
   if (confirmed) return done(confirmed);
   const r = await toolLoop({ system: system(ctx), tools: TOOLS, messages: toMessages(history), exec: (n, i) => exec(ctx, n, i), client });
+  tokens = r.tokens;
   if (r.stop !== "done") {
     // The owner is told nothing was done, so nothing is: no staged change waits for a YES and nothing ran.
     Object.assign(ctx, { actions: [], used: [], staged: undefined });

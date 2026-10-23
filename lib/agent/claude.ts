@@ -139,7 +139,8 @@ function exec(ctx: ToolCtx, name: string, input: Record<string, unknown>): unkno
   }
 }
 
-// The tool-use loop both agents share. Returns the final text, or undefined if the model refused or ran too long.
+// The tool-use loop both agents share. Returns the final text, or undefined if the model refused or ran too long,
+// and the tokens all its calls spent.
 // client: the API client, made from the environment when not given (tests pass a scripted one).
 export async function toolLoop(opts: {
   system: Anthropic.Beta.Messages.BetaTextBlockParam[];
@@ -147,9 +148,10 @@ export async function toolLoop(opts: {
   messages: MessageParam[];
   exec: (name: string, input: Record<string, unknown>) => unknown;
   client?: Anthropic;
-}): Promise<{ reply?: string; stop: "done" | "refusal" | "too_long" }> {
+}): Promise<{ reply?: string; stop: "done" | "refusal" | "too_long"; tokens: number }> {
   const client = opts.client ?? new Anthropic();
   const { messages } = opts;
+  let tokens = 0;
   for (let turn = 0; turn < 6; turn++) {
     const res = await client.beta.messages.create({
       model: MODEL,
@@ -161,7 +163,9 @@ export async function toolLoop(opts: {
       tools: opts.tools,
       messages,
     });
-    if (res.stop_reason === "refusal") return { stop: "refusal" };
+    const u = res.usage;
+    tokens += (u?.input_tokens ?? 0) + (u?.output_tokens ?? 0) + (u?.cache_read_input_tokens ?? 0) + (u?.cache_creation_input_tokens ?? 0);
+    if (res.stop_reason === "refusal") return { stop: "refusal", tokens };
     const uses = res.content.filter((b): b is Anthropic.Beta.Messages.BetaToolUseBlock => b.type === "tool_use");
     if (res.stop_reason !== "tool_use" || !uses.length) {
       const reply = res.content
@@ -169,7 +173,7 @@ export async function toolLoop(opts: {
         .map((b) => b.text)
         .join("\n")
         .trim();
-      return { reply, stop: "done" };
+      return { reply, stop: "done", tokens };
     }
     messages.push({ role: "assistant", content: res.content });
     messages.push({
@@ -181,7 +185,7 @@ export async function toolLoop(opts: {
       })),
     });
   }
-  return { stop: "too_long" };
+  return { stop: "too_long", tokens };
 }
 
 export async function runClaude(ctx: ToolCtx, history: Msg[], prev: AgentState, client?: Anthropic): Promise<AgentResult> {
@@ -207,7 +211,7 @@ export async function runClaude(ctx: ToolCtx, history: Msg[], prev: AgentState, 
       Object.assign(state, { awaiting: "confirm_cancel", bookingId: q.id, code: q.code, refund: q.refund });
       if (!reply.includes(q.code)) reply += ` Reply YES ${q.code} to go ahead.`;
     }
-    return { reply, actions: ctx.actions, tools: ctx.used, state, engine: "claude" };
+    return { reply, actions: ctx.actions, tools: ctx.used, state, engine: "claude", tokens: r.tokens };
   };
   if (r.stop !== "done") {
     // The customer never sees what the loop did (a link, a quote), so none of it happens. The owners take over.
