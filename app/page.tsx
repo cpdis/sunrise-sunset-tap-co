@@ -34,14 +34,14 @@ export default function Home() {
           <h1 className="display">Cold brew at dawn.<br />Beer at dusk.</h1>
           <p>Eight cold taps on a tiny truck. We drive it in, hook up your kegs, test every line and come back for it when the night&apos;s done.</p>
           <div className="row">
-            <Link href="/book" className="btn gold">Check a date</Link>
+            <Link href="/book" className="btn gold">Book</Link>
           </div>
         </div>
       </section>
 
       {free.length > 0 && (
         <section className="strip">
-          <div className="wrap row" style={{ padding: "14px max(16px, 3vw)", gap: 10 }}>
+          <div className="wrap row" style={{ padding: "14px var(--gutter)", gap: 10 }}>
             <span className="label" style={{ marginRight: 8 }}>Next free dates</span>
             <div className="free-dates">
               {free.map((d) => (
