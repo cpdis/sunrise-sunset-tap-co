@@ -4,7 +4,7 @@
 // - refunds over the agent limit, bond captures, share transfers and the guardrail settings stay in the admin.
 // Like the customer tools, these run on the server against a snapshot and return actions for the client store.
 import { ADMIN_ONLY_SETTINGS, SETTING_GROUPS } from "../config";
-import { ACCOUNT_LABEL, cancelPolicy, dayStatus } from "../domain";
+import { ACCOUNT_LABEL, cancelPolicy, dayStatus, directorApprovals, payoutRefusal, payoutTotal } from "../domain";
 import type { Account, AgentAction, AgentState, Channel, Data, Distribution, Owner, PendingOwnerAction, Settings, TruckLog } from "../types";
 import { handBack as opsHandBack, owesReply, replyRoute } from "../ops";
 import { daysBetween, fmtDate, money, quarterLabel, todayISO } from "../util";
@@ -25,7 +25,8 @@ export interface OwnerInboxItem {
 // Owners see everything in the admin, so the owner agent does too, except the ledger: the client sends totals instead.
 export type OwnerSnapshot = Pick<Data, "settings" | "owners" | "bookings" | "customers" | "distributions" | "truck" | "kb" | "blackouts" | "seq"> & {
   inbox: OwnerInboxItem[];
-  money: { cash: number; reserve: number; revenue30: number; profit30: number; held: number; owedRunners: Record<string, number> };
+  // free: domain freeCash today, which a payout's dividends must fit in (payoutRefusal).
+  money: { cash: number; reserve: number; revenue30: number; profit30: number; held: number; owedRunners: Record<string, number>; free: number };
 };
 
 export interface OwnerCtx {
@@ -60,7 +61,7 @@ export function whatsOn(ctx: OwnerCtx) {
     myRuns: soon.filter((b) => runsOf(b, (id) => id === me).length).map((b) => ({ ref: b.ref, date: fmtDate(b.date, { dow: true }), suburb: b.suburb, runs: runsOf(b, (id) => id === me) })),
     unclaimed: soon.filter((b) => b.state !== "held" && runsOf(b, (id) => !id).length).map((b) => ({ ref: b.ref, date: fmtDate(b.date, { dow: true }), suburb: b.suburb, runs: runsOf(b, (id) => !id) })),
     needsAPerson: ctx.data.inbox.filter((c) => c.escalated).map((c) => ({ name: c.name, why: c.escalated })),
-    payouts: ctx.data.distributions.filter((x) => x.status === "awaiting").map((x) => ({ quarter: quarterLabel(x.quarter), amount: x.lines.reduce((s, l) => s + l.amount + l.runnerFees, 0), approvals: x.approvals.length, needsMe: ctx.owner.isDirector && !x.approvals.includes(me) })),
+    payouts: ctx.data.distributions.filter((x) => x.status === "awaiting").map((x) => ({ quarter: quarterLabel(x.quarter), amount: payoutTotal(x), approvals: directorApprovals(ctx.data, x).length, needsMe: ctx.owner.isDirector && !x.approvals.includes(me) })),
     owedToMe: ctx.data.money.owedRunners[me] ?? 0,
     cash: ctx.data.money.cash,
     revenue30: ctx.data.money.revenue30,
@@ -261,19 +262,23 @@ export function payout(ctx: OwnerCtx, q: { action: "approve" | "pay" }, commit =
   if (!dist) return { ok: false as const, reason: "No payout is waiting." };
   const need = ctx.data.settings.approvalsRequired;
   const label = quarterLabel(dist.quarter);
-  const total = dist.lines.reduce((s, l) => s + l.amount + l.runnerFees, 0);
+  const total = payoutTotal(dist);
+  const cash = (n: number) => money(n, n % 1 !== 0);
+  if (!ctx.owner.isDirector) return { ok: false as const, reason: `Only directors ${q.action} payouts.` };
   if (q.action === "approve") {
-    if (!ctx.owner.isDirector) return { ok: false as const, reason: "Only directors approve payouts." };
-    if (dist.approvals.includes(ctx.owner.id)) return { ok: false as const, reason: `You've already approved ${label} (${dist.approvals.length} of ${need}).` };
-    const after = dist.approvals.length + 1;
-    const summary = `approve the ${label} payout of ${money(total)} (${money(dist.distributable)} dividends plus ${money(total - dist.distributable)} runner fees). That makes ${after} of ${need} approvals`;
+    const have = directorApprovals(ctx.data, dist).length;
+    if (dist.approvals.includes(ctx.owner.id)) return { ok: false as const, reason: `You've already approved ${label} (${have} of ${need}).` };
+    const after = have + 1;
+    const summary = `approve the ${label} payout of ${cash(total)} (${money(dist.distributable)} dividends plus ${cash(total - dist.distributable)} runner fees). That makes ${after} of ${need} approvals`;
     if (!commit) return stage(ctx, "payout", q, summary);
     ctx.actions.push({ type: "approve_payout", distId: dist.id });
     return { ok: true as const, done: true, summary, ready: after >= need };
   }
-  if (dist.approvals.length < need) return { ok: false as const, reason: `${label} has ${dist.approvals.length} of ${need} director approvals, so it can't be paid yet.` };
+  // The same check payDistribution makes as it pays, on the snapshot's free cash, so a refusal is said, not hidden.
+  const why = payoutRefusal(dist, ctx.data, ctx.data.money.free);
+  if (why) return { ok: false as const, reason: why };
   if (total <= 0) return { ok: false as const, reason: `${label} has nothing to pay.` };
-  const summary = `pay the ${label} payout: ${money(total)} by bank transfer to ${dist.lines.filter((l) => l.amount + l.runnerFees > 0).length} owners (simulated)`;
+  const summary = `pay the ${label} payout: ${cash(total)} by bank transfer to ${dist.lines.filter((l) => l.amount + l.runnerFees > 0).length} owners (simulated)`;
   if (!commit) return stage(ctx, "payout", q, summary);
   ctx.actions.push({ type: "pay_payout", distId: dist.id });
   return { ok: true as const, done: true, summary };

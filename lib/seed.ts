@@ -13,10 +13,11 @@ import {
   post,
   runJobs,
 } from "./domain";
+import { returnedClean } from "./ops";
 import type { Block, Conversation, Data, Owner, Scenario } from "./types";
 import { addDays, addMonths, daysBetween, quarterOf, todayISO } from "./util";
 
-export const DATA_VERSION = 6;
+export const DATA_VERSION = 7;
 
 function rng(seed: number) {
   return () => {
@@ -214,6 +215,8 @@ export function buildSeed(now = new Date(), scenario: Scenario = "base"): Data {
     const at = new Date(day + "T07:00:00+08:00");
     for (const b of d.bookings) {
       if (b.state === "balance_paid" && b.date < day) completeBooking(d, b, b.date);
+      // The owner who collected the truck checked it back clean, so past bonds are released.
+      if (b.state === "completed" && b.bondStatus === "held") returnedClean(d, b.id, b.collect.ownerId ?? d.owners[0].id, at);
     }
     runJobs(d, at > now ? now : at);
   }

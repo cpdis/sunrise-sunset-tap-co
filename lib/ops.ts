@@ -1,8 +1,8 @@
 // Owner operations on a mutable draft of Data. The admin buttons and the owner SMS agent both call these,
 // so an action means the same thing whichever way an owner takes it.
-import { ACCOUNT_LABEL, payDistribution, post } from "./domain";
+import { ACCOUNT_LABEL, pay, payDistribution, post } from "./domain";
 import type { Account, AgentAction, Conversation, Data, KbPage, Settings, TruckLog } from "./types";
-import { uid } from "./util";
+import { money, todayISO, uid } from "./util";
 
 export function log(d: Data, text: string) {
   d.jobs.unshift({ at: new Date().toISOString(), text });
@@ -33,9 +33,25 @@ export function approveDistribution(d: Data, distId: string, ownerId: string) {
   if (dist && director && dist.status === "awaiting" && !dist.approvals.includes(ownerId)) dist.approvals.push(ownerId);
 }
 
-export function payOut(d: Data, distId: string) {
-  payDistribution(d, distId);
-  log(d, `Paid ${distId.replace("dist_", "")} dividends via bank API (simulated)`);
+// Only directors pay. payDistribution refuses too few director approvals or too little free cash; the reason is logged.
+export function payOut(d: Data, distId: string, ownerId: string) {
+  const q = distId.replace("dist_", "");
+  if (!d.owners.find((o) => o.id === ownerId)?.isDirector) return log(d, `Payout ${q} not paid: ${ownerName(d, ownerId)} isn't a director`);
+  try {
+    payDistribution(d, distId);
+    log(d, `Paid ${q} dividends via bank API (simulated)`);
+  } catch (e) {
+    log(d, `Payout ${q} not paid: ${(e as Error).message}`);
+  }
+}
+
+// An owner checked the truck back after the hire and found it clean. Nothing else releases a held bond.
+export function returnedClean(d: Data, bookingId: string, ownerId: string, now = new Date()) {
+  const b = d.bookings.find((x) => x.id === bookingId);
+  if (!b || b.bondStatus !== "held" || b.date > todayISO(now)) return;
+  pay(d, b, "bond_release", b.bond, now.toISOString());
+  b.bondStatus = "released";
+  log(d, `${ownerName(d, ownerId)} checked ${b.ref} back clean; released the ${money(b.bond)} bond`);
 }
 
 export function updateSettings(d: Data, s: Partial<Settings>) {
@@ -159,11 +175,7 @@ export function applyOwnerAction(d: Data, a: AgentAction, ownerId: string) {
       log(d, `${who} approved the ${a.distId.replace("dist_", "")} payout by SMS`);
       break;
     case "pay_payout":
-      try {
-        payOut(d, a.distId);
-      } catch (e) {
-        log(d, `Payout ${a.distId.replace("dist_", "")} not paid: ${(e as Error).message}`);
-      }
+      payOut(d, a.distId, ownerId);
       break;
     case "settings":
       updateSettings(d, a.patch);

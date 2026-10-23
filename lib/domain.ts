@@ -17,6 +17,7 @@ import {
   addMonths,
   daysBetween,
   money,
+  quarterLabel,
   quarterOf,
   stripeFee,
   todayISO,
@@ -296,7 +297,6 @@ export function completeBooking(d: Data, b: Booking, date: string) {
       post(d, date, "owed_runners", d.settings.runnerFee, `${b.ref} run owed · ${o?.name ?? "owner"}`, b.id, run.ownerId);
     }
   }
-  if (b.bondStatus === "held") b.bondStatus = "released";
 }
 
 // ---------- scheduled jobs ----------
@@ -341,7 +341,7 @@ export function runJobs(d: Data, now = new Date()): string[] {
     }
     if (b.state === "balance_paid" && b.date < today) {
       completeBooking(d, b, b.date);
-      log.push(`Closed ${b.ref} and released bond`);
+      log.push(`Closed ${b.ref}${b.bondStatus === "held" ? "; bond held until an owner checks the truck back" : ""}`);
     }
   }
   return log;
@@ -404,31 +404,66 @@ export function reserveTarget(d: Data, asOf: string) {
   return Math.round(s.reserveMonths * s.fixedMonthly + yearKm * s.maintPerKm + 500);
 }
 
+// Cash the company may pay out as of a date: cash less customer money held for hires ahead, the reserve and runner
+// fees owed. A quarter's tax provision comes off on top (computeDistribution, payoutRefusal).
+export function freeCash(d: Data, asOf: string) {
+  const free = cashAt(d, asOf) - reserveTarget(d, asOf) - balance(d, "deposits", asOf) - balance(d, "owed_runners", asOf);
+  return Math.round(free * 100) / 100;
+}
+
+// Approvals that count: those from owners who are directors now.
+export function directorApprovals(d: Pick<Data, "owners">, dist: Distribution) {
+  return dist.approvals.filter((id) => d.owners.some((o) => o.id === id && o.isDirector));
+}
+
+const sumCents = (xs: number[]) => xs.reduce((s, x) => s + Math.round(x * 100), 0);
+
+// What a payout transfers in all: dividends plus runner fees, to the cent.
+export function payoutTotal(dist: Distribution) {
+  return sumCents(dist.lines.flatMap((l) => [l.amount, l.runnerFees])) / 100;
+}
+
+// Why a payout can't be paid when `free` is today's freeCash, or undefined when it can. Runner fees settle money
+// already kept back as owed, so only the dividends need room: what is free after the quarter's tax provision.
+export function payoutRefusal(dist: Distribution, d: Pick<Data, "owners" | "settings">, free: number): string | undefined {
+  const label = quarterLabel(dist.quarter);
+  const n = directorApprovals(d, dist).length;
+  const need = d.settings.approvalsRequired;
+  if (n < need) return `${label} has ${n} of ${need} director approvals, so it can't be paid yet.`;
+  const short = dist.distributable - (free - dist.taxProvision);
+  if (short > 0) return `${label} can't be paid yet. ${money(Math.ceil(Math.min(payoutTotal(dist), short)))} of it would come out of customer money, the reserve, tax or other runner fees owed.`;
+}
+
 export function computeDistribution(d: Data, quarterKey: string): Distribution {
+  const id = "dist_" + quarterKey;
   const [y, q] = quarterKey.split("-Q").map(Number);
   const start = `${y}-${String((q - 1) * 3 + 1).padStart(2, "0")}-01`;
   const { end } = quarterOf(start);
   const t = periodTotals(d, start, end);
   const taxProvision = Math.max(0, Math.round(t.profit * d.settings.taxRate));
-  const cash = Math.round(cashAt(d, end));
-  const reserve = reserveTarget(d, end);
-  const deposits = Math.round(balance(d, "deposits", end));
-  const owedRunners = Math.round(balance(d, "owed_runners", end));
   const afterTax = Math.max(0, t.profit - taxProvision);
-  // Customer money for future hires and runner fees owed aren't the company's to distribute.
-  const cashRoom = Math.max(0, cash - reserve - taxProvision - deposits - owedRunners);
+  // Customer money for future hires, the reserve and runner fees owed aren't the company's to distribute.
+  const cashRoom = Math.max(0, freeCash(d, end) - taxProvision);
   const totalShares = d.owners.reduce((s, o) => s + o.shares, 0);
-  // Round each owner's amount down to the nearest $10.
   const raw = Math.min(afterTax, cashRoom);
-  const lines = d.owners.map((o) => ({
-    ownerId: o.id,
-    shares: o.shares,
-    amount: Math.floor((raw * o.shares) / totalShares / 10) * 10,
-    runnerFees: Math.round(balance(d, "owed_runners", end, o.id)),
-  }));
+  // Each runner fee is settled by one distribution: a later quarter skips fees an earlier one lists, paid or not.
+  const claimed = new Set(d.distributions.filter((x) => x.id !== id).flatMap((x) => x.lines.flatMap((l) => l.runnerFeeEntries)));
+  const owed = d.ledger.filter((e) => e.account === "owed_runners" && e.amount > 0 && e.date <= end && !claimed.has(e.id));
+  const lines = d.owners.map((o) => {
+    const fees = owed.filter((e) => e.ownerId === o.id);
+    return {
+      ownerId: o.id,
+      shares: o.shares,
+      // Round each owner's amount down to the nearest $10.
+      amount: Math.floor((raw * o.shares) / totalShares / 10) * 10,
+      // Summed in cents, so a $60.50 fee pays $60.50.
+      runnerFees: sumCents(fees.map((e) => e.amount)) / 100,
+      runnerFeeEntries: fees.map((e) => e.id),
+    };
+  });
   const distributable = lines.reduce((s, l) => s + l.amount, 0);
   return {
-    id: "dist_" + quarterKey,
+    id,
     quarter: quarterKey,
     start,
     end,
@@ -436,10 +471,10 @@ export function computeDistribution(d: Data, quarterKey: string): Distribution {
     expenses: Math.round(t.expenses),
     profit: Math.round(t.profit),
     taxProvision,
-    cash,
-    reserve,
-    deposits,
-    owedRunners,
+    cash: Math.round(cashAt(d, end)),
+    reserve: reserveTarget(d, end),
+    deposits: Math.round(balance(d, "deposits", end)),
+    owedRunners: Math.round(balance(d, "owed_runners", end)),
     distributable,
     lines,
     approvals: [],
@@ -450,8 +485,10 @@ export function computeDistribution(d: Data, quarterKey: string): Distribution {
 export function payDistribution(d: Data, distId: string, now = new Date()) {
   const dist = d.distributions.find((x) => x.id === distId);
   if (!dist || dist.status === "paid") return;
-  if (dist.approvals.length < d.settings.approvalsRequired) throw new Error("Needs more approvals");
   const date = todayISO(now);
+  // Checked again as it pays: an expense or refund since the quarter closed can leave less free cash than it showed.
+  const why = payoutRefusal(dist, d, freeCash(d, date));
+  if (why) throw new Error(why);
   for (const l of dist.lines) {
     if (l.amount <= 0 && l.runnerFees <= 0) continue;
     const o = d.owners.find((x) => x.id === l.ownerId);

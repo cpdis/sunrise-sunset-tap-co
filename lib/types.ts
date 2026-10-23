@@ -206,6 +206,8 @@ export interface DistributionLine {
   amount: number;
   // Runner fees owed to this owner at quarter end, paid in the same transfer.
   runnerFees: number;
+  // The owed_runners ledger entries those fees settle. No other distribution lists them.
+  runnerFeeEntries: string[];
   payoutId?: string;
 }
 

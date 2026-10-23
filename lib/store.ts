@@ -9,6 +9,7 @@ import {
   chargeBalance,
   computeDistribution,
   createHold,
+  freeCash,
   type NewBooking,
   pay,
   payDeposit,
@@ -56,7 +57,7 @@ interface AppState {
   markRead: (convId: string) => void;
   claimRun: (bookingId: string, which: "deliver" | "collect") => void;
   captureBond: (bookingId: string, amount: number, note: string) => void;
-  releaseBond: (bookingId: string) => void;
+  returnedClean: (bookingId: string) => void;
   chargeBalanceNow: (bookingId: string) => void;
   payBalance: (bookingId: string, card: string) => void;
   addExpense: (date: string, account: Account, amount: number, memo: string) => void;
@@ -128,6 +129,7 @@ export function ownerSnapshot(d: Data, now = new Date()): OwnerSnapshot {
       profit30: Math.round(t30.profit),
       held: Math.round(balance(d, "deposits")),
       owedRunners: Object.fromEntries(d.owners.map((o) => [o.id, Math.round(balance(d, "owed_runners", undefined, o.id))])),
+      free: freeCash(d, today),
     },
   };
 }
@@ -316,13 +318,10 @@ export const useApp = create<AppState>()(
           log(d, `Captured $${amount} of the bond on ${b.ref}`);
         }),
 
-      releaseBond: (bookingId) =>
-        get().mutate((d) => {
-          const b = d.bookings.find((x) => x.id === bookingId);
-          if (!b) return;
-          pay(d, b, "bond_release", b.bond, new Date().toISOString());
-          b.bondStatus = "released";
-        }),
+      returnedClean: (bookingId) => {
+        const me = get().ownerId;
+        if (me) get().mutate((d) => ops.returnedClean(d, bookingId, me));
+      },
 
       chargeBalanceNow: (bookingId) =>
         get().mutate((d) => {
@@ -352,7 +351,10 @@ export const useApp = create<AppState>()(
         if (me) get().mutate((d) => ops.approveDistribution(d, distId, me));
       },
 
-      payDistribution: (distId) => get().mutate((d) => ops.payOut(d, distId)),
+      payDistribution: (distId) => {
+        const me = get().ownerId;
+        if (me) get().mutate((d) => ops.payOut(d, distId, me));
+      },
 
       updateSettings: (s) => get().mutate((d) => ops.updateSettings(d, s)),
 

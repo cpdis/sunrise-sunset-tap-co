@@ -1,7 +1,11 @@
 import { describe, expect, test } from "vitest";
+import { runOwnerRules } from "@/lib/agent/owner-rules";
+import type { OwnerCtx } from "@/lib/agent/owner-tools";
 import { balance, cashAt } from "@/lib/domain";
-import type { Conversation } from "@/lib/types";
-import { chat, ownerChat, seed } from "./helpers";
+import { applyOwnerAction } from "@/lib/ops";
+import { ownerSnapshot } from "@/lib/store";
+import type { AgentState, Conversation } from "@/lib/types";
+import { NOW, chat, ownerChat, seed } from "./helpers";
 
 const COLIN = "own_colin";
 const AARON = "own_aaron";
@@ -166,6 +170,58 @@ describe("money and settings wait for YES", () => {
     expect(paid.reply).toMatch(/^Done\. I paid/);
     expect(d.distributions.find((x) => x.id === dist.id)!.status).toBe("paid");
     expect(Math.round(cash0 - cashAt(d))).toBe(total);
+  });
+
+  test("pay is refused when it would spend customer money (review C09)", () => {
+    const d = seed();
+    ownerChat(d, COLIN, ["approve the payout", "yes"]);
+    ownerChat(d, AARON, ["approve the payout", "yes"]);
+    const [, posted, pay] = ownerChat(d, COLIN, ["$11203 maintenance", "yes", "pay the payout"]);
+    expect(posted.reply).toMatch(/^Done\. I added a \$11,203/);
+    const cash = cashAt(d);
+    expect(pay.reply).toBe("Q3 2026 (Jul–Sep) can't be paid yet. $840 of it would come out of customer money, the reserve, tax or other runner fees owed.");
+    expect(pay.state.pending).toBeUndefined();
+    expect(d.distributions.find((x) => x.quarter === "2026-Q3")!.status).toBe("awaiting");
+    expect(cashAt(d)).toBe(cash);
+  });
+
+  test("an expense between staging the pay and YES: the YES pays nothing", () => {
+    const d = seed();
+    ownerChat(d, COLIN, ["approve the payout", "yes"]);
+    ownerChat(d, AARON, ["approve the payout", "yes"]);
+    let state: AgentState = {};
+    const send = (ownerId: string, text: string) => {
+      const ctx: OwnerCtx = { data: ownerSnapshot(d, NOW), owner: d.owners.find((o) => o.id === ownerId)!, now: NOW, actions: [], used: [] };
+      const r = runOwnerRules(ctx, text, state);
+      state = r.state;
+      r.actions.forEach((a) => applyOwnerAction(d, a, ownerId));
+      return r;
+    };
+    expect(send(COLIN, "pay the payout").reply).toMatch(/^To confirm: pay the Q3 2026/);
+    ownerChat(d, AARON, ["$11203 maintenance", "yes"]);
+    const cash = cashAt(d);
+    expect(send(COLIN, "yes").reply).toMatch(/^I didn't do it: Q3 2026 \(Jul–Sep\) can't be paid yet/);
+    expect(cashAt(d)).toBe(cash);
+  });
+
+  test("a non-director can't pay, even with enough approvals", () => {
+    const d = seed();
+    d.owners.find((o) => o.id === "own_joe")!.isDirector = false;
+    ownerChat(d, COLIN, ["approve the payout", "yes"]);
+    ownerChat(d, AARON, ["approve the payout", "yes"]);
+    const [r] = ownerChat(d, "own_joe", ["pay the payout"]);
+    expect(r.reply).toBe("Only directors pay payouts.");
+    expect(r.state.pending).toBeUndefined();
+    expect(d.distributions.find((x) => x.quarter === "2026-Q3")!.status).toBe("awaiting");
+  });
+
+  test("an approval from an owner who is no longer a director doesn't count", () => {
+    const d = seed();
+    ownerChat(d, COLIN, ["approve the payout", "yes"]);
+    ownerChat(d, AARON, ["approve the payout", "yes"]);
+    d.owners.find((o) => o.id === COLIN)!.isDirector = false;
+    const [r] = ownerChat(d, AARON, ["pay the payout"]);
+    expect(r.reply).toBe("Q3 2026 (Jul–Sep) has 1 of 2 director approvals, so it can't be paid yet.");
   });
 
   test("setting change on YES; guardrail settings are admin only", () => {

@@ -84,7 +84,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "payout",
-    description: `Approve the waiting quarterly payout (directors only, once each), or pay it once enough directors have approved. ${STAGED}`,
+    description: `Approve the waiting quarterly payout (directors only, once each), or pay it (directors only) once enough directors have approved. Pay is refused when the dividends would use customer money, the reserve, tax or runner fees owed; give the owner the reason as returned. ${STAGED}`,
     input_schema: obj({ action: { type: "string", enum: ["approve", "pay"] } }, ["action"]),
     strict: true,
   },
