@@ -58,10 +58,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className={`admin ${sans.variable} ${mono.variable}`}>
       <div className="demo-bar">
-        <span>Demo · {SCENARIOS[data.scenario].label.toLowerCase()} case<span className="long">. Figures are illustrative; data lives in your browser and payments are simulated.</span></span>
-        <span>
-          {me?.name} · <button className="linkbtn" onClick={() => { logout(); router.push("/login"); }}>Switch owner</button>
-        </span>
+        Demo · {SCENARIOS[data.scenario].label.toLowerCase()} case<span className="long">. Figures are illustrative; data lives in your browser and payments are simulated.</span>
       </div>
       <div className="admin-shell">
         <nav className={`admin-nav${menu ? " open" : ""}`} aria-label="Admin">
@@ -86,6 +83,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 </Link>
               );
             })}
+            <div className="nav-foot">
+              <span className="avatar sm owner" aria-hidden="true">{me?.name.slice(0, 1)}</span>
+              <span className="who">{me?.name}</span>
+              <button type="button" className="btn small" onClick={() => { logout(); router.push("/login"); }}>Switch owner</button>
+            </div>
           </div>
         </nav>
         <main className="admin-main">{children}</main>

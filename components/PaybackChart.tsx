@@ -7,14 +7,18 @@ import { money } from "@/lib/util";
 // capital paid in as a dashed ink rule, hairline grid, and a hover readout per month.
 // It draws at the panel's own width (measured), so type stays 12px at every size.
 
+const MON3 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// "Mar", or "Jan 2026" where the year turns so a Nov to Oct axis says which year it crosses into
+const label = (m: string) => (m.slice(5, 7) === "01" ? `Jan ${m.slice(0, 4)}` : MON3[Number(m.slice(5, 7)) - 1]);
+
 type Props = {
-  months: string[]; // short labels, oldest first
+  months: string[]; // first day of each month, YYYY-MM-01, oldest first
   profit: number[]; // cumulative, same length as months
   capital: number;
 };
 
 const H = 240;
-const PAD = { t: 16, r: 20, b: 28, l: 56 };
+const PAD = { t: 16, r: 108, b: 28, l: 56 };
 
 export function PaybackChart({ months, profit, capital }: Props) {
   const box = useRef<HTMLDivElement>(null);
@@ -29,9 +33,9 @@ export function PaybackChart({ months, profit, capital }: Props) {
   }, []);
 
   const narrow = w < 520;
-  const pad = narrow ? { ...PAD, l: 44, r: 12 } : PAD;
+  const pad = narrow ? { ...PAD, l: 44, r: 16 } : PAD;
   const max = Math.max(1, capital, ...profit);
-  const step = niceStep(max / 3);
+  const step = niceStep(max / 4);
   const top = Math.ceil(max / step) * step;
   const min = Math.min(0, ...profit);
   const bottom = min < 0 ? -Math.ceil(-min / step) * step : 0;
@@ -62,9 +66,18 @@ export function PaybackChart({ months, profit, capital }: Props) {
           </g>
         ))}
         {months.map((m, i) => (i % every === (months.length - 1) % every ? (
-          <text key={i} x={X(i)} y={H - 8} textAnchor={i === 0 ? "start" : i === months.length - 1 ? "end" : "middle"} fontSize={12} fill="var(--a-text-2)">{m}</text>
+          <text key={i} x={X(i)} y={H - 8} textAnchor={i === 0 ? "start" : i === months.length - 1 ? "end" : "middle"} fontSize={12} fill="var(--a-text-2)">{label(m)}</text>
         ) : null))}
         <line x1={pad.l} x2={w - pad.r} y1={Y(capital)} y2={Y(capital)} stroke="var(--ink)" strokeWidth={1.5} strokeDasharray="4 4" />
+        {/* direct labels at the line ends; on a narrow panel the capital label sits above its line */}
+        {narrow ? (
+          <text x={w - pad.r} y={Y(capital) - 6} textAnchor="end" fontSize={12} fill="var(--ink)" fontWeight={500}>{money(capital)} capital</text>
+        ) : (
+          <>
+            <text x={w - pad.r + 8} y={Y(capital) + 4} fontSize={12} fill="var(--ink)" fontWeight={500}>{money(capital)} capital</text>
+            <text x={w - pad.r + 8} y={Y(profit.at(-1) ?? 0) + 4} fontSize={12} fill="var(--azure)" fontWeight={500}>{money(profit.at(-1) ?? 0)}</text>
+          </>
+        )}
         <path d={area} fill="color-mix(in srgb, var(--azure) 8%, white)" />
         <path d={line} pathLength={1} className="draw" fill="none" stroke="var(--azure)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
         <circle cx={X(profit.length - 1)} cy={Y(profit.at(-1) ?? 0)} r={3.5} fill="var(--azure)" stroke="#fff" strokeWidth={1.5} />
@@ -76,8 +89,8 @@ export function PaybackChart({ months, profit, capital }: Props) {
         )}
       </svg>
       {hover !== null && (
-        <div className="chart-tip" style={{ left: `${(Math.min(Math.max(hx, 90), w - 90) / w) * 100}%` }}>
-          <span className="meta">{months[hover]}</span>
+        <div className="chart-tip" style={{ left: `${(Math.min(Math.max(hx, 90), w - 90) / w) * 100}%`, top: Math.min(Y(profit[hover]) + 14, H - 92) }}>
+          <span className="meta">{label(months[hover])}{months[hover].slice(5, 7) === "01" ? "" : ` ${months[hover].slice(0, 4)}`}</span>
           <span className="row"><span>Profit to date</span><b>{money(profit[hover])}</b></span>
           <span className="row"><span>Still to recover</span><b>{money(Math.max(0, capital - profit[hover]))}</b></span>
         </div>

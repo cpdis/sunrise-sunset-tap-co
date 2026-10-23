@@ -24,6 +24,7 @@ export default function BookingDetail() {
   const [capAmt, setCapAmt] = useState("");
   const [capNote, setCapNote] = useState("");
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [capturing, setCapturing] = useState(false);
   if (!data) return <Loading />;
   const b = data.bookings.find((x) => x.id === id);
   if (!b) return <h1>Not found</h1>;
@@ -36,6 +37,7 @@ export default function BookingDetail() {
   const pol = cancelPolicy(s, b);
   const open = b.state !== "cancelled" && b.state !== "completed";
   const net = ledger.reduce((sum, e) => sum + e.amount, 0);
+  const canCapture = b.bondStatus === "held" || (b.state === "completed" && b.bondStatus !== "captured");
 
   const bond = b.bondStatus === "none" ? `Not yet held (${money(b.bond)})` : b.bondStatus === "captured" ? `Captured ${money(b.bondCaptured ?? 0)}` : b.bondStatus === "held" ? "Held" : "Released";
 
@@ -50,7 +52,7 @@ export default function BookingDetail() {
         <StatePill b={b} />
       </div>
 
-      <div className="grid cols-3" style={{ alignItems: "start" }}>
+      <div className="detail-cols">
         <Section title="Customer">
           <div className="card stack" style={{ gap: 12 }}>
             {c ? (
@@ -91,7 +93,7 @@ export default function BookingDetail() {
                   <span>{w === "deliver" ? "Delivery" : "Collection"}</span>
                   <span className="row" style={{ gap: 10, justifyContent: "flex-end" }}>
                     <strong>{owner(b[w].ownerId) ?? "Unclaimed"}{b[w].done ? " ✓" : ""}</strong>
-                    {open && b[w].ownerId !== a.ownerId && <button className="btn small ghost" onClick={() => a.claimRun(b.id, w)}>{b[w].ownerId ? "Swap to me" : "Claim"}</button>}
+                    {open && b[w].ownerId !== a.ownerId && <button className="btn small" onClick={() => a.claimRun(b.id, w)}>{b[w].ownerId ? "Swap to me" : "Claim"}</button>}
                   </span>
                 </div>
               ))}
@@ -106,21 +108,23 @@ export default function BookingDetail() {
           <div className="card stack">
             <div className="row">
               {b.state === "confirmed" && <button className="btn small" onClick={() => a.chargeBalanceNow(b.id)}>Charge balance now ({money(b.total - b.deposit)})</button>}
-              {b.bondStatus === "held" && <button className="btn small ghost" onClick={() => a.releaseBond(b.id)}>Release bond</button>}
-              {open && b.date >= todayISO() && !confirmCancel && <button className="btn small ghost" onClick={() => setConfirmCancel(true)}>Cancel booking…</button>}
+              {b.bondStatus === "held" && <button className="btn small" onClick={() => a.releaseBond(b.id)}>Release bond</button>}
+              {canCapture && !capturing && <button className="btn small" onClick={() => setCapturing(true)}>Capture from bond…</button>}
+              {open && b.date >= todayISO() && !confirmCancel && <button className="btn small" onClick={() => setConfirmCancel(true)}>Cancel booking…</button>}
               {confirmCancel && (
                 <>
                   <span>Refund {money(pol.refund)}, keep {money(pol.kept)} ({pol.days} days out).</span>
                   <button className="btn small danger" onClick={() => { a.cancel(b.id); setConfirmCancel(false); }}>Confirm cancel</button>
-                  <button className="btn small ghost" onClick={() => setConfirmCancel(false)}>Back</button>
+                  <button className="btn small" onClick={() => setConfirmCancel(false)}>Back</button>
                 </>
               )}
             </div>
-            {(b.bondStatus === "held" || (b.state === "completed" && b.bondStatus !== "captured")) && (
+            {canCapture && capturing && (
               <div className="row" style={{ alignItems: "flex-end" }}>
                 <div className="field" style={{ width: 120 }}><label htmlFor="cap-1">Capture</label><input id="cap-1" className="input" inputMode="numeric" placeholder={String(b.bond)} value={capAmt} onChange={(e) => setCapAmt(e.target.value)} /></div>
                 <div className="field" style={{ flex: 1, minWidth: 220 }}><label htmlFor="cap-2">Why (shown to customer)</label><input id="cap-2" className="input" placeholder="e.g. Broken tap handle, $85 part + fitting" value={capNote} onChange={(e) => setCapNote(e.target.value)} /></div>
-                <button className="btn small danger" disabled={!capNote || !(Number(capAmt) > 0) || Number(capAmt) > b.bond} onClick={() => { a.captureBond(b.id, Number(capAmt), capNote); setCapAmt(""); setCapNote(""); }}>Capture from bond</button>
+                <button className="btn small danger" disabled={!capNote || !(Number(capAmt) > 0) || Number(capAmt) > b.bond} onClick={() => { a.captureBond(b.id, Number(capAmt), capNote); setCapAmt(""); setCapNote(""); setCapturing(false); }}>Capture {Number(capAmt) > 0 ? money(Number(capAmt)) : ""}</button>
+                <button className="btn small" onClick={() => setCapturing(false)}>Back</button>
               </div>
             )}
             {b.condition && <span>Condition note: {b.condition}</span>}
@@ -136,7 +140,7 @@ export default function BookingDetail() {
               <tbody>
                 {pays.map((p) => (
                   <tr key={p.id}>
-                    <td>{fmtDateTime(p.at)}</td>
+                    <td className="nowrap">{fmtDateTime(p.at)}</td>
                     <td data-label="Type"><span>{PAY_LABEL[p.type]}{p.status === "failed" && <span className="pill bad" style={{ marginLeft: 6 }}>Declined</span>}<br /><span className="muted">{p.card}</span></span></td>
                     <td className="num" data-label="Amount">{money(p.amount, true)}</td>
                     <td className="num muted" data-label="Fee">{p.fee ? money(p.fee, true) : ""}</td>
@@ -155,7 +159,7 @@ export default function BookingDetail() {
               <tbody>
                 {ledger.map((e) => (
                   <tr key={e.id}>
-                    <td>{fmtDate(e.date)}</td>
+                    <td className="nowrap">{fmtDate(e.date)}</td>
                     <td data-label="Account">{ACCOUNT_LABEL[e.account]}</td>
                     <td className="muted" data-label="Memo">{e.memo}</td>
                     <td className={`num ${e.amount > 0 ? "pos" : ""}`} data-label="Amount">{money(e.amount, true)}</td>

@@ -52,8 +52,8 @@ export default function Today() {
             {attention.map((c) => (
               <Link key={c.id} href={`/admin/inbox?c=${c.id}`} className="list-row">
                 <span className="dot bad" aria-hidden="true" />
-                <span className="list-main"><strong>{c.name}</strong><span>{c.escalated ?? "Waiting on an owner reply"}</span></span>
-                <span className="meta">{CHANNEL_LABEL[c.channel]}</span>
+                <span className="list-main"><strong>{c.name}</strong><span>{CHANNEL_LABEL[c.channel]} · {c.escalated ?? "Waiting on an owner reply"}</span></span>
+                <span className="meta">Conversation</span>
               </Link>
             ))}
             {stuck.map((b) => (
@@ -106,36 +106,34 @@ export default function Today() {
         )}
       </Section>
 
-      <div className="grid cols-2" style={{ alignItems: "start" }}>
-        <Section title="Coming up">
-          <div className="table-wrap">
-            <table className="t">
-              <tbody>
-                {upcoming.slice(0, 8).map((b) => (
-                  <tr key={b.id}>
-                    <td className="nowrap">{fmtDate(b.date, { dow: true })}</td>
-                    <td>
-                      <Link href={`/admin/bookings/${b.id}`}>{b.kind === "personal" ? `${name(b.ownerId)} (own use)` : data.customers.find((c) => c.id === b.customerId)?.name}</Link>
-                      <br /><span className="muted">{b.eventType ?? ""} · {b.suburb}</span>
-                    </td>
-                    <td><StatePill b={b} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Section>
-        <Section title="What the system did">
-          <ol className="feed">
-            {data.jobs.slice(0, 12).map((j, i) => (
-              <li key={i}>
-                <span>{j.text}</span>
-                <time className="meta">{fmtDateTime(j.at)}</time>
-              </li>
-            ))}
-          </ol>
-        </Section>
-      </div>
+      <Section title="Coming up">
+        <div className="table-wrap">
+          <table className="t">
+            <tbody>
+              {upcoming.slice(0, 8).map((b) => (
+                <tr key={b.id}>
+                  <td className="nowrap">{fmtDate(b.date, { dow: true })}</td>
+                  <td>
+                    <Link href={`/admin/bookings/${b.id}`}>{b.kind === "personal" ? `${name(b.ownerId)} (own use)` : data.customers.find((c) => c.id === b.customerId)?.name}</Link>
+                    <br /><span className="muted">{b.eventType ?? ""} · {b.suburb}</span>
+                  </td>
+                  <td className="num"><StatePill b={b} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+      <Section title="What the system did">
+        <ol className="feed">
+          {data.jobs.slice(0, 12).map((j, i) => (
+            <li key={i}>
+              <span>{j.text}</span>
+              <time className="meta">{fmtDateTime(j.at)}</time>
+            </li>
+          ))}
+        </ol>
+      </Section>
     </div>
   );
 }

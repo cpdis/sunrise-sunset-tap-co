@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { DateField } from "@/components/DateField";
 import { PaybackChart } from "@/components/PaybackChart";
 import { Loading, Section, Stat, useData } from "@/components/ui";
 import { ACCOUNT_LABEL, balance, cashAt, liveBookings, periodTotals } from "@/lib/domain";
@@ -10,7 +11,6 @@ import { addDays, addMonths, fmtDate, money, quarterLabel, quarterOf, todayISO }
 
 const EXPENSE_ACCOUNTS: Account[] = ["maintenance", "fuel", "co2", "cleaning", "breakage", "insurance", "rego", "software", "accounting", "marketing", "setup"];
 const GST_THRESHOLD = 75000;
-const MON3 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 // the ledger shows a page at a time, newest first
 const LEDGER_PAGE = 15;
 const cum = (xs: number[]) => xs.map((_, i) => xs.slice(0, i + 1).reduce((a, b) => a + b, 0));
@@ -22,6 +22,7 @@ export default function Money() {
   const [period, setPeriod] = useState(quarterOf(today).key);
   const [acct, setAcct] = useState<Account | "all">("all");
   const [rowsShown, setRowsShown] = useState(LEDGER_PAGE);
+  const [adding, setAdding] = useState(false);
   const [ex, setEx] = useState({ date: today, account: "maintenance" as Account, amount: "", memo: "" });
   if (!data) return <Loading />;
 
@@ -69,25 +70,23 @@ export default function Money() {
         <Stat k="Profit, last 12 months" v={money(year.profit)} />
       </div>
 
-      <div className="chart-card">
-        <div className="ch-head">
-          <div className="ch-title">
-            <span className="k">Payback · operating profit after depreciation, cumulative</span>
-            <span className="v">{money(year.profit)} <span className="meta">of {money(capital)}</span></span>
-            <span className="finding">{Number.isFinite(payback) ? `Owners' capital back in ${payback.toFixed(1)} years at this pace.` : "At this pace the owners don't get their capital back."}</span>
+      <Section title="Payback">
+        <div className="chart-card">
+          <div className="ch-head">
+            <div className="ch-title">
+              <span className="v">{money(year.profit)} <span className="meta">of {money(capital)}</span></span>
+              <span className="finding">{Number.isFinite(payback) ? `Owners' capital back in ${payback.toFixed(1)} years at this pace.` : "At this pace the owners don't get their capital back."}</span>
+            </div>
           </div>
-          <div className="ch-key">
-            <span style={{ color: "var(--azure)" }}><i />Profit to date</span>
-            <span style={{ color: "var(--ink)" }}><i style={{ background: "repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 5px)" }} />Capital in, {data.owners.length} owners</span>
+          <PaybackChart months={series.map((x) => x.m)} profit={cum(series.map((x) => x.profit))} capital={capital} />
+          <div className="ch-foot">
+            <div><span className="k">Hires</span><span className="v">{hires}</span></div>
+            <div><span className="k">Margin</span><span className="v">{margin}%</span></div>
+            <div><span className="k">Average a hire</span><span className="v">{money(year.revenue / Math.max(1, hires))}</span></div>
           </div>
+          <p className="ch-note note">Operating profit after depreciation, cumulative by month, against capital paid in. Revenue counts when the hire happens.</p>
         </div>
-        <PaybackChart months={series.map((x) => MON3[Number(x.m.slice(5, 7)) - 1])} profit={cum(series.map((x) => x.profit))} capital={capital} />
-        <div className="ch-foot">
-          <div><span className="k">Hires</span><span className="v">{hires}</span></div>
-          <div><span className="k">Margin</span><span className="v">{margin}%</span></div>
-          <div><span className="k">Average a hire</span><span className="v">{money(year.revenue / Math.max(1, hires))}</span></div>
-        </div>
-      </div>
+      </Section>
 
       <div className="grid cols-2" style={{ alignItems: "start" }}>
         <Section
@@ -106,49 +105,53 @@ export default function Money() {
           </div>
         </Section>
 
-        <div className="page">
-          <Section title="GST registration watch">
-            <div className="card meter">
-              <div className={`track${gstHot ? " hot" : ""}`} role="img" aria-label={`${money(year.revenue)} of ${money(GST_THRESHOLD)}, ${money(projected)} projected`}>
-                <span className="proj" style={{ width: `${pct(projected)}%` }} />
-                <span className="act" style={{ width: `${pct(year.revenue)}%` }} />
-              </div>
-              <div className="legend3">
-                <div><span className="k"><i style={{ background: gstHot ? "var(--sunset)" : "var(--azure)" }} />Last 12 months</span><span className="v">{money(year.revenue)}</span></div>
-                <div><span className="k"><i style={{ background: gstHot ? "color-mix(in srgb, var(--sunset) 30%, white)" : "color-mix(in srgb, var(--azure) 28%, white)" }} />Projected, next 12</span><span className="v">{money(projected)}</span></div>
-                <div><span className="k">Threshold</span><span className="v">{money(GST_THRESHOLD)}</span></div>
-              </div>
-              <span className="note">Projected counts this month and the next 11, including hires already booked. Register within 21 days of either crossing the threshold; prices then include GST.</span>
+        <Section title="GST registration watch">
+          <div className="card meter">
+            <div className={`track${gstHot ? " hot" : ""}`} role="img" aria-label={`${money(year.revenue)} of ${money(GST_THRESHOLD)}, ${money(projected)} projected`}>
+              <span className="proj" style={{ width: `${pct(projected)}%` }} />
+              <span className="act" style={{ width: `${pct(year.revenue)}%` }} />
             </div>
-          </Section>
-          <Section title="Add an expense">
-            <form className="card stack" onSubmit={(e) => { e.preventDefault(); if (!(Number(ex.amount) > 0)) return; addExpense(ex.date, ex.account, Number(ex.amount), ex.memo || ACCOUNT_LABEL[ex.account]); setEx({ ...ex, amount: "", memo: "" }); }}>
-              <div className="grid cols-2">
-                <div className="field"><label htmlFor="ex-1">Date</label><input id="ex-1" type="date" className="input" value={ex.date} onChange={(e) => setEx({ ...ex, date: e.target.value })} /></div>
-                <div className="field"><label htmlFor="ex-2">Category</label>
-                  <select id="ex-2" className="input" value={ex.account} onChange={(e) => setEx({ ...ex, account: e.target.value as Account })}>
-                    {EXPENSE_ACCOUNTS.map((x) => <option key={x} value={x}>{ACCOUNT_LABEL[x]}</option>)}
-                  </select>
-                </div>
-                <div className="field"><label htmlFor="ex-3">Amount</label><input id="ex-3" className="input" inputMode="decimal" value={ex.amount} onChange={(e) => setEx({ ...ex, amount: e.target.value })} /></div>
-                <div className="field"><label htmlFor="ex-4">Note</label><input id="ex-4" className="input" value={ex.memo} onChange={(e) => setEx({ ...ex, memo: e.target.value })} /></div>
-              </div>
-              <button className="btn small primary" style={{ alignSelf: "flex-start" }}>Add expense</button>
-              <span className="note">In production, expenses come from the bank feed and receipts are attached.</span>
-            </form>
-          </Section>
-        </div>
+            <div className="ends meta"><span>$0</span><span>{money(GST_THRESHOLD)} threshold</span></div>
+            <div className="legend2">
+              <div><span className="k"><i style={{ background: gstHot ? "var(--sunset)" : "var(--azure)" }} />Last 12 months</span><span className="v">{money(year.revenue)}</span></div>
+              <div><span className="k"><i style={{ background: gstHot ? "color-mix(in srgb, var(--sunset) 30%, white)" : "color-mix(in srgb, var(--azure) 28%, white)" }} />Projected, next 12</span><span className="v">{money(projected)}</span></div>
+            </div>
+            <span className="note">Projected counts this month and the next 11, including hires already booked. Register within 21 days of either crossing the threshold; prices then include GST.</span>
+          </div>
+        </Section>
       </div>
 
       <Section
         title="Ledger"
         aside={
-          <select className="input" aria-label="Ledger account" style={{ width: "auto" }} value={acct} onChange={(e) => { setAcct(e.target.value as Account | "all"); setRowsShown(LEDGER_PAGE); }}>
-            <option value="all">All accounts</option>
-            {(Object.keys(ACCOUNT_LABEL) as Account[]).map((k) => <option key={k} value={k}>{ACCOUNT_LABEL[k]}</option>)}
-          </select>
+          <div className="row">
+            <select className="input" aria-label="Ledger account" style={{ width: "auto" }} value={acct} onChange={(e) => { setAcct(e.target.value as Account | "all"); setRowsShown(LEDGER_PAGE); }}>
+              <option value="all">All accounts</option>
+              {(Object.keys(ACCOUNT_LABEL) as Account[]).map((k) => <option key={k} value={k}>{ACCOUNT_LABEL[k]}</option>)}
+            </select>
+            {!adding && <button className="btn small" onClick={() => setAdding(true)}>+ Add expense</button>}
+          </div>
         }
       >
+        {adding && (
+          <form className="card stack drawer" onSubmit={(e) => { e.preventDefault(); if (!(Number(ex.amount) > 0)) return; addExpense(ex.date, ex.account, Number(ex.amount), ex.memo || ACCOUNT_LABEL[ex.account]); setEx({ ...ex, amount: "", memo: "" }); setAdding(false); }}>
+            <div className="grid cols-4">
+              <div className="field"><label htmlFor="ex-1">Date</label><DateField id="ex-1" value={ex.date} onChange={(d) => setEx({ ...ex, date: d })} /></div>
+              <div className="field"><label htmlFor="ex-2">Category</label>
+                <select id="ex-2" className="input" value={ex.account} onChange={(e) => setEx({ ...ex, account: e.target.value as Account })}>
+                  {EXPENSE_ACCOUNTS.map((x) => <option key={x} value={x}>{ACCOUNT_LABEL[x]}</option>)}
+                </select>
+              </div>
+              <div className="field"><label htmlFor="ex-3">Amount</label><span className="adorn"><i>$</i><input id="ex-3" className="input" inputMode="decimal" value={ex.amount} onChange={(e) => setEx({ ...ex, amount: e.target.value })} /></span></div>
+              <div className="field"><label htmlFor="ex-4">Note</label><input id="ex-4" className="input" value={ex.memo} onChange={(e) => setEx({ ...ex, memo: e.target.value })} /></div>
+            </div>
+            <div className="row">
+              <button className="btn small primary">Add expense</button>
+              <button type="button" className="btn small" onClick={() => setAdding(false)}>Cancel</button>
+              <span className="note">In production, expenses come from the bank feed with receipts attached.</span>
+            </div>
+          </form>
+        )}
         <div className="table-wrap">
           <table className="t cards">
             <thead><tr><th>Date</th><th>Account</th><th>Memo</th><th className="num">Amount</th></tr></thead>
