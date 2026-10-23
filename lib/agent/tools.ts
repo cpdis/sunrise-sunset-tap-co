@@ -1,9 +1,9 @@
 // Agent tools. They run on the server against a snapshot of the client's data and
 // return actions that the client store applies (hold, cancel, escalate).
-import { BUSINESS, SUBURBS, findSuburb, fitStart } from "../config";
+import { BUSINESS, SUBURBS, defaultStart, findSuburb, startProblem } from "../config";
 import { cancelPolicy, dayStatus, isBookable, nextFreeDates, quote } from "../domain";
 import type { AgentAction, Block, Channel, Data, KbPage, Settings } from "../types";
-import { addDays, daysBetween, fmtDate, fmtTime, money, todayISO, uid } from "../util";
+import { addDays, daysBetween, fmtDate, fmtTime, isISODate, money, todayISO, uid } from "../util";
 
 export type Snapshot = Pick<Data, "settings" | "bookings" | "customers" | "kb" | "blackouts" | "seq">;
 
@@ -69,6 +69,7 @@ const d = (ctx: ToolCtx) => ctx.data as unknown as Data;
 
 export function checkAvailability(ctx: ToolCtx, date: string) {
   ctx.used.push("check_availability");
+  if (!isISODate(date)) return { date, label: date, free: false, status: "invalid" as const, alternatives: [] as string[], reason: "That isn't a real date. Send it as YYYY-MM-DD." };
   const status = dayStatus(d(ctx), date, ctx.now);
   const free = isBookable(d(ctx), date, ctx.now);
   const alternatives = free ? [] : nextFreeDates(d(ctx), date < todayISO(ctx.now) ? todayISO(ctx.now) : addDays(date, -1), 3, true, ctx.now);
@@ -85,12 +86,17 @@ export function getQuote(ctx: ToolCtx, block: Block, suburb: string) {
 export function holdAndLink(ctx: ToolCtx, date: string, block: Block, suburb: string, name: string, startTime?: string) {
   ctx.used.push("hold_date", "send_deposit_link");
   if (ctx.handover) return { ok: false as const, reason: "an owner is handling this conversation." };
+  if (!isISODate(date)) return { ok: false as const, reason: "That isn't a real date." };
+  if (block !== 4 && block !== 8) return { ok: false as const, reason: "The truck goes out for 4 or 8 hours." };
   if (!isBookable(d(ctx), date, ctx.now)) return { ok: false as const, reason: "That date is no longer free." };
+  // A missing time gets the default; a given one must be a real HH:MM that finishes by closing.
+  const start = startTime || defaultStart(block);
+  const late = startProblem(block, start);
+  if (late) return { ok: false as const, reason: `${late[0].toUpperCase()}${late.slice(1)}.` };
   const q = getQuote(ctx, block, suburb);
   if (!q.inArea) return { ok: false as const, reason: "That suburb is outside the service area." };
   const bookingId = uid("bk");
   const ref = `SST-${ctx.data.seq + 1 + ctx.actions.filter((a) => a.type === "hold").length}`;
-  const start = startTime && /^\d{2}:\d{2}$/.test(startTime) ? fitStart(block, startTime) : undefined;
   ctx.actions.push({ type: "hold", bookingId, ref, date, block, startTime: start, suburb: q.suburb, name, contact: ctx.contact, channel: ctx.channel });
   return {
     ok: true as const,

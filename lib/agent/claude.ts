@@ -1,8 +1,8 @@
 // Claude-backed agent. Used when ANTHROPIC_API_KEY is set; otherwise the rules engine answers.
 import Anthropic from "@anthropic-ai/sdk";
-import { BUSINESS } from "../config";
+import { BUSINESS, LATEST_FINISH, defaultStart } from "../config";
 import type { AgentResult, AgentState, Block, Msg } from "../types";
-import { fmtDate, todayISO } from "../util";
+import { fmtDate, fmtTime, todayISO } from "../util";
 import {
   type ToolCtx,
   cancelBookingTool,
@@ -44,9 +44,9 @@ const TOOLS: Tool[] = [
     description: "Hold a free date for the customer and get a deposit payment link to send them. Only call after the customer has agreed to book and you know date, block, suburb and their name.",
     input_schema: obj(
       {
-        date: { type: "string" },
+        date: { type: "string", description: "YYYY-MM-DD" },
         block: { type: "integer", enum: [4, 8] },
-        start_time: { type: "string", description: "When the taps open, HH:MM 24-hour. Use the customer's time if they gave one, else 14:00 for 4 hours or 12:00 for 8." },
+        start_time: { type: "string", description: `When the taps open, HH:MM 24-hour, finishing by ${fmtTime(`${LATEST_FINISH}:00`)}. Use the customer's time if they gave one, else ${defaultStart(4)} for 4 hours or ${defaultStart(8)} for 8.` },
         suburb: { type: "string" },
         name: { type: "string" },
       },
@@ -123,7 +123,7 @@ function exec(ctx: ToolCtx, name: string, input: Record<string, unknown>): unkno
     case "get_quote":
       return getQuote(ctx, Number(input.block) as Block, String(input.suburb));
     case "hold_and_send_deposit_link":
-      return holdAndLink(ctx, String(input.date), Number(input.block) as Block, String(input.suburb), String(input.name), String(input.start_time));
+      return holdAndLink(ctx, String(input.date), Number(input.block) as Block, String(input.suburb), String(input.name), input.start_time ? String(input.start_time) : undefined);
     case "lookup_booking":
       return lookupBooking(ctx);
     case "cancel_booking":

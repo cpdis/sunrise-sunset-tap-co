@@ -29,6 +29,8 @@ export interface Settings {
   taxRate: number;
   refundLimit: number;
   approvalsRequired: number;
+  // The largest expense one owner can log by SMS; bigger ones go in the admin.
+  smsExpenseCap: number;
 }
 
 export interface Owner {

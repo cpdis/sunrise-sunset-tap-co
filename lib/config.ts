@@ -1,4 +1,5 @@
 import type { Settings } from "./types";
+import { fmtTime, timeMinutes } from "./util";
 
 export const BUSINESS = {
   name: "Sunrise Sunset Tap Co.",
@@ -30,6 +31,7 @@ export const DEFAULT_SETTINGS: Settings = {
   taxRate: 0.25,
   refundLimit: 250,
   approvalsRequired: 2,
+  smsExpenseCap: 500,
 };
 
 // The settings an owner can edit, grouped as on /admin/settings. The owner SMS agent uses the same labels.
@@ -66,13 +68,66 @@ export const SETTING_GROUPS: { title: string; fields: { k: keyof Settings; label
       { k: "reserveMonths", label: "Reserve: fixed costs", unit: "months" },
       { k: "fixedMonthly", label: "Fixed costs per month", unit: "$" },
       { k: "maintPerKm", label: "Maintenance reserve", unit: "$/km" },
+      { k: "smsExpenseCap", label: "Owners can log by SMS up to", unit: "$" },
     ],
   },
 ];
 
-// Guardrails stay in the logged-in admin: over SMS, one owner could otherwise lower the approvals needed or raise the
-// agent's refund limit and then act alone.
-export const ADMIN_ONLY_SETTINGS: (keyof Settings)[] = ["approvalsRequired", "refundLimit"];
+// The allowed range for each setting, checked by the admin page, the owner SMS agent and updateSettings.
+// "int" settings count whole days, months, minutes or owners.
+export const SETTING_RANGES: Record<keyof Settings, { min: number; max: number; int?: boolean }> = {
+  price4: { min: 50, max: 10000 },
+  price8: { min: 50, max: 20000 },
+  deposit: { min: 0, max: 5000 },
+  bond: { min: 0, max: 5000 },
+  travelFee: { min: 0, max: 2000 },
+  travelThresholdMin: { min: 0, max: 240, int: true },
+  runnerFee: { min: 0, max: 500 },
+  balanceDaysBefore: { min: 0, max: 90, int: true },
+  bondHoldDaysBefore: { min: 0, max: 30, int: true },
+  cancelDays: { min: 0, max: 365, int: true },
+  holdMinutes: { min: 5, max: 1440, int: true },
+  minNoticeDays: { min: 0, max: 90, int: true },
+  bookAheadMonths: { min: 1, max: 24, int: true },
+  reserveMonths: { min: 0, max: 24, int: true },
+  fixedMonthly: { min: 0, max: 20000 },
+  maintPerKm: { min: 0, max: 5 },
+  taxRate: { min: 0, max: 0.6 },
+  refundLimit: { min: 0, max: 5000 },
+  approvalsRequired: { min: 1, max: 10, int: true },
+  smsExpenseCap: { min: 0, max: 5000 },
+};
+
+// Why a value is out of range for a setting, or undefined when it is fine. Values are in stored units
+// (the tax rate as a fraction).
+export function settingProblem(k: keyof Settings, v: number): string | undefined {
+  const r = SETTING_RANGES[k];
+  if (!r) return "That isn't a setting.";
+  if (!Number.isFinite(v)) return "That needs to be a number.";
+  if (r.int && !Number.isInteger(v)) return "That needs to be a whole number.";
+  if (v < r.min || v > r.max) return `That needs to be between ${r.min} and ${r.max}.`;
+  return undefined;
+}
+
+// Money and guardrails stay in the logged-in admin (R7). Over SMS one owner could otherwise change prices, the
+// deposit or what the business keeps back, lower the approvals needed, or raise a limit and then act alone.
+export const ADMIN_ONLY_SETTINGS: (keyof Settings)[] = [
+  "price4",
+  "price8",
+  "deposit",
+  "bond",
+  "travelFee",
+  "travelThresholdMin",
+  "runnerFee",
+  "cancelDays",
+  "refundLimit",
+  "approvalsRequired",
+  "taxRate",
+  "reserveMonths",
+  "fixedMonthly",
+  "maintPerKm",
+  "smsExpenseCap",
+];
 
 // Approximate one-way drive time from the Perth CBD at weekend traffic.
 // Anything not listed is assumed to be outside the service area.
@@ -135,17 +190,31 @@ export function findSuburb(name: string) {
 
 export const START_TIMES = ["06:00", "08:00", "10:00", "12:00", "14:00", "16:00", "18:00"];
 
-// Taps close by this hour (24h clock), so the latest start depends on the block.
+// Taps open from this hour and close by LATEST_FINISH (24h clock), so the latest start depends on the block.
+export const EARLIEST_START = 6;
 export const LATEST_FINISH = 23;
 
+export const defaultStart = (block: 4 | 8) => (block === 4 ? "14:00" : "12:00");
+
+const hhmm = (min: number) => `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
+const latestStart = (block: 4 | 8) => (LATEST_FINISH - block) * 60;
+
 export function startTimesFor(block: 4 | 8) {
-  return START_TIMES.filter((t) => Number(t.slice(0, 2)) + block <= LATEST_FINISH);
+  return START_TIMES.filter((t) => timeMinutes(t)! <= latestStart(block));
 }
 
-// A requested start time if it fits the block, otherwise the latest one that does.
+// Why a start time can't be used for a block ("14:99", or 19:45 for 4 hours ends after closing), or undefined.
+export function startProblem(block: 4 | 8, t: string): string | undefined {
+  const m = timeMinutes(t);
+  if (m === undefined) return "a start time needs to be HH:MM on a 24-hour clock";
+  if (m < EARLIEST_START * 60) return `the taps open from ${fmtTime(hhmm(EARLIEST_START * 60))} at the earliest`;
+  if (m > latestStart(block)) return `${block} hours must start by ${fmtTime(hhmm(latestStart(block)))} to finish by ${fmtTime(hhmm(LATEST_FINISH * 60))}`;
+  return undefined;
+}
+
+// A requested start time if it fits the block, otherwise the nearest one that does. An unreadable time gets the default.
 export function fitStart(block: 4 | 8, t: string) {
-  const h = Number(t.slice(0, 2));
-  const latest = LATEST_FINISH - block;
-  if (h < 6) return "06:00";
-  return h > latest ? `${String(latest).padStart(2, "0")}:00` : t;
+  const m = timeMinutes(t);
+  if (m === undefined) return defaultStart(block);
+  return hhmm(Math.min(Math.max(m, EARLIEST_START * 60), latestStart(block)));
 }

@@ -17,7 +17,7 @@ import { returnedClean } from "./ops";
 import type { Block, Conversation, Data, Owner, Scenario } from "./types";
 import { addDays, addMonths, daysBetween, quarterOf, todayISO } from "./util";
 
-export const DATA_VERSION = 7;
+export const DATA_VERSION = 8;
 
 function rng(seed: number) {
   return () => {

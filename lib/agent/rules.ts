@@ -1,7 +1,7 @@
 // Built-in agent used when no ANTHROPIC_API_KEY is configured. Deterministic intent
 // matching over the same tools and knowledge base the Claude agent uses.
 import * as chrono from "chrono-node";
-import { SUBURBS, fitStart } from "../config";
+import { SUBURBS, defaultStart, fitStart } from "../config";
 import { nextFreeDates } from "../domain";
 import type { AgentResult, AgentState, Block } from "../types";
 import { fmtDate, fmtTime, money, todayISO } from "../util";
@@ -275,7 +275,7 @@ export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentRes
     }
     if (!av.free) {
       const alts = av.alternatives.map((a) => fmtDate(a, { dow: true })).join(", ");
-      const why = av.status === "past" ? "has already passed" : av.status === "too_far" ? `is more than ${s.bookAheadMonths} months out` : "is already booked";
+      const why = av.status === "invalid" ? "isn't a date I can read" : av.status === "past" ? "has already passed" : av.status === "too_far" ? `is more than ${s.bookAheadMonths} months out` : "is already booked";
       state.refDate = state.date;
       state.date = undefined;
       state.awaiting = "date";
@@ -309,7 +309,7 @@ export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentRes
     }
     const q = getQuote(ctx, state.block, state.suburb);
     if (!q.inArea) return out("Which suburb is the event in?");
-    const start = fitStart(state.block, state.startTime ?? (state.block === 4 ? "14:00" : "12:00"));
+    const start = fitStart(state.block, state.startTime ?? defaultStart(state.block));
     const startNote = state.startTime ? (start !== state.startTime ? ` (the latest start for ${state.block} hours)` : "") : " (say if you want a different start time)";
     // A price question gets the price first, not a request for a name.
     if (PRICE_Q.test(t) && !wantsBook && !state.agreed) {

@@ -40,14 +40,37 @@ function sameOrigin(req: Request) {
   }
 }
 
+const isObj = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
+
+// The body as the agents expect it, or undefined for bad JSON or a missing or mistyped field (a 400, not a 500).
+function parseBody(raw: string): Body | undefined {
+  let b: unknown;
+  try {
+    b = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  if (!isObj(b) || !isObj(b.snapshot) || !isObj(b.conversation)) return undefined;
+  const { snapshot: s, conversation: c } = b;
+  if (!isObj(s.settings) || !Array.isArray(s.bookings) || !Array.isArray(s.customers) || !Array.isArray(s.kb) || !Array.isArray(s.blackouts)) return undefined;
+  if ("owners" in s && !Array.isArray(s.owners)) return undefined;
+  if (typeof c.contact !== "string" || !["web", "sms", "email", "phone"].includes(c.channel as string)) return undefined;
+  if (!Array.isArray(c.messages) || !c.messages.every((m) => isObj(m) && typeof m.from === "string")) return undefined;
+  if (c.state !== undefined && !isObj(c.state)) return undefined;
+  return b as unknown as Body;
+}
+
 export async function POST(req: Request) {
   if (!sameOrigin(req)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const ip = (req.headers.get("x-forwarded-for") ?? "local").split(",")[0].trim();
   if (limited(ip, Date.now())) return NextResponse.json({ error: "Too many messages, try again in a minute" }, { status: 429 });
-  const raw = await req.text();
-  if (raw.length > MAX_BYTES) return NextResponse.json({ error: "Too large" }, { status: 413 });
+  // Bytes, not characters: an emoji is one character and four bytes.
+  if (Number(req.headers.get("content-length") ?? 0) > MAX_BYTES) return NextResponse.json({ error: "Too large" }, { status: 413 });
+  const buf = await req.arrayBuffer();
+  if (buf.byteLength > MAX_BYTES) return NextResponse.json({ error: "Too large" }, { status: 413 });
 
-  const body = JSON.parse(raw) as Body;
+  const body = parseBody(new TextDecoder().decode(buf));
+  if (!body) return NextResponse.json({ error: "Bad request" }, { status: 400 });
   const { snapshot, conversation } = body;
   const messages = conversation.messages.slice(-30).map((m) => ({ ...m, body: String(m.body).slice(0, 1000) }));
   const last = [...messages].reverse().find((m) => m.from === "customer");

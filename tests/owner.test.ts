@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { runOwnerRules } from "@/lib/agent/owner-rules";
 import type { OwnerCtx } from "@/lib/agent/owner-tools";
 import { balance, cashAt } from "@/lib/domain";
-import { applyOwnerAction } from "@/lib/ops";
+import { addExpense, applyOwnerAction } from "@/lib/ops";
 import { ownerSnapshot } from "@/lib/store";
 import type { AgentState, Conversation } from "@/lib/types";
 import { NOW, chat, ownerChat, seed } from "./helpers";
@@ -176,8 +176,9 @@ describe("money and settings wait for YES", () => {
     const d = seed();
     ownerChat(d, COLIN, ["approve the payout", "yes"]);
     ownerChat(d, AARON, ["approve the payout", "yes"]);
-    const [, posted, pay] = ownerChat(d, COLIN, ["$11203 maintenance", "yes", "pay the payout"]);
-    expect(posted.reply).toMatch(/^Done\. I added a \$11,203/);
+    // Over the SMS expense cap, so it goes in through the admin.
+    addExpense(d, "2026-10-22", "maintenance", 11203, "Gearbox");
+    const [pay] = ownerChat(d, COLIN, ["pay the payout"]);
     const cash = cashAt(d);
     expect(pay.reply).toBe("Q3 2026 (Jul–Sep) can't be paid yet. $840 of it would come out of customer money, the reserve, tax or other runner fees owed.");
     expect(pay.state.pending).toBeUndefined();
@@ -198,7 +199,7 @@ describe("money and settings wait for YES", () => {
       return r;
     };
     expect(send(COLIN, "pay the payout").reply).toMatch(/^To confirm: pay the Q3 2026/);
-    ownerChat(d, AARON, ["$11203 maintenance", "yes"]);
+    addExpense(d, "2026-10-22", "maintenance", 11203, "Gearbox");
     const cash = cashAt(d);
     expect(send(COLIN, "yes").reply).toMatch(/^I didn't do it: Q3 2026 \(Jul–Sep\) can't be paid yet/);
     expect(cashAt(d)).toBe(cash);
@@ -224,13 +225,54 @@ describe("money and settings wait for YES", () => {
     expect(r.reply).toBe("Q3 2026 (Jul–Sep) has 1 of 2 director approvals, so it can't be paid yet.");
   });
 
-  test("setting change on YES; guardrail settings are admin only", () => {
+  test("booking rule change on YES", () => {
     const d = seed();
-    ownerChat(d, COLIN, ["set the deposit to $300", "yes"]);
-    expect(d.settings.deposit).toBe(300);
-    const [r] = ownerChat(d, COLIN, ["set approvals to 1"]);
-    expect(r.reply).toMatch(/only be changed in the admin/);
-    expect(d.settings.approvalsRequired).toBe(2);
+    const [staged] = ownerChat(d, COLIN, ["set notice to 10 days", "yes"]);
+    expect(staged.reply).toMatch(/^To confirm: change "Online bookings need at least" from 7 days notice to 10 days notice/);
+    expect(d.settings.minNoticeDays).toBe(10);
+  });
+
+  // R7: one owner by SMS can't move money settings or guardrails.
+  test.each([
+    ["set the deposit to $0", "deposit", 250],
+    ["set the 4 hour price to $1", "price4", 600],
+    ["set the runner fee to $500", "runnerFee", 60],
+    ["set the tax to 0", "taxRate", 0.25],
+    ["set cancellation to 0 days", "cancelDays", 30],
+    ["set the reserve to 0 months", "reserveMonths", 3],
+    ["set fixed costs to $0", "fixedMonthly", 295],
+    ["set approvals to 1", "approvalsRequired", 2],
+    ["set the expense cap to $5000", "smsExpenseCap", 500],
+  ] as const)("%s is refused with a pointer to the admin", (text, key, was) => {
+    const d = seed();
+    const [r, after] = ownerChat(d, COLIN, [text, "yes"]);
+    expect(r.reply).toMatch(/only be changed in the admin, under Settings/);
+    expect(r.state.pending).toBeUndefined();
+    expect(after.actions).toEqual([]);
+    expect(d.settings[key]).toBe(was);
+  });
+
+  test("an out-of-range booking rule is refused", () => {
+    const d = seed();
+    const [r] = ownerChat(d, COLIN, ["set holds to 0 minutes"]);
+    expect(r.reply).toBe("Unpaid holds expire after: that needs to be between 5 and 1440.");
+    expect(r.state.pending).toBeUndefined();
+  });
+
+  test("an expense over the SMS cap is refused and points to the admin", () => {
+    const d = seed();
+    const cash = cashAt(d);
+    const [r, after] = ownerChat(d, COLIN, ["$999999 fuel", "yes"]);
+    expect(r.reply).toBe("$999,999 is over the $500 SMS limit for expenses. Add it in the admin, under Money.");
+    expect(r.state.pending).toBeUndefined();
+    expect(after.actions).toEqual([]);
+    expect(cashAt(d)).toBe(cash);
+  });
+
+  test("applying a settings action skips admin-only and out-of-range keys", () => {
+    const d = seed();
+    applyOwnerAction(d, { type: "settings", patch: { deposit: 0, holdMinutes: 0, minNoticeDays: 9 } }, COLIN);
+    expect(d.settings).toMatchObject({ deposit: 250, holdMinutes: 30, minNoticeDays: 9 });
   });
 
   test("knowledge line added on YES", () => {

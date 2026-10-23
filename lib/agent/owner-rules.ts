@@ -25,7 +25,7 @@ import {
 import { parseDate, parseSuburb } from "./rules";
 
 export const OWNER_HELP =
-  "I can: show what's on, claim a run (\"I'll take the Fremantle delivery\"), log the truck (\"log 115,900 km\"), add an expense (\"$42 CO2 refill\"), approve or pay the payout, reply to a customer (\"tell Sophie: yes, 6am works\"), block a date, change a setting (\"set the deposit to $300\") or add a line to the agent's knowledge (\"add to keg guide: ...\").";
+  "I can: show what's on, claim a run (\"I'll take the Fremantle delivery\"), log the truck (\"log 115,900 km\"), add an expense (\"$42 CO2 refill\"), approve or pay the payout, reply to a customer (\"tell Sophie: yes, 6am works\"), block a date, change a booking rule (\"set notice to 10 days\") or add a line to the agent's knowledge (\"add to keg guide: ...\").";
 
 const ACCOUNTS: [RegExp, Account][] = [
   [/\b(co2|gas bottle|gas refill)\b/, "co2"],
@@ -56,6 +56,7 @@ const SETTING_WORDS: [RegExp, keyof Settings][] = [
   [/\bbalance\b/, "balanceDaysBefore"],
   [/cancel(lation)?|full refund/, "cancelDays"],
   [/refund limit/, "refundLimit"],
+  [/expense (cap|limit)|sms limit/, "smsExpenseCap"],
   [/approvals?/, "approvalsRequired"],
   [/\btax\b/, "taxRate"],
   [/reserve/, "reserveMonths"],
@@ -140,11 +141,11 @@ export function runOwnerRules(ctx: OwnerCtx, text: string, prev: AgentState): Ag
     return r.ok ? yes(r) : out(r.reason);
   }
 
-  // Settings before expenses: "set the deposit to $300" has a dollar amount too.
+  // Settings before expenses: "set the deposit to $300" has a dollar amount too (and is refused as admin only).
   const set = t.match(/\b(?:set|change|make|raise|lower|update|put)\b(.+?)\bto\s*\$?\s*(\d+(?:\.\d+)?)/);
   if (set) {
     const key = SETTING_WORDS.find(([re]) => re.test(set[1]))?.[1];
-    if (!key) return out("Which setting? For example: \"set the deposit to $300\" or \"set notice to 10 days\".");
+    if (!key) return out("Which setting? For example: \"set notice to 10 days\" or \"set holds to 45 minutes\".");
     const r = changeSetting(ctx, { key, value: Number(set[2]) });
     return r.ok ? yes(r) : out(r.reason);
   }

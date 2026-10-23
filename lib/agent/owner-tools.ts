@@ -1,13 +1,14 @@
 // Owner agent tools. An owner texting the business line can do what the admin does, by stakes:
 // - low stakes run at once and are echoed back (claim a run, log the truck, calendar, reply to a customer, hand back);
 // - money, settings, knowledge and sending the agent's draft are staged and run only when the owner's next text is YES;
-// - refunds over the agent limit, bond captures, share transfers and the guardrail settings stay in the admin.
+// - refunds over the agent limit, expenses over the SMS cap, bond captures, share transfers, and the money and
+//   guardrail settings (ADMIN_ONLY_SETTINGS) stay in the admin.
 // Like the customer tools, these run on the server against a snapshot and return actions for the client store.
-import { ADMIN_ONLY_SETTINGS, SETTING_GROUPS } from "../config";
+import { ADMIN_ONLY_SETTINGS, SETTING_GROUPS, settingProblem } from "../config";
 import { ACCOUNT_LABEL, cancelPolicy, dayStatus, directorApprovals, payoutRefusal, payoutTotal } from "../domain";
 import type { Account, AgentAction, AgentState, Channel, Data, Distribution, Owner, PendingOwnerAction, Settings, TruckLog } from "../types";
 import { handBack as opsHandBack, owesReply, replyRoute } from "../ops";
-import { daysBetween, fmtDate, money, quarterLabel, todayISO } from "../util";
+import { daysBetween, fmtDate, isISODate, money, quarterLabel, todayISO } from "../util";
 import { parseConfirm } from "./confirm";
 
 export interface OwnerInboxItem {
@@ -140,6 +141,7 @@ export function logTruck(ctx: OwnerCtx, q: { type: TruckLog["type"]; odometer?: 
 export function calendar(ctx: OwnerCtx, q: { action: "block" | "unblock" | "own_use"; date: string; note?: string }) {
   ctx.used.push("calendar");
   const st = dayStatus(d(ctx), q.date, ctx.now);
+  if (st === "invalid") return { ok: false as const, reason: "That isn't a real date." };
   const label = fmtDate(q.date, { dow: true, year: true });
   if (st === "past") return { ok: false as const, reason: `${label} has passed.` };
   if (q.action === "unblock") {
@@ -243,8 +245,11 @@ export function addExpense(ctx: OwnerCtx, q: { account: Account; amount: number;
   ctx.used.push("add_expense");
   if (!EXPENSE_ACCOUNTS.includes(q.account)) return { ok: false as const, reason: `Expenses go to one of: ${EXPENSE_ACCOUNTS.join(", ")}.` };
   if (!(q.amount > 0)) return { ok: false as const, reason: "The amount needs to be more than $0." };
-  const date = q.date && q.date <= today(ctx) ? q.date : today(ctx);
   const amount = Math.round(q.amount * 100) / 100;
+  // Fails closed: a snapshot without a cap allows nothing.
+  const cap = ctx.data.settings.smsExpenseCap ?? 0;
+  if (amount > cap) return { ok: false as const, reason: `${money(amount, amount % 1 !== 0)} is over the ${money(cap)} SMS limit for expenses. Add it in the admin, under Money.` };
+  const date = isISODate(q.date) && q.date <= today(ctx) ? q.date : today(ctx);
   const memo = `${q.memo.trim() || q.account} (${ctx.owner.name}, by SMS)`;
   const summary = `add a ${money(amount, amount % 1 !== 0)} ${ACCOUNT_LABEL[q.account]} expense dated ${fmtDate(date)}: "${q.memo.trim() || q.account}"`;
   if (!commit) return stage(ctx, "add_expense", { ...q, amount, date }, summary);
@@ -302,10 +307,12 @@ export const SMS_SETTINGS = SETTING_GROUPS.flatMap((g) => g.fields).filter((f) =
 
 export function changeSetting(ctx: OwnerCtx, q: { key: string; value: number }, commit = false) {
   ctx.used.push("change_setting");
-  if (ADMIN_ONLY_SETTINGS.includes(q.key as keyof Settings)) return { ok: false as const, reason: "That one can only be changed in the admin." };
+  const canSms = `By SMS I can change: ${SMS_SETTINGS.map((x) => x.label.toLowerCase()).join("; ")}.`;
+  if (ADMIN_ONLY_SETTINGS.includes(q.key as keyof Settings)) return { ok: false as const, reason: `That one can only be changed in the admin, under Settings. ${canSms}` };
   const f = SMS_SETTINGS.find((x) => x.k === q.key);
-  if (!f) return { ok: false as const, reason: `I can change: ${SMS_SETTINGS.map((x) => x.label.toLowerCase()).join("; ")}.` };
-  if (!Number.isFinite(q.value) || q.value < 0) return { ok: false as const, reason: "That needs to be a number of 0 or more." };
+  if (!f) return { ok: false as const, reason: canSms };
+  const bad = settingProblem(f.k, q.value);
+  if (bad) return { ok: false as const, reason: `${f.label}: ${bad[0].toLowerCase()}${bad.slice(1)}` };
   const fmt = (v: number) => (f.unit === "$" ? money(v) : `${v}${f.unit ? ` ${f.unit}` : ""}`);
   const was = ctx.data.settings[f.k];
   if (was === q.value) return { ok: false as const, reason: `${f.label} is already ${fmt(was)}.` };

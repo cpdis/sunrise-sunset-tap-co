@@ -3,9 +3,10 @@ import {
   BALANCE_RETRIES, balance, balanceStuck, cancelBooking, cashAt, completeBooking, computeDistribution, createHold,
   dayStatus, heldFor, nextFreeDates, payDeposit, payDistribution, periodTotals, runJobs, truckBookValue,
 } from "@/lib/domain";
-import { addExpense, approveDistribution, payOut, returnedClean } from "@/lib/ops";
+import { DEFAULT_SETTINGS, fitStart, settingProblem, startProblem } from "@/lib/config";
+import { addExpense, approveDistribution, payOut, returnedClean, updateSettings } from "@/lib/ops";
 import { buildSeed } from "@/lib/seed";
-import type { Data, Distribution } from "@/lib/types";
+import type { Data, Distribution, Settings } from "@/lib/types";
 import { addDays, todayISO } from "@/lib/util";
 import { NOW, seed } from "./helpers";
 
@@ -36,6 +37,59 @@ describe("booking rules", () => {
   });
 });
 
+describe("input validation", () => {
+  test.each(["2026-11-21 ", "2026-12-32", "2026-02-30", "21/11/2026", ""])("dayStatus refuses %j", (date) => {
+    const d = seed();
+    expect(dayStatus(d, date, NOW)).toBe("invalid");
+    expect(() => hold(d, date)).toThrow(/can't be booked/);
+  });
+
+  test("a second hold on the same date is refused", () => {
+    const d = seed();
+    const date = freeDate(d, 60);
+    hold(d, date);
+    expect(dayStatus(d, date, NOW)).toBe("held");
+    expect(() => hold(d, date)).toThrow(/can't be booked \(held\)/);
+    expect(d.bookings.filter((b) => b.date === date && b.state !== "cancelled")).toHaveLength(1);
+  });
+
+  test("createHold refuses a booked date and a start that ends after closing", () => {
+    const d = seed();
+    const booked = d.bookings.find((b) => b.kind === "paid" && b.state === "confirmed" && b.date > TODAY)!;
+    expect(() => hold(d, booked.date)).toThrow(/can't be booked \(booked\)/);
+    const date = freeDate(d, 60);
+    const at = (startTime: string) => () => createHold(d, { date, block: 4, startTime, suburb: "Subiaco", name: "T", phone: "0400 000 000", via: "web" }, NOW);
+    expect(at("19:45")).toThrow(/must start by 7pm to finish by 11pm/);
+    expect(at("14:99")).toThrow(/HH:MM/);
+    expect(at("19:00")()).toMatchObject({ startTime: "19:00" });
+  });
+});
+
+describe("start times", () => {
+  test("startProblem and fitStart work in minutes, not just hours", () => {
+    expect(startProblem(4, "19:45")).toMatch(/must start by 7pm/);
+    expect(startProblem(4, "14:99")).toMatch(/HH:MM/);
+    expect(startProblem(8, "05:30")).toMatch(/6am at the earliest/);
+    expect(startProblem(4, "19:00")).toBeUndefined();
+    expect(fitStart(4, "19:45")).toBe("19:00");
+    expect(fitStart(8, "05:30")).toBe("06:00");
+    expect(fitStart(4, "14:99")).toBe("14:00");
+  });
+});
+
+describe("setting ranges", () => {
+  test("updateSettings stores only in-range values", () => {
+    const d = seed();
+    const dropped = updateSettings(d, { deposit: -5, taxRate: 2, holdMinutes: 12.5, minNoticeDays: 10 });
+    expect(dropped.sort()).toEqual(["deposit", "holdMinutes", "taxRate"]);
+    expect(d.settings).toMatchObject({ deposit: 250, taxRate: 0.25, holdMinutes: 30, minNoticeDays: 10 });
+  });
+
+  test("every default sits inside its range", () => {
+    for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) expect(settingProblem(k as keyof Settings, v), k).toBeUndefined();
+  });
+});
+
 describe("deferred revenue", () => {
   test("customer money is a liability until the hire completes", () => {
     const d = seed();
@@ -51,7 +105,7 @@ describe("deferred revenue", () => {
 
   test("cancel more than 30 days out refunds everything, recognises nothing", () => {
     const d = seed();
-    const b = hold(d, addDays(TODAY, d.settings.cancelDays + 1));
+    const b = hold(d, freeDate(d, d.settings.cancelDays));
     payDeposit(d, b.id, "Visa •• 4242", NOW);
     const rev0 = balance(d, "revenue");
     const pol = cancelBooking(d, b.id, NOW)!;

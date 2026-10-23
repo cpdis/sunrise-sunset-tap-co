@@ -1,5 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { chat, seed } from "./helpers";
+import { POST } from "@/app/api/agent/route";
+import { checkAvailability, holdAndLink, type ToolCtx } from "@/lib/agent/tools";
+import { snapshot } from "@/lib/store";
+import { NOW, chat, seed } from "./helpers";
 
 const ME = "0499 000 111";
 const types = (r: { actions: { type: string }[] }) => r.actions.map((a) => a.type);
@@ -113,5 +116,63 @@ describe("hand-over mode", () => {
     const rs = chat(seed(), ME, ["Do you supply staff?", "Is the second Saturday in December free?", "Cottesloe, 8 hours", "Sam", "yes"], { handover: true });
     expect(rs[0].reply).toMatch(/No staff stay/);
     expect(rs.flatMap(types)).not.toContain("hold");
+  });
+});
+
+describe("malformed dates and times", () => {
+  const ctxFor = (d: ReturnType<typeof seed>): ToolCtx => ({ data: snapshot(d, ME), contact: ME, channel: "sms", now: NOW, actions: [], used: [], origin: "https://x.test" });
+
+  // Review A06: "2026-11-21 " read as free on a booked date and returned a hold.
+  test.each(["2026-11-21 ", "2026-12-32"])("hold_and_send_deposit_link refuses %j", (date) => {
+    const d = seed();
+    const ctx = ctxFor(d);
+    expect(holdAndLink(ctx, date, 8, "Subiaco", "Sam", "12:00")).toEqual({ ok: false, reason: "That isn't a real date." });
+    expect(checkAvailability(ctx, date)).toMatchObject({ free: false, status: "invalid" });
+    expect(ctx.actions).toEqual([]);
+  });
+
+  test.each([
+    ["19:45", 4, "4 hours must start by 7pm to finish by 11pm."],
+    ["14:99", 4, "A start time needs to be HH:MM on a 24-hour clock."],
+  ] as const)("start %s for %i hours is refused", (start, block, reason) => {
+    const d = seed();
+    const ctx = ctxFor(d);
+    const date = checkAvailability(ctx, "2026-12-12").free ? "2026-12-12" : checkAvailability(ctx, "2026-12-12").alternatives[0];
+    expect(holdAndLink(ctx, date, block, "Subiaco", "Sam", start)).toEqual({ ok: false, reason });
+    expect(ctx.actions).toEqual([]);
+  });
+
+  test("the rules engine still fits a late start to the latest one", () => {
+    const rs = chat(seed(), ME, ["Is the second Saturday in December free? 7:45pm start in Kings Park", "4 hours", "Sam", "yes"]);
+    const hold = rs.at(-1)!.actions.find((a) => a.type === "hold");
+    expect(hold).toMatchObject({ startTime: "19:00" });
+  });
+});
+
+describe("/api/agent body checks", () => {
+  const post = (body: string, ip: string) =>
+    POST(new Request("http://localhost:3000/api/agent", { method: "POST", headers: { origin: "http://localhost:3000", host: "localhost:3000", "x-forwarded-for": ip }, body }));
+
+  test.each([
+    ["malformed JSON", "{not json"],
+    ["no conversation", JSON.stringify({ snapshot: snapshot(seed(), ME) })],
+    ["no messages", JSON.stringify({ snapshot: snapshot(seed(), ME), conversation: { channel: "sms", contact: "1" } })],
+    ["a non-object body", "[1,2]"],
+  ])("%s returns 400", async (_, body) => {
+    expect((await post(body, `10.0.0.${body.length % 250}`)).status).toBe(400);
+  });
+
+  test("the size cap counts bytes, not characters", async () => {
+    // 70,000 emoji: about 140,000 UTF-16 characters but 280,000 bytes, over the 256,000-byte cap.
+    const body = JSON.stringify({ pad: "🍺".repeat(70_000) });
+    expect(body.length).toBeLessThan(256_000);
+    expect((await post(body, "10.0.1.1")).status).toBe(413);
+  });
+
+  test("a well-formed message still gets a reply", async () => {
+    const conversation = { channel: "sms", contact: ME, name: "New contact", state: {}, agentActive: true, messages: [{ id: "m1", from: "customer", body: "Do you supply staff?", at: NOW.toISOString() }] };
+    const r = await post(JSON.stringify({ snapshot: snapshot(seed(), ME), conversation }), "10.0.1.2");
+    expect(r.status).toBe(200);
+    expect((await r.json()).reply).toMatch(/No staff stay/);
   });
 });

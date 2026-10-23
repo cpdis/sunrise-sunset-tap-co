@@ -1,5 +1,5 @@
 // Business rules. Every function takes a mutable draft of Data (the store clones first).
-import { findSuburb } from "./config";
+import { defaultStart, findSuburb, startProblem } from "./config";
 import type {
   Account,
   Block,
@@ -16,6 +16,7 @@ import {
   addDays,
   addMonths,
   daysBetween,
+  isISODate,
   money,
   quarterLabel,
   quarterOf,
@@ -56,9 +57,11 @@ export function liveBookings(d: Data, now = new Date()) {
   );
 }
 
-export type DayStatus = "free" | "booked" | "held" | "personal" | "blackout" | "past" | "too_far" | "short_notice";
+export type DayStatus = "free" | "booked" | "held" | "personal" | "blackout" | "past" | "too_far" | "short_notice" | "invalid";
 
 export function dayStatus(d: Data, date: string, now = new Date()): DayStatus {
+  // Every check below compares date strings, so anything but a real YYYY-MM-DD is refused first.
+  if (!isISODate(date)) return "invalid";
   const today = todayISO(now);
   if (date <= today) return "past";
   if (date > addMonths(today, d.settings.bookAheadMonths)) return "too_far";
@@ -174,7 +177,13 @@ export function upsertCustomer(d: Data, name: string, email?: string, phone?: st
   return c;
 }
 
+// Refuses a date that isn't bookable at `now` (R12: one live paid booking or hold per date) and a start time that
+// doesn't fit the block, whichever surface asked. Callers check first; this is the last word.
 export function createHold(d: Data, n: NewBooking, now = new Date()): Booking {
+  if (!isBookable(d, n.date, now)) throw new Error(`${n.date} can't be booked (${dayStatus(d, n.date, now)})`);
+  const startTime = n.startTime ?? defaultStart(n.block);
+  const late = startProblem(n.block, startTime);
+  if (late) throw new Error(`Start ${startTime}: ${late}`);
   const q = quote(d.settings, n.block, n.suburb);
   const c = upsertCustomer(d, n.name, n.email, n.phone);
   // A paid booking bumps a personal-use booking on the same day.
@@ -190,7 +199,7 @@ export function createHold(d: Data, n: NewBooking, now = new Date()): Booking {
     customerId: c.id,
     date: n.date,
     block: n.block,
-    startTime: n.startTime ?? (n.block === 4 ? "14:00" : "12:00"),
+    startTime,
     suburb: n.suburb,
     travelMinutes: q.minutes,
     km: q.km,

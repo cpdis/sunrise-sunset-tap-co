@@ -170,12 +170,17 @@ export const useApp = create<AppState>()(
         set({ data: d });
       },
 
+      // "" when createHold refuses (the date was taken since the page checked it).
       book: (n) => {
         let id = "";
         get().mutate((d) => {
-          const b = createHold(d, n);
-          id = b.id;
-          log(d, `New hold ${b.ref} via ${n.via} (${n.name})`);
+          try {
+            const b = createHold(d, n);
+            id = b.id;
+            log(d, `New hold ${b.ref} via ${n.via} (${n.name})`);
+          } catch (err) {
+            log(d, `Hold refused for ${n.date} via ${n.via}: ${(err as Error).message}`);
+          }
         });
         return id;
       },
@@ -247,18 +252,27 @@ export const useApp = create<AppState>()(
           for (const a of result.actions) {
             if (a.type === "hold") {
               const isEmail = a.contact.includes("@");
-              const b = createHold(d, {
-                id: a.bookingId,
-                ref: a.ref,
-                date: a.date,
-                block: a.block,
-                startTime: a.startTime,
-                suburb: a.suburb,
-                name: a.name,
-                phone: isEmail ? undefined : a.contact,
-                email: isEmail ? a.contact : undefined,
-                via: a.channel,
-              });
+              let b;
+              try {
+                b = createHold(d, {
+                  id: a.bookingId,
+                  ref: a.ref,
+                  date: a.date,
+                  block: a.block,
+                  startTime: a.startTime,
+                  suburb: a.suburb,
+                  name: a.name,
+                  phone: isEmail ? undefined : a.contact,
+                  email: isEmail ? a.contact : undefined,
+                  via: a.channel,
+                });
+              } catch (err) {
+                // The date went between the agent's check and now. The link it sent won't open, so the owners take it.
+                c.escalated = `Hold ${a.ref} for ${a.name} refused: ${(err as Error).message}`;
+                c.messages.push({ id: uid("m"), from: "system", body: `Hold refused: ${(err as Error).message}`, at: new Date().toISOString() });
+                log(d, `Agent hold ${a.ref} refused: ${(err as Error).message}`);
+                continue;
+              }
               d.seq = Math.max(d.seq, Number(a.ref.replace("SST-", "")));
               c.customerId = b.customerId;
               if (c.name.startsWith("Caller") || c.name === "New contact") c.name = a.name;

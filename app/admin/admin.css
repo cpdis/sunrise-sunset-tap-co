@@ -166,6 +166,8 @@
 .admin select.input { padding-right: 32px; background-position: right 12px center; background-size: 10px 7px; }
 .admin textarea.input { min-height: 120px; line-height: 1.55; }
 .admin .input:focus-visible { outline: 0; border-color: var(--azure); box-shadow: 0 0 0 3px color-mix(in srgb, var(--azure) 18%, transparent); }
+.admin .input[aria-invalid="true"] { border-color: var(--bad); }
+.admin .field-error { font-size: 13px; line-height: 1.4; color: var(--bad); }
 .admin .block-head .input { min-height: 32px; padding-top: 4px; padding-bottom: 4px; font-size: 13px; }
 .admin .check input { accent-color: var(--azure); }
 

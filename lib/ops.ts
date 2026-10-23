@@ -1,5 +1,6 @@
 // Owner operations on a mutable draft of Data. The admin buttons and the owner SMS agent both call these,
 // so an action means the same thing whichever way an owner takes it.
+import { ADMIN_ONLY_SETTINGS, settingProblem } from "./config";
 import { ACCOUNT_LABEL, pay, payDistribution, post } from "./domain";
 import type { Account, AgentAction, Conversation, Data, KbPage, Settings, TruckLog } from "./types";
 import { money, todayISO, uid } from "./util";
@@ -54,8 +55,16 @@ export function returnedClean(d: Data, bookingId: string, ownerId: string, now =
   log(d, `${ownerName(d, ownerId)} checked ${b.ref} back clean; released the ${money(b.bond)} bond`);
 }
 
-export function updateSettings(d: Data, s: Partial<Settings>) {
-  d.settings = { ...d.settings, ...s };
+// Applies only the keys in range (SETTING_RANGES) and returns the ones it dropped, so no surface stores a bad value.
+export function updateSettings(d: Data, s: Partial<Settings>): (keyof Settings)[] {
+  const ok: Partial<Settings> = {};
+  const dropped: (keyof Settings)[] = [];
+  for (const [k, v] of Object.entries(s) as [keyof Settings, number][]) {
+    if (settingProblem(k, v)) dropped.push(k);
+    else ok[k] = v;
+  }
+  d.settings = { ...d.settings, ...ok };
+  return dropped;
 }
 
 export function saveKb(d: Data, page: KbPage) {
@@ -167,6 +176,8 @@ export function applyOwnerAction(d: Data, a: AgentAction, ownerId: string) {
       log(d, `${who} logged ${a.log.type} by SMS${a.log.odometer ? ` at ${a.log.odometer.toLocaleString()} km` : ""}`);
       break;
     case "expense":
+      // The owner tool refuses these too; this keeps the cap whatever produced the action.
+      if (a.amount > (d.settings.smsExpenseCap ?? 0)) break;
       addExpense(d, a.date, a.account, a.amount, a.memo);
       log(d, `${who} added a $${a.amount} ${ACCOUNT_LABEL[a.account]} expense by SMS`);
       break;
@@ -177,10 +188,14 @@ export function applyOwnerAction(d: Data, a: AgentAction, ownerId: string) {
     case "pay_payout":
       payOut(d, a.distId, ownerId);
       break;
-    case "settings":
-      updateSettings(d, a.patch);
-      log(d, `${who} changed ${Object.keys(a.patch).join(", ")} by SMS`);
+    case "settings": {
+      // Admin-only settings never change by SMS (R7), whatever produced the action.
+      const patch = Object.fromEntries(Object.entries(a.patch).filter(([k]) => !ADMIN_ONLY_SETTINGS.includes(k as keyof Settings)));
+      const dropped = updateSettings(d, patch);
+      const changed = Object.keys(patch).filter((k) => !dropped.includes(k as keyof Settings));
+      if (changed.length) log(d, `${who} changed ${changed.join(", ")} by SMS`);
       break;
+    }
     case "kb_append": {
       const p = d.kb.find((x) => x.slug === a.slug);
       if (p) saveKb(d, { ...p, body: `${p.body.trimEnd()}\n- ${a.line}` });

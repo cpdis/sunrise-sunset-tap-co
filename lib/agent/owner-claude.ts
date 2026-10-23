@@ -1,7 +1,7 @@
 // Owner agent on Claude. Same tools and the same YES rule as the rules engine (owner-rules.ts): staged tools only
 // stage, and resolvePending runs them before the model sees the owner's next text.
 import type Anthropic from "@anthropic-ai/sdk";
-import { BUSINESS } from "../config";
+import { ADMIN_ONLY_SETTINGS, BUSINESS, SETTING_GROUPS } from "../config";
 import type { AgentResult, AgentState, Msg, TruckLog } from "../types";
 import { fmtDate, todayISO } from "../util";
 import { type Tool, obj, toMessages, toolLoop } from "./claude";
@@ -25,6 +25,9 @@ import {
   resolvePending,
   whatsOn,
 } from "./owner-tools";
+
+const ALL_SETTINGS = SETTING_GROUPS.flatMap((g) => g.fields);
+const ADMIN_ONLY_LABELS = ALL_SETTINGS.filter((f) => ADMIN_ONLY_SETTINGS.includes(f.k)).map((f) => f.label.toLowerCase()).join(", ");
 
 const STAGED = "Doesn't run yet: it returns a summary, and the change runs only if the owner's next text is YES. Tell the owner the summary and ask them to reply YES.";
 const date = { type: "string", description: "YYYY-MM-DD" };
@@ -96,8 +99,9 @@ const TOOLS: Tool[] = [
   },
   {
     name: "change_setting",
-    description: `Change a business setting. Keys: ${SMS_SETTINGS.map((f) => `${f.k} (${f.label}${f.unit ? `, ${f.unit}` : ""})`).join("; ")}. ${STAGED}`,
-    input_schema: obj({ key: { type: "string", enum: SMS_SETTINGS.map((f) => f.k) }, value: { type: "number" } }, ["key", "value"]),
+    // Every key is listed so an admin-only one reaches the tool and gets its refusal, not a guess from the model.
+    description: `Change a business setting. By SMS: ${SMS_SETTINGS.map((f) => `${f.k} (${f.label}${f.unit ? `, ${f.unit}` : ""})`).join("; ")}. The tool refuses admin-only keys (${ADMIN_ONLY_SETTINGS.join(", ")}) and out-of-range values. ${STAGED}`,
+    input_schema: obj({ key: { type: "string", enum: ALL_SETTINGS.map((f) => f.k) }, value: { type: "number" } }, ["key", "value"]),
     strict: true,
   },
   {
@@ -154,7 +158,7 @@ Rules:
 - Use tools for every fact and every change. Never invent bookings, numbers or results.
 - Tools that "run at once" are done when they return ok; say what was done.
 - Staged tools (expenses, payouts, cancellations, settings, knowledge, sending a draft) never run straight away. Stage one change per reply. Give the owner the returned summary and ask them to reply YES. Never say it's done.
-- If a tool says something must be done in the admin, say so. Refunds over the limit, bond captures, share transfers, the approvals setting and the refund limit are admin only.
+- If a tool says something must be done in the admin, say so. Refunds over the limit, expenses over the SMS limit, bond captures, share transfers and these settings are admin only: ${ADMIN_ONLY_LABELS}.
 - When you reply to a customer, send only what the owner asked you to send.
 - If a customer tool returns a numbered list of conversations, send that list as it is and stop. Don't pick one yourself.
 - Knowledge base pages: ${ctx.data.kb.map((p) => `${p.slug} (${p.title})`).join(", ")}.`;
