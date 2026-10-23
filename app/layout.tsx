@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   title: "Sunrise Sunset Tap Co. · 8-tap beer truck hire, Perth",
   description: "Hire a tiny vintage tap truck for your wedding, party or event. Eight cold taps, delivered and collected anywhere in the Perth metro area.",
   metadataBase: new URL(process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000"),
-  openGraph: { type: "website", locale: "en_AU", siteName: "Sunrise Sunset Tap Co.", images: [{ url: "/og.jpg", width: 1200, height: 630, alt: "Lithograph of friends at the rear taps of the tap truck on a hilltop at dawn" }] },
+  openGraph: { type: "website", locale: "en_AU", siteName: "Sunrise Sunset Tap Co.", images: [{ url: "/og.jpg", width: 1200, height: 630, alt: "Sunrise Sunset Tap Co. roundel and wordmark beside a lithograph of friends at the rear taps of the tap truck on a hilltop at dawn" }] },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
