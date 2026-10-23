@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Loading, Section, useData } from "@/components/ui";
-import { snapshot, useApp } from "@/lib/store";
+import { snapshot } from "@/lib/snapshot";
+import { useApp } from "@/lib/store";
 import type { AgentResult, AgentState, Msg } from "@/lib/types";
 import { cls, uid } from "@/lib/util";
 

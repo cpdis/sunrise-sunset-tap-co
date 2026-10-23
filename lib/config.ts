@@ -74,6 +74,9 @@ export const SETTING_GROUPS: { title: string; fields: { k: keyof Settings; label
 // agent's refund limit and then act alone.
 export const ADMIN_ONLY_SETTINGS: (keyof Settings)[] = ["approvalsRequired", "refundLimit"];
 
+// GST registration is required once annual turnover reaches this.
+export const GST_THRESHOLD = 75000;
+
 // Approximate one-way drive time from the Perth CBD at weekend traffic.
 // Anything not listed is assumed to be outside the service area.
 export const SUBURBS: { name: string; minutes: number; km: number }[] = [

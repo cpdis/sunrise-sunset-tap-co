@@ -5,7 +5,7 @@ import { cancelBooking } from "@/lib/domain";
 import { applyOwnerAction } from "@/lib/ops";
 import type { ToolCtx } from "@/lib/agent/tools";
 import { buildSeed } from "@/lib/seed";
-import { ownerSnapshot, snapshot } from "@/lib/store";
+import { ownerSnapshot, snapshot } from "@/lib/snapshot";
 import type { AgentState, Data } from "@/lib/types";
 
 export const NOW = new Date("2026-10-22T12:00:00+08:00");
