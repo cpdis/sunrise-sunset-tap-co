@@ -5,24 +5,44 @@ Colin's general rules load from his global setup on his machines and from the pr
 ## What this is
 - A proof of concept for a co-owned, dry-hire tap truck in Perth. Nothing is bought or set up yet.
 - Everything external is simulated: payments, SMS, email, bank. Do not add real accounts, keys, or webhooks.
-- The demo runs from one browser. Data lives in `localStorage`, seeded by `lib/seed.ts` (deterministic).
+- Data lives on the server, in Postgres. Locally and in tests it is PGlite (Postgres in WASM): `.data/pglite` for `npm run dev` (gitignored; delete it to reseed), in memory for tests. `DATABASE_URL` switches to hosted Postgres. The demo business is seeded once from `lib/seed.ts` (deterministic).
+- Every record carries a business id (`tenant_id`), and every repo read and write filters on it (R16). Only the demo business (`DEMO_TENANT`) is seeded. Do not seed a second one.
+- The browser holds no source of truth. Pages read `/api/state` and change data only through named commands on `/api/commands`.
 - Colin deploys Vercel himself. Do not deploy, and do not change Vercel or DNS settings.
 
 ## Commands
 - Install: `npm ci`.
-- Run: `npm run dev` (http://localhost:3000).
+- Run: `npm run dev` (http://localhost:3000). No env vars needed.
 - Verify: `npm run typecheck && npm test && npm run build`. Run it before every push.
+- Injection eval: `npm run eval:injection` runs the review payloads on the live model. It needs `ANTHROPIC_API_KEY` and skips without one.
+- Schema change: edit `lib/server/db/schema.ts`, then `npm run db:generate` writes the migration to `drizzle/`. Commit both. PGlite applies migrations on open; hosted Postgres needs `npm run db:migrate` with `DATABASE_URL` (Colin runs it at deploy).
+
+## Env vars
+- Outside production every one is optional: each secret has a dev default named `dev-only-...`, which throws in production.
+- Production requires `DATABASE_URL`, `SESSION_SECRET`, `PUBLIC_BASE_URL`, `TWILIO_AUTH_TOKEN`, `EMAIL_WEBHOOK_SECRET` and `CRON_SECRET`.
+- `DEMO_MODE` (`1`, `true` or `on`): in production, turns on the public `/outbox` with its simulated sign-in links, `/api/dev/simulate`, the widget's read of its own chat, and the demo-only commands (`reset`, `runJobs`) (KTD12). Off, they return 404. Outside production they are always on. Sign-in emails are simulated, so with it off nobody can sign in.
+- `ANTHROPIC_API_KEY`: optional anywhere. Without it the rules engine answers.
+- Never set or commit a real value for any of these.
 
 ## Where things live
 - Business rules and prices: `lib/config.ts` (`DEFAULT_SETTINGS`). The site, checkout, and agent read them from there. Never hard-code a price, fee, or notice period in a page or in agent copy.
-- Domain logic and scheduled jobs: `lib/domain.ts` (`runJobs`, ledger `post` and `pay`).
-- Agent: `app/api/agent`, tools in `lib/agent/tools.ts`, Claude path in `lib/agent/claude.ts`, no-key fallback in `lib/agent/rules.ts`. Keep both paths in step when a tool changes.
-- Owner agent: a text from an owner's phone gets it. Tools in `lib/agent/owner-tools.ts`, Claude path `lib/agent/owner-claude.ts`, fallback `lib/agent/owner-rules.ts`. The changes themselves live in `lib/ops.ts`, which the admin buttons call too. Money, settings and knowledge edits are staged and need a YES.
+- Domain logic and scheduled jobs: `lib/domain.ts` (`runJobs`, ledger `post` and `pay`) and `lib/ops.ts` (`runScheduled`, owner changes). Both are pure functions on the data.
+- Storage: `lib/server/db/` (`schema.ts`, `client.ts`, `repo.ts`). `repo.mutate` loads the business's document, runs a synchronous domain function, and saves by compare-and-swap. Never call the model or the network inside it.
+- Commands and roles: `lib/server/commands.ts` (public, customer link token, owner, director). Every command takes an idempotency key.
+- Sessions: `lib/server/auth.ts`. Simulated magic link (`/api/session`), signed, tenant-bound, httpOnly cookie. The business and owner come from the session, never from a request body.
+- What each caller sees: `lib/views.ts` (`stateFor`), served by `/api/state`.
+- Inbound messages: `/api/inbound/sms` and `/api/inbound/email`, signed with Twilio's HMAC scheme (`lib/server/signature.ts`, `lib/server/inbound.ts`). The business comes from the signed `To`. The SMS widget and inbox simulator post to `/api/dev/simulate`, which signs on the server.
+- Limits: `lib/server/limits.ts` (per sender, per business, daily model token budget).
+- Agent: the turn runs on the server (`lib/server/agent.ts`). Tools in `lib/agent/tools.ts`, Claude path in `lib/agent/claude.ts`, no-key fallback in `lib/agent/rules.ts`. Keep both paths in step when a tool changes. Customer text reaches a model only inside the untrusted marker (`lib/agent/untrusted.ts`). Owners test draft knowledge at `/api/agent/preview`.
+- Owner agent: a text from an owner's phone gets it. Tools in `lib/agent/owner-tools.ts`, Claude path `lib/agent/owner-claude.ts`, fallback `lib/agent/owner-rules.ts`. The changes themselves live in `lib/ops.ts`, which the admin buttons call too. Every change is staged in the approvals table (`lib/server/approvals.ts`) and runs only on YES with its nonce; money, settings, knowledge and drafts also need the 6-digit code from that owner's admin.
+- Scheduled jobs: `GET /api/jobs` (`lib/server/jobs.ts`), bearer `CRON_SECRET`, daily cron in `vercel.json`. The browser runs no jobs.
+- Outbox: `lib/server/outbox.ts`. Everything the business would send is a row in the `outbox` table, written in the same transaction as its change. Owners read it at `/admin/outbox`.
 - Design tokens: `app/globals.css`. The source design language is `/mnt/project-files/design-language/tokens.css` in the project folder (Golden Hour). Use the tokens. Do not add new colours or fonts without asking.
 
 ## Rules for changes
 - A change to money logic (deposits, bonds, refunds, payouts, GST) needs proof: show the before and after numbers from the seeded data, and check them by hand or with a script.
 - A change to agent behaviour needs proof: run the affected conversation in the SMS simulator 3 times and report the pass count.
+- A new query or route takes the business id and filters on it. Add a case to `tests/server/tenancy.test.ts`.
 - UI changes need screenshots at 375, 768, and 1440 px.
 - The agent never promises a text it does not send, and never books or cancels after an owner takes over.
 - Customer copy is Australian English.

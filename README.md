@@ -6,20 +6,41 @@ the money from deposit to quarterly dividend.
 
 Everything external is simulated. No accounts, keys or payments are needed to run it.
 
+## Install and run
+
 ```bash
-npm install
-npm run dev        # http://localhost:3000
-npm test           # domain rules and agent routing (vitest)
+npm ci
+npm run dev             # http://localhost:3000
+npm test                # domain, agent, server and tenancy tests (vitest, in-memory PGlite)
+npm run typecheck && npm test && npm run build   # the full check before a push
 npm run eval:injection  # review injection payloads against the live model (needs ANTHROPIC_API_KEY)
 ```
 
+Data lives on the server. Locally that is PGlite (Postgres compiled to WASM) in `.data/pglite`, created and seeded
+with one simulated year on first start, and shared by every browser that opens the dev server. Set `DATABASE_URL` to
+use hosted Postgres instead. No env var is needed locally: each secret has a `dev-only-...` default that throws in
+production.
+
 Optional: set `ANTHROPIC_API_KEY` and the agent switches from the built-in rules engine to Claude, using the same tools.
 Messages reach the agent only through signed webhooks, `/api/inbound/sms` and `/api/inbound/email` (Twilio's
-HMAC scheme over `PUBLIC_BASE_URL` plus the route path). Production needs `PUBLIC_BASE_URL`, `TWILIO_AUTH_TOKEN` and
-`EMAIL_WEBHOOK_SECRET`; outside production clearly named dev defaults apply. The SMS widget and the inbox simulator
-post to `/api/dev/simulate`, which signs on the server and works outside production or with `DEMO_MODE` on. Limits
+HMAC scheme over `PUBLIC_BASE_URL` plus the route path). The SMS widget and the inbox simulator post to
+`/api/dev/simulate`, which signs on the server and works outside production or with `DEMO_MODE` on. Limits
 live in Postgres: 20 messages a minute per sender, 120 per business, and a daily model token budget, past which the
 rules engine answers and the owners get one alert in the outbox (`lib/server/limits.ts`).
+
+## Debug
+
+- Start from a fresh seed: stop the dev server, delete `.data/pglite`, start it again. In the app, Settings has
+  "Reset demo data", which does the same for the running database.
+- Sign in: on `/login`, pick an owner, then open the sign-in link in `/outbox`.
+- Every SMS and email the business would send is in `/admin/outbox`. Run the daily jobs with "Run daily jobs now" in
+  Settings, or `curl -H "Authorization: Bearer dev-only-cron-secret" http://localhost:3000/api/jobs`.
+- Send a signed inbound text by hand: sign the form fields with the dev secret `dev-only-twilio-auth-token` (see
+  `inboundReq` in `tests/helpers.ts`), or use the SMS widget on `/`.
+- "Data version" errors: the stored document is older than `DATA_VERSION` in `lib/seed.ts`. Locally the demo
+  reseeds itself; in production it refuses, so the document needs a migration first.
+- A schema change: edit `lib/server/db/schema.ts`, run `npm run db:generate`, commit the new file in `drizzle/`.
+  PGlite applies it on the next start.
 
 ## What to try
 
@@ -39,8 +60,10 @@ rules engine answers and the owners get one alert in the outbox (`lib/server/lim
 
 ## How it works
 
-- **Data**: one simulated year of trading is generated on first load (`lib/seed.ts`, deterministic) and kept in
-  `localStorage`. Every browser has its own copy. Scheduled jobs (`runScheduled` in `lib/ops.ts`) run on the server
+- **Data**: one simulated year of trading is generated on the server's first start (`lib/seed.ts`, deterministic) and
+  kept in Postgres as one versioned document per business, saved by compare-and-swap (`lib/server/db/repo.ts`). Every
+  row carries its business id, and every read and write filters on it. Pages read `/api/state`, which sends each
+  caller only its view, and change data only through named commands on `/api/commands`. Scheduled jobs (`runScheduled` in `lib/ops.ts`) run on the server
   once a day from `/api/jobs` (see "Scheduled jobs" below), never in the browser: release expired unpaid holds (an
   expired hold frees its date at once; the job only tidies it up), charge balances 14 days out (a declined card retries
   daily for 3 days, then flags an owner; still unpaid 7 days out releases the date and keeps the deposit), place bond
@@ -83,11 +106,24 @@ rules engine answers and the owners get one alert in the outbox (`lib/server/lim
   email they would be) and the model budget alert. Owners read it at `/admin/outbox` (mail to another owner, such as
   their sign-in link, is left out). The public `/outbox` page exists only in demo mode, for sign-in links.
 
+## Deploy checklist (Colin)
+
+1. Database: add Neon Postgres from the Vercel Marketplace to the project. It sets `DATABASE_URL`.
+2. Migrations: `DATABASE_URL=<from vercel env pull> npm run db:migrate` (`drizzle-kit migrate`). Run it again before
+   each deploy that adds a file to `drizzle/`. The app never migrates hosted Postgres itself. The demo business seeds
+   itself on the first request.
+3. Env vars (Production): `DATABASE_URL`, `SESSION_SECRET`, `PUBLIC_BASE_URL` (the site's https origin, no trailing
+   slash), `TWILIO_AUTH_TOKEN`, `EMAIL_WEBHOOK_SECRET`, `CRON_SECRET`. Use long random values for the secrets. Each one
+   missing makes its route fail closed. `ANTHROPIC_API_KEY` is optional.
+4. Public demo: set `DEMO_MODE=on`. It turns on `/outbox` (sign-in links), `/api/dev/simulate` (the SMS widget and
+   inbox simulator) and the demo reset. Sign-in emails are simulated, so without it nobody can sign in.
+5. Cron: `vercel.json` runs `/api/jobs` daily at 22:00 UTC. It works once `CRON_SECRET` is set (step 3).
+
 ## Production path
 
 | Demo | Production |
 | --- | --- |
-| localStorage | Supabase Postgres, row-level security, owners-only email sign-in |
+| PGlite, simulated sign-in links in `/outbox` | Hosted Postgres (`DATABASE_URL`), owners-only emailed sign-in links |
 | Simulated checkout | Stripe Checkout with `setup_future_usage: off_session`; balance and bond via off-session PaymentIntents; webhooks confirm |
 | Mock bank | Business account with a payments API (e.g. Airwallex) for owner payouts |
 | SMS simulator | Twilio number (SMS + voice with transcription) |
@@ -96,4 +132,5 @@ rules engine answers and the owners get one alert in the outbox (`lib/server/lim
 
 ## Stack
 
-Next.js 15 (App Router), React 19, TypeScript, zustand, chrono-node, `@anthropic-ai/sdk`.
+Next.js 15 (App Router), React 19, TypeScript, Drizzle ORM on Postgres (PGlite locally, node-postgres in production),
+zustand, chrono-node, `@anthropic-ai/sdk`.
