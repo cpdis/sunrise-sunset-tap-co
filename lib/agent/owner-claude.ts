@@ -1,7 +1,7 @@
 // Owner agent on Claude. Same tools and the same YES rule as the rules engine (owner-rules.ts): staged tools only
 // stage, and resolvePending runs them before the model sees the owner's next text.
 import type Anthropic from "@anthropic-ai/sdk";
-import { BUSINESS } from "../config";
+import { ADMIN_ONLY_SETTINGS, BUSINESS, SETTING_GROUPS } from "../config";
 import type { AgentResult, AgentState, Msg, TruckLog } from "../types";
 import { fmtDate, todayISO } from "../util";
 import { type Tool, obj, toMessages, toolLoop } from "./claude";
@@ -26,8 +26,13 @@ import {
   whatsOn,
 } from "./owner-tools";
 
+const ALL_SETTINGS = SETTING_GROUPS.flatMap((g) => g.fields);
+const ADMIN_ONLY_LABELS = ALL_SETTINGS.filter((f) => ADMIN_ONLY_SETTINGS.includes(f.k)).map((f) => f.label.toLowerCase()).join(", ");
+
 const STAGED = "Doesn't run yet: it returns a summary, and the change runs only if the owner's next text is YES. Tell the owner the summary and ask them to reply YES.";
 const date = { type: "string", description: "YYYY-MM-DD" };
+// Names are chosen by customers, so two conversations can share one. Code, not the model, makes the pick.
+const PICK = "If the name matches more than one conversation, it does nothing and returns a numbered list with masked contacts. Send the owner that list as it is and stop; their reply with a number or the end of a contact picks one. Never guess or retry with another name.";
 
 const TOOLS: Tool[] = [
   { name: "whats_on", description: "The owner's runs and unclaimed runs in the next 30 days, conversations that need a person, payouts waiting, runner fees owed to them, cash.", input_schema: obj({}, []), strict: true },
@@ -58,19 +63,19 @@ const TOOLS: Tool[] = [
   { name: "inbox", description: "Customer conversations that need a person or that an owner is handling, with the agent's draft reply where it wrote one.", input_schema: obj({}, []), strict: true },
   {
     name: "reply_to_customer",
-    description: "Send a reply to a customer conversation as this owner, on the customer's channel. This takes the conversation off the agent until someone hands it back. Send exactly the words the owner gave; don't add promises.",
+    description: `Send a reply to a customer conversation as this owner, on the customer's channel. This takes the conversation off the agent until someone hands it back. Send exactly the words the owner gave; don't add promises. ${PICK}`,
     input_schema: obj({ who: { type: "string", description: "Customer name as shown in the inbox" }, text: { type: "string" } }, ["who", "text"]),
     strict: true,
   },
   {
     name: "hand_back",
-    description: "Give a customer conversation back to the agent. Refused while the customer is still owed the owner reply the agent promised; set without_reply only when the owner explicitly says to hand back without replying.",
+    description: `Give a customer conversation back to the agent. Refused while the customer is still owed the owner reply the agent promised; set without_reply only when the owner explicitly says to hand back without replying. ${PICK}`,
     input_schema: obj({ who: { type: "string" }, without_reply: { type: "boolean" } }, ["who", "without_reply"]),
     strict: true,
   },
   {
     name: "send_draft",
-    description: `Send the customer the reply the agent drafted when it handed over, as this owner. ${STAGED}`,
+    description: `Send the customer the reply the agent drafted when it handed over, as this owner. ${STAGED} ${PICK}`,
     input_schema: obj({ who: { type: "string", description: "Customer name as shown in the inbox" } }, ["who"]),
     strict: true,
   },
@@ -82,7 +87,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "payout",
-    description: `Approve the waiting quarterly payout (directors only, once each), or pay it once enough directors have approved. ${STAGED}`,
+    description: `Approve the waiting quarterly payout (directors only, once each), or pay it (directors only) once enough directors have approved. Pay is refused when the dividends would use customer money, the reserve, tax or runner fees owed; give the owner the reason as returned. ${STAGED}`,
     input_schema: obj({ action: { type: "string", enum: ["approve", "pay"] } }, ["action"]),
     strict: true,
   },
@@ -94,8 +99,9 @@ const TOOLS: Tool[] = [
   },
   {
     name: "change_setting",
-    description: `Change a business setting. Keys: ${SMS_SETTINGS.map((f) => `${f.k} (${f.label}${f.unit ? `, ${f.unit}` : ""})`).join("; ")}. ${STAGED}`,
-    input_schema: obj({ key: { type: "string", enum: SMS_SETTINGS.map((f) => f.k) }, value: { type: "number" } }, ["key", "value"]),
+    // Every key is listed so an admin-only one reaches the tool and gets its refusal, not a guess from the model.
+    description: `Change a business setting. By SMS: ${SMS_SETTINGS.map((f) => `${f.k} (${f.label}${f.unit ? `, ${f.unit}` : ""})`).join("; ")}. The tool refuses admin-only keys (${ADMIN_ONLY_SETTINGS.join(", ")}) and out-of-range values. ${STAGED}`,
+    input_schema: obj({ key: { type: "string", enum: ALL_SETTINGS.map((f) => f.k) }, value: { type: "number" } }, ["key", "value"]),
     strict: true,
   },
   {
@@ -152,8 +158,9 @@ Rules:
 - Use tools for every fact and every change. Never invent bookings, numbers or results.
 - Tools that "run at once" are done when they return ok; say what was done.
 - Staged tools (expenses, payouts, cancellations, settings, knowledge, sending a draft) never run straight away. Stage one change per reply. Give the owner the returned summary and ask them to reply YES. Never say it's done.
-- If a tool says something must be done in the admin, say so. Refunds over the limit, bond captures, share transfers, the approvals setting and the refund limit are admin only.
+- If a tool says something must be done in the admin, say so. Refunds over the limit, expenses over the SMS limit, bond captures, share transfers and these settings are admin only: ${ADMIN_ONLY_LABELS}.
 - When you reply to a customer, send only what the owner asked you to send.
+- If a customer tool returns a numbered list of conversations, send that list as it is and stop. Don't pick one yourself.
 - Knowledge base pages: ${ctx.data.kb.map((p) => `${p.slug} (${p.title})`).join(", ")}.`;
   const volatile = `Today is ${fmtDate(todayISO(ctx.now), { dow: true, year: true })} (${todayISO(ctx.now)}), Perth time. You're texting with ${ctx.owner.name}${ctx.owner.isDirector ? ", a director" : ""}.`;
   return [
@@ -172,6 +179,10 @@ export async function runOwnerClaude(ctx: OwnerCtx, history: Msg[], prev: AgentS
   const confirmed = last ? resolvePending(ctx, state, last.body) : undefined;
   if (confirmed) return done(confirmed);
   const r = await toolLoop({ system: system(ctx), tools: TOOLS, messages: toMessages(history), exec: (n, i) => exec(ctx, n, i) });
-  if (r.stop !== "done") return done("I couldn't sort that one. Try it in the admin.");
+  if (r.stop !== "done") {
+    // The owner is told nothing was done, so nothing is: no staged change waits for a YES and nothing ran.
+    Object.assign(ctx, { actions: [], used: [], staged: undefined });
+    return done("I couldn't sort that one. Try it in the admin.");
+  }
   return done(r.reply || "Sorry, could you say that again?");
 }

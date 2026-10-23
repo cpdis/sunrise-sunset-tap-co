@@ -9,6 +9,7 @@ import {
   chargeBalance,
   computeDistribution,
   createHold,
+  freeCash,
   type NewBooking,
   pay,
   payDeposit,
@@ -31,7 +32,7 @@ import type {
   Settings,
   TruckLog,
 } from "./types";
-import { addDays, quarterOf, todayISO, uid } from "./util";
+import { addDays, quarterOf, sameContact, todayISO, uid } from "./util";
 
 export const STORAGE_KEY = "sunrise-sunset-demo";
 
@@ -45,8 +46,9 @@ interface AppState {
   logout: () => void;
   mutate: (fn: (d: Data) => void) => void;
   book: (n: NewBooking) => string;
-  payDeposit: (bookingId: string, card: string, checkout?: { email?: string; name?: string; agreed?: boolean }) => void;
+  payDeposit: (bookingId: string, card: string, checkout?: { email?: string; agreed?: boolean }) => void;
   cancel: (bookingId: string) => void;
+  customerCancel: (bookingId: string) => ReturnType<typeof ops.customerCancel>;
   startConversation: (c: Pick<Conversation, "channel" | "contact" | "name">) => string;
   sendCustomer: (convId: string, body: string) => Promise<AgentResult | null>;
   ownerReply: (convId: string, body: string) => void;
@@ -56,7 +58,7 @@ interface AppState {
   markRead: (convId: string) => void;
   claimRun: (bookingId: string, which: "deliver" | "collect") => void;
   captureBond: (bookingId: string, amount: number, note: string) => void;
-  releaseBond: (bookingId: string) => void;
+  returnedClean: (bookingId: string) => void;
   chargeBalanceNow: (bookingId: string) => void;
   payBalance: (bookingId: string, card: string) => void;
   addExpense: (date: string, account: Account, amount: number, memo: string) => void;
@@ -92,16 +94,14 @@ function ensureDistributions(d: Data) {
 
 // What the agent endpoint sees: availability for every date, but only the sender's own contact details.
 export function snapshot(d: Data, contact?: string): Snapshot {
-  const customers = d.customers.filter((c) => contact && (norm(c.phone) === norm(contact) || norm(c.email) === norm(contact)));
+  const customers = d.customers.filter((c) => sameContact(c.phone, contact) || sameContact(c.email, contact));
   const bookings = d.bookings.map(({ notes, condition, guests, eventType, ...b }) => b) as Data["bookings"];
   return { settings: d.settings, bookings, customers, kb: d.kb, blackouts: d.blackouts, seq: d.seq };
 }
 
-const norm = (x?: string) => (x ?? "").replace(/\s+/g, "").toLowerCase();
-
 // An owner texting (or emailing) the business line from their own number gets the owner agent.
 export function ownerByContact(d: Data, contact: string) {
-  return d.owners.find((o) => norm(o.phone) === norm(contact) || norm(o.email) === norm(contact));
+  return d.owners.find((o) => sameContact(o.phone, contact) || sameContact(o.email, contact));
 }
 
 // What the owner agent sees: everything an owner sees in the admin, with ledger totals in place of the ledger.
@@ -128,6 +128,7 @@ export function ownerSnapshot(d: Data, now = new Date()): OwnerSnapshot {
       profit30: Math.round(t30.profit),
       held: Math.round(balance(d, "deposits")),
       owedRunners: Object.fromEntries(d.owners.map((o) => [o.id, Math.round(balance(d, "owed_runners", undefined, o.id))])),
+      free: freeCash(d, today),
     },
   };
 }
@@ -168,23 +169,24 @@ export const useApp = create<AppState>()(
         set({ data: d });
       },
 
+      // "" when createHold refuses (the date was taken since the page checked it).
       book: (n) => {
         let id = "";
         get().mutate((d) => {
-          const b = createHold(d, n);
-          id = b.id;
-          log(d, `New hold ${b.ref} via ${n.via} (${n.name})`);
+          try {
+            const b = createHold(d, n);
+            id = b.id;
+            log(d, `New hold ${b.ref} via ${n.via} (${n.name})`);
+          } catch (err) {
+            log(d, `Hold refused for ${n.date} via ${n.via}: ${(err as Error).message}`);
+          }
         });
         return id;
       },
 
       payDeposit: (bookingId, card, checkout = {}) =>
         get().mutate((d) => {
-          const held = d.bookings.find((x) => x.id === bookingId);
-          const cust = d.customers.find((c) => c.id === held?.customerId);
-          if (cust && checkout.email) cust.email = checkout.email;
-          if (cust && checkout.name && !cust.name) cust.name = checkout.name;
-          const b = payDeposit(d, bookingId, card, new Date(), checkout.agreed);
+          const b = payDeposit(d, bookingId, card, new Date(), checkout.agreed, checkout.email);
           log(d, `Deposit paid for ${b.ref}`);
           for (const c of d.conversations) {
             if (c.customerId === b.customerId && c.agentActive) {
@@ -205,6 +207,14 @@ export const useApp = create<AppState>()(
           const b = d.bookings.find((x) => x.id === bookingId);
           if (pol && b) log(d, `Cancelled ${b.ref}; refunded $${pol.refund}`);
         }),
+
+      customerCancel: (bookingId) => {
+        let r: ReturnType<typeof ops.customerCancel> = null;
+        get().mutate((d) => {
+          r = ops.customerCancel(d, bookingId);
+        });
+        return r;
+      },
 
       startConversation: (c) => {
         const existing = get().data?.conversations.find((x) => x.contact === c.contact && x.channel === c.channel);
@@ -245,18 +255,27 @@ export const useApp = create<AppState>()(
           for (const a of result.actions) {
             if (a.type === "hold") {
               const isEmail = a.contact.includes("@");
-              const b = createHold(d, {
-                id: a.bookingId,
-                ref: a.ref,
-                date: a.date,
-                block: a.block,
-                startTime: a.startTime,
-                suburb: a.suburb,
-                name: a.name,
-                phone: isEmail ? undefined : a.contact,
-                email: isEmail ? a.contact : undefined,
-                via: a.channel,
-              });
+              let b;
+              try {
+                b = createHold(d, {
+                  id: a.bookingId,
+                  ref: a.ref,
+                  date: a.date,
+                  block: a.block,
+                  startTime: a.startTime,
+                  suburb: a.suburb,
+                  name: a.name,
+                  phone: isEmail ? undefined : a.contact,
+                  email: isEmail ? a.contact : undefined,
+                  via: a.channel,
+                });
+              } catch (err) {
+                // The date went between the agent's check and now. The link it sent won't open, so the owners take it.
+                c.escalated = `Hold ${a.ref} for ${a.name} refused: ${(err as Error).message}`;
+                c.messages.push({ id: uid("m"), from: "system", body: `Hold refused: ${(err as Error).message}`, at: new Date().toISOString() });
+                log(d, `Agent hold ${a.ref} refused: ${(err as Error).message}`);
+                continue;
+              }
               d.seq = Math.max(d.seq, Number(a.ref.replace("SST-", "")));
               c.customerId = b.customerId;
               if (c.name.startsWith("Caller") || c.name === "New contact") c.name = a.name;
@@ -316,13 +335,10 @@ export const useApp = create<AppState>()(
           log(d, `Captured $${amount} of the bond on ${b.ref}`);
         }),
 
-      releaseBond: (bookingId) =>
-        get().mutate((d) => {
-          const b = d.bookings.find((x) => x.id === bookingId);
-          if (!b) return;
-          pay(d, b, "bond_release", b.bond, new Date().toISOString());
-          b.bondStatus = "released";
-        }),
+      returnedClean: (bookingId) => {
+        const me = get().ownerId;
+        if (me) get().mutate((d) => ops.returnedClean(d, bookingId, me));
+      },
 
       chargeBalanceNow: (bookingId) =>
         get().mutate((d) => {
@@ -352,7 +368,10 @@ export const useApp = create<AppState>()(
         if (me) get().mutate((d) => ops.approveDistribution(d, distId, me));
       },
 
-      payDistribution: (distId) => get().mutate((d) => ops.payOut(d, distId)),
+      payDistribution: (distId) => {
+        const me = get().ownerId;
+        if (me) get().mutate((d) => ops.payOut(d, distId, me));
+      },
 
       updateSettings: (s) => get().mutate((d) => ops.updateSettings(d, s)),
 

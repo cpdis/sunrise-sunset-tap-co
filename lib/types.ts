@@ -29,6 +29,8 @@ export interface Settings {
   taxRate: number;
   refundLimit: number;
   approvalsRequired: number;
+  // The largest expense one owner can log by SMS; bigger ones go in the admin.
+  smsExpenseCap: number;
 }
 
 export interface Owner {
@@ -81,6 +83,8 @@ export interface Booking {
   guests?: number;
   notes?: string;
   agreementSigned: boolean;
+  // Where checkout sent the receipt. Kept on the booking: checkout never changes the customer's own contacts.
+  receiptEmail?: string;
   // Simulated card trouble: the saved card declines off-session charges until the customer updates it.
   cardDeclines?: boolean;
   balanceAttempts?: number;
@@ -168,6 +172,8 @@ export interface AgentState {
   agreed?: boolean;
   // Consecutive replies that didn't give the thing the agent asked for.
   misses?: number;
+  // SST- references in a row that aren't the sender's. The second goes to an owner.
+  refMisses?: number;
   awaiting?: "date" | "name" | "suburb" | "confirm_hold" | "confirm_cancel";
   bookingId?: string;
   refDate?: string;
@@ -206,6 +212,8 @@ export interface DistributionLine {
   amount: number;
   // Runner fees owed to this owner at quarter end, paid in the same transfer.
   runnerFees: number;
+  // The owed_runners ledger entries those fees settle. No other distribution lists them.
+  runnerFeeEntries: string[];
   payoutId?: string;
 }
 

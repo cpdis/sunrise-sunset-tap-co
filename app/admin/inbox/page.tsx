@@ -192,7 +192,8 @@ function Thread({ conv, data, back }: { conv: Conversation; data: Data; back: ()
               ))}
             </ul>
           )}
-          <div className="body"><Linkify text={m.body} /></div>
+          {/* Customer text shows as written: a link a customer sends is never clickable here. Agent and owner links are. */}
+          <div className="body">{m.from === "customer" ? m.body : <Linkify text={m.body} />}</div>
           {via && <div className="via">{via}</div>}
         </div>
       </div>

@@ -47,9 +47,13 @@ as a free Claude proxy.
 - **Agent**: `/api/agent` receives a snapshot of availability plus the conversation, runs tools
   (`check_availability`, `get_quote`, `hold_and_send_deposit_link`, `lookup_booking`, `cancel_booking`,
   `escalate_to_owner`) and returns a reply plus actions the client applies. With an API key it's Claude
-  (`lib/agent/claude.ts`); without, a deterministic intent matcher (`lib/agent/rules.ts`). Refunds above the configured
-  limit, discounts, multi-day and sponsor requests, dates inside 7 days' notice and anything it can't pin down after two
-  re-asks go to an owner. After a hand-over it keeps answering FAQs but won't hold or cancel until handed back.
+  (`lib/agent/claude.ts`); without, a deterministic intent matcher (`lib/agent/rules.ts`) that answers FAQs from the
+  knowledge base pages, so an owner's edit changes both engines. Refunds above the configured limit, discounts,
+  multi-day and sponsor requests, date changes, dates inside 7 days' notice and anything it can't pin down after two
+  re-asks go to an owner. A hand-over only flags the conversation in the inbox (nobody is notified yet), so replies
+  promise no time or call. Both engines cancel only after a quote and a clear YES to it, hold one unpaid date per
+  contact, and treat someone else's SST- reference like an unknown one. After a hand-over it keeps answering FAQs but
+  won't hold or cancel until handed back.
 
 ## Production path
 

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { CHANNEL_LABEL, Loading, Section, Stat, StatePill, useData } from "@/components/ui";
-import { BALANCE_RETRIES, RELEASE_UNPAID_DAYS, balanceStuck, cashAt, liveBookings, periodTotals } from "@/lib/domain";
+import { BALANCE_RETRIES, RELEASE_UNPAID_DAYS, balanceStuck, cashAt, directorApprovals, liveBookings, payoutTotal, periodTotals } from "@/lib/domain";
 import { useApp } from "@/lib/store";
 import { addDays, daysBetween, fmtDate, fmtDateTime, fmtTime, money, perthHour, quarterLabel, todayISO } from "@/lib/util";
 
@@ -71,7 +71,7 @@ export default function Today() {
                 <span className="dot info" aria-hidden="true" />
                 <span className="list-main">
                   <strong>{quarterLabel(d.quarter)} payout</strong>
-                  <span>{money(d.lines.reduce((s, l) => s + l.amount + l.runnerFees, 0))} ready, {d.approvals.length} of {data.settings.approvalsRequired} approvals.{ownerId && !d.approvals.includes(ownerId) && " Yours is needed."}</span>
+                  <span>{money(payoutTotal(d))} ready, {directorApprovals(data, d).length} of {data.settings.approvalsRequired} approvals.{ownerId && !d.approvals.includes(ownerId) && " Yours is needed."}</span>
                 </span>
                 <span className="meta">Payout</span>
               </Link>

@@ -1,5 +1,5 @@
 // Business rules. Every function takes a mutable draft of Data (the store clones first).
-import { findSuburb } from "./config";
+import { defaultStart, findSuburb, startProblem } from "./config";
 import type {
   Account,
   Block,
@@ -16,8 +16,11 @@ import {
   addDays,
   addMonths,
   daysBetween,
+  isISODate,
   money,
+  quarterLabel,
   quarterOf,
+  sameContact,
   stripeFee,
   todayISO,
   uid,
@@ -47,26 +50,30 @@ export function quote(s: Settings, block: Block, suburb: string) {
   };
 }
 
+// An unpaid hold past its time. The daily job cancels it; until then it no longer counts.
+export const holdExpired = (b: Booking, now = new Date()) => b.state === "held" && !!b.heldUntil && Date.parse(b.heldUntil) < now.getTime();
+
 export function liveBookings(d: Data, now = new Date()) {
-  return d.bookings.filter(
-    (b) =>
-      b.state !== "cancelled" &&
-      !(b.state === "held" && b.heldUntil && Date.parse(b.heldUntil) < now.getTime()),
-  );
+  return d.bookings.filter((b) => b.state !== "cancelled" && !holdExpired(b, now));
 }
 
-export type DayStatus = "free" | "booked" | "held" | "personal" | "blackout" | "past" | "too_far" | "short_notice";
+export type DayStatus = "free" | "booked" | "held" | "personal" | "blackout" | "past" | "too_far" | "short_notice" | "invalid";
 
 export function dayStatus(d: Data, date: string, now = new Date()): DayStatus {
+  // Every check below compares date strings, so anything but a real YYYY-MM-DD is refused first.
+  if (!isISODate(date)) return "invalid";
   const today = todayISO(now);
   if (date <= today) return "past";
   if (date > addMonths(today, d.settings.bookAheadMonths)) return "too_far";
   if (d.blackouts.includes(date)) return "blackout";
-  const b = liveBookings(d, now).find((x) => x.date === date);
-  if (b && b.kind === "paid") return b.state === "held" ? "held" : "booked";
+  // A paid booking or hold wins over an owner's own use on the same day, so look for one first: an own-use day
+  // with a live hold on it is not free (R12, R13).
+  const onDay = liveBookings(d, now).filter((x) => x.date === date);
+  const paid = onDay.find((x) => x.kind === "paid");
+  if (paid) return paid.state === "held" ? "held" : "booked";
   // Inside the notice period an open day can't be booked online; an owner decides.
   if (daysBetween(today, date) < d.settings.minNoticeDays) return "short_notice";
-  return b ? "personal" : "free";
+  return onDay.length ? "personal" : "free";
 }
 
 // Personal-use bookings yield to paid ones, so they count as free for customers.
@@ -160,28 +167,28 @@ export function nextRef(d: Data) {
   return `SST-${d.seq}`;
 }
 
+// The customer this booking belongs to. A record matches only when every contact given is already on it, so
+// a form with someone's phone and a new email makes a new customer instead of adding that email to theirs.
+// Nothing here ever adds a contact to an existing record.
 export function upsertCustomer(d: Data, name: string, email?: string, phone?: string) {
-  const norm = (x?: string) => (x ?? "").replace(/\s+/g, "").toLowerCase();
-  let c = d.customers.find((x) => (phone && norm(x.phone) === norm(phone)) || (email && norm(x.email) === norm(email)));
-  if (!c) {
-    c = { id: uid("cus"), name, email: email ?? "", phone: phone ?? "" };
-    d.customers.push(c);
-  } else {
-    if (email && !c.email) c.email = email;
-    if (phone && !c.phone) c.phone = phone;
-  }
-  return c;
+  const e = email?.trim() ?? "";
+  const p = phone?.trim() ?? "";
+  const c = e || p ? d.customers.find((x) => (!e || sameContact(x.email, e)) && (!p || sameContact(x.phone, p))) : undefined;
+  if (c) return c;
+  const fresh = { id: uid("cus"), name, email: e, phone: p };
+  d.customers.push(fresh);
+  return fresh;
 }
 
+// Refuses a date that isn't bookable at `now` (R12: one live paid booking or hold per date) and a start time that
+// doesn't fit the block, whichever surface asked. Callers check first; this is the last word.
 export function createHold(d: Data, n: NewBooking, now = new Date()): Booking {
+  if (!isBookable(d, n.date, now)) throw new Error(`${n.date} can't be booked (${dayStatus(d, n.date, now)})`);
+  const startTime = n.startTime ?? defaultStart(n.block);
+  const late = startProblem(n.block, startTime);
+  if (late) throw new Error(`Start ${startTime}: ${late}`);
   const q = quote(d.settings, n.block, n.suburb);
   const c = upsertCustomer(d, n.name, n.email, n.phone);
-  // A paid booking bumps a personal-use booking on the same day.
-  for (const p of d.bookings.filter((x) => x.date === n.date && x.kind === "personal" && x.state !== "cancelled")) {
-    p.state = "cancelled";
-    p.cancelledAt = now.toISOString();
-    p.notes = (p.notes ? p.notes + " · " : "") + "Bumped by a paid booking";
-  }
   const b: Booking = {
     id: n.id ?? uid("bk"),
     ref: n.ref ?? nextRef(d),
@@ -189,7 +196,7 @@ export function createHold(d: Data, n: NewBooking, now = new Date()): Booking {
     customerId: c.id,
     date: n.date,
     block: n.block,
-    startTime: n.startTime ?? (n.block === 4 ? "14:00" : "12:00"),
+    startTime,
     suburb: n.suburb,
     travelMinutes: q.minutes,
     km: q.km,
@@ -214,16 +221,25 @@ export function createHold(d: Data, n: NewBooking, now = new Date()): Booking {
   return b;
 }
 
-// The hire terms must have been accepted, either on the web form or at checkout.
-export function payDeposit(d: Data, bookingId: string, card: string, now = new Date(), agreed = false) {
+// The hire terms must have been accepted, either on the web form or at checkout. The receipt email goes on the
+// booking, never on the customer: whoever holds a checkout link can't change a customer's contacts.
+export function payDeposit(d: Data, bookingId: string, card: string, now = new Date(), agreed = false, receiptEmail?: string) {
   const b = d.bookings.find((x) => x.id === bookingId);
   if (!b) throw new Error("Booking not found");
   if (b.state !== "held") return b;
   if (agreed) b.agreementSigned = true;
   if (!b.agreementSigned) throw new Error("Hire terms not accepted");
+  if (receiptEmail?.trim()) b.receiptEmail = receiptEmail.trim();
   pay(d, b, "deposit", b.deposit, now.toISOString(), card);
   b.state = "confirmed";
   b.heldUntil = undefined;
+  // Only a paid booking bumps an owner's own use on the same day. An unpaid hold leaves it alone, so a hold that
+  // lapses never costs the owner their day (R13).
+  for (const p of d.bookings.filter((x) => x.date === b.date && x.kind === "personal" && x.state !== "cancelled")) {
+    p.state = "cancelled";
+    p.cancelledAt = now.toISOString();
+    p.notes = (p.notes ? p.notes + " · " : "") + "Bumped by a paid booking";
+  }
   if (daysBetween(todayISO(now), b.date) <= d.settings.balanceDaysBefore) {
     pay(d, b, "balance", b.total - b.deposit, now.toISOString(), card);
     b.state = "balance_paid";
@@ -265,6 +281,13 @@ export function cancelPolicy(s: Settings, b: Booking, now = new Date()) {
   return { days, paid, refund, kept: paid - refund, fullRefund };
 }
 
+// Why a customer's own cancel needs an owner, or undefined when it doesn't. A refund over the agent's limit
+// needs an owner from every customer surface (R11): SMS, email and the booking page.
+export function cancelNeedsOwner(s: Settings, b: Booking, now = new Date()): string | undefined {
+  const pol = cancelPolicy(s, b, now);
+  if (pol.refund > s.refundLimit) return `Cancellation of ${b.ref} with refund ${money(pol.refund)} needs owner approval`;
+}
+
 export function cancelBooking(d: Data, bookingId: string, now = new Date()) {
   const b = d.bookings.find((x) => x.id === bookingId);
   if (!b || b.state === "cancelled" || b.state === "completed") return null;
@@ -296,7 +319,6 @@ export function completeBooking(d: Data, b: Booking, date: string) {
       post(d, date, "owed_runners", d.settings.runnerFee, `${b.ref} run owed · ${o?.name ?? "owner"}`, b.id, run.ownerId);
     }
   }
-  if (b.bondStatus === "held") b.bondStatus = "released";
 }
 
 // ---------- scheduled jobs ----------
@@ -306,7 +328,7 @@ export function runJobs(d: Data, now = new Date()): string[] {
   const log: string[] = [];
   if (d.ledger.some((e) => e.account === "truck") && depreciate(d, today)) log.push("Posted this month's truck depreciation");
   for (const b of d.bookings) {
-    if (b.state === "held" && b.heldUntil && Date.parse(b.heldUntil) < now.getTime()) {
+    if (holdExpired(b, now)) {
       b.state = "cancelled";
       b.cancelledAt = now.toISOString();
       b.notes = (b.notes ? b.notes + " · " : "") + "Hold expired unpaid";
@@ -341,7 +363,7 @@ export function runJobs(d: Data, now = new Date()): string[] {
     }
     if (b.state === "balance_paid" && b.date < today) {
       completeBooking(d, b, b.date);
-      log.push(`Closed ${b.ref} and released bond`);
+      log.push(`Closed ${b.ref}${b.bondStatus === "held" ? "; bond held until an owner checks the truck back" : ""}`);
     }
   }
   return log;
@@ -404,31 +426,66 @@ export function reserveTarget(d: Data, asOf: string) {
   return Math.round(s.reserveMonths * s.fixedMonthly + yearKm * s.maintPerKm + 500);
 }
 
+// Cash the company may pay out as of a date: cash less customer money held for hires ahead, the reserve and runner
+// fees owed. A quarter's tax provision comes off on top (computeDistribution, payoutRefusal).
+export function freeCash(d: Data, asOf: string) {
+  const free = cashAt(d, asOf) - reserveTarget(d, asOf) - balance(d, "deposits", asOf) - balance(d, "owed_runners", asOf);
+  return Math.round(free * 100) / 100;
+}
+
+// Approvals that count: those from owners who are directors now.
+export function directorApprovals(d: Pick<Data, "owners">, dist: Distribution) {
+  return dist.approvals.filter((id) => d.owners.some((o) => o.id === id && o.isDirector));
+}
+
+const sumCents = (xs: number[]) => xs.reduce((s, x) => s + Math.round(x * 100), 0);
+
+// What a payout transfers in all: dividends plus runner fees, to the cent.
+export function payoutTotal(dist: Distribution) {
+  return sumCents(dist.lines.flatMap((l) => [l.amount, l.runnerFees])) / 100;
+}
+
+// Why a payout can't be paid when `free` is today's freeCash, or undefined when it can. Runner fees settle money
+// already kept back as owed, so only the dividends need room: what is free after the quarter's tax provision.
+export function payoutRefusal(dist: Distribution, d: Pick<Data, "owners" | "settings">, free: number): string | undefined {
+  const label = quarterLabel(dist.quarter);
+  const n = directorApprovals(d, dist).length;
+  const need = d.settings.approvalsRequired;
+  if (n < need) return `${label} has ${n} of ${need} director approvals, so it can't be paid yet.`;
+  const short = dist.distributable - (free - dist.taxProvision);
+  if (short > 0) return `${label} can't be paid yet. ${money(Math.ceil(Math.min(payoutTotal(dist), short)))} of it would come out of customer money, the reserve, tax or other runner fees owed.`;
+}
+
 export function computeDistribution(d: Data, quarterKey: string): Distribution {
+  const id = "dist_" + quarterKey;
   const [y, q] = quarterKey.split("-Q").map(Number);
   const start = `${y}-${String((q - 1) * 3 + 1).padStart(2, "0")}-01`;
   const { end } = quarterOf(start);
   const t = periodTotals(d, start, end);
   const taxProvision = Math.max(0, Math.round(t.profit * d.settings.taxRate));
-  const cash = Math.round(cashAt(d, end));
-  const reserve = reserveTarget(d, end);
-  const deposits = Math.round(balance(d, "deposits", end));
-  const owedRunners = Math.round(balance(d, "owed_runners", end));
   const afterTax = Math.max(0, t.profit - taxProvision);
-  // Customer money for future hires and runner fees owed aren't the company's to distribute.
-  const cashRoom = Math.max(0, cash - reserve - taxProvision - deposits - owedRunners);
+  // Customer money for future hires, the reserve and runner fees owed aren't the company's to distribute.
+  const cashRoom = Math.max(0, freeCash(d, end) - taxProvision);
   const totalShares = d.owners.reduce((s, o) => s + o.shares, 0);
-  // Round each owner's amount down to the nearest $10.
   const raw = Math.min(afterTax, cashRoom);
-  const lines = d.owners.map((o) => ({
-    ownerId: o.id,
-    shares: o.shares,
-    amount: Math.floor((raw * o.shares) / totalShares / 10) * 10,
-    runnerFees: Math.round(balance(d, "owed_runners", end, o.id)),
-  }));
+  // Each runner fee is settled by one distribution: a later quarter skips fees an earlier one lists, paid or not.
+  const claimed = new Set(d.distributions.filter((x) => x.id !== id).flatMap((x) => x.lines.flatMap((l) => l.runnerFeeEntries)));
+  const owed = d.ledger.filter((e) => e.account === "owed_runners" && e.amount > 0 && e.date <= end && !claimed.has(e.id));
+  const lines = d.owners.map((o) => {
+    const fees = owed.filter((e) => e.ownerId === o.id);
+    return {
+      ownerId: o.id,
+      shares: o.shares,
+      // Round each owner's amount down to the nearest $10.
+      amount: Math.floor((raw * o.shares) / totalShares / 10) * 10,
+      // Summed in cents, so a $60.50 fee pays $60.50.
+      runnerFees: sumCents(fees.map((e) => e.amount)) / 100,
+      runnerFeeEntries: fees.map((e) => e.id),
+    };
+  });
   const distributable = lines.reduce((s, l) => s + l.amount, 0);
   return {
-    id: "dist_" + quarterKey,
+    id,
     quarter: quarterKey,
     start,
     end,
@@ -436,10 +493,10 @@ export function computeDistribution(d: Data, quarterKey: string): Distribution {
     expenses: Math.round(t.expenses),
     profit: Math.round(t.profit),
     taxProvision,
-    cash,
-    reserve,
-    deposits,
-    owedRunners,
+    cash: Math.round(cashAt(d, end)),
+    reserve: reserveTarget(d, end),
+    deposits: Math.round(balance(d, "deposits", end)),
+    owedRunners: Math.round(balance(d, "owed_runners", end)),
     distributable,
     lines,
     approvals: [],
@@ -450,8 +507,10 @@ export function computeDistribution(d: Data, quarterKey: string): Distribution {
 export function payDistribution(d: Data, distId: string, now = new Date()) {
   const dist = d.distributions.find((x) => x.id === distId);
   if (!dist || dist.status === "paid") return;
-  if (dist.approvals.length < d.settings.approvalsRequired) throw new Error("Needs more approvals");
   const date = todayISO(now);
+  // Checked again as it pays: an expense or refund since the quarter closed can leave less free cash than it showed.
+  const why = payoutRefusal(dist, d, freeCash(d, date));
+  if (why) throw new Error(why);
   for (const l of dist.lines) {
     if (l.amount <= 0 && l.runnerFees <= 0) continue;
     const o = d.owners.find((x) => x.id === l.ownerId);

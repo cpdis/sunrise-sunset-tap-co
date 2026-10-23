@@ -10,6 +10,20 @@ export function perthHour(now = new Date()): number {
   return Number(new Intl.DateTimeFormat("en-AU", { timeZone: TZ, hour: "numeric", hourCycle: "h23" }).format(now));
 }
 
+// A real calendar date in YYYY-MM-DD form. "2026-12-32" and "2026-11-21 " are not, and string compares on them
+// would lie (a trailing space sorts after the plain date).
+export function isISODate(s: unknown): s is string {
+  if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(s + "T00:00:00Z");
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
+
+// Minutes after midnight for a real 24-hour "HH:MM", else undefined ("14:99", "7pm", "9:00").
+export function timeMinutes(t: unknown): number | undefined {
+  const m = typeof t === "string" ? t.match(/^([01]\d|2[0-3]):([0-5]\d)$/) : null;
+  return m ? Number(m[1]) * 60 + Number(m[2]) : undefined;
+}
+
 export function addDays(date: string, days: number): string {
   const d = new Date(date + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() + days);
@@ -97,8 +111,16 @@ export function stripeFee(amount: number): number {
   return Math.round((amount * 0.017 + 0.3) * 100) / 100;
 }
 
+// Random ids from the platform CSPRNG, so one id can't be guessed from another.
 export function uid(prefix: string): string {
-  return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
+  return `${prefix}_${crypto.randomUUID()}`;
+}
+
+// One phone or email against another, ignoring spaces and case. A blank value matches nothing, so a
+// customer with no email on file is never "the customer whose email is empty".
+export function sameContact(a?: string, b?: string): boolean {
+  const n = (x?: string) => (x ?? "").replace(/\s+/g, "").toLowerCase();
+  return n(a) !== "" && n(a) === n(b);
 }
 
 export function cls(...xs: (string | false | null | undefined)[]): string {

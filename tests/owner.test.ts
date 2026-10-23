@@ -1,11 +1,22 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+import { runOwnerClaude } from "@/lib/agent/owner-claude";
+import { runOwnerRules } from "@/lib/agent/owner-rules";
+import type { OwnerCtx } from "@/lib/agent/owner-tools";
 import { balance, cashAt } from "@/lib/domain";
-import { chat, ownerChat, seed } from "./helpers";
+import { addExpense, applyOwnerAction } from "@/lib/ops";
+import { ownerSnapshot } from "@/lib/store";
+import type { AgentState, Conversation } from "@/lib/types";
+import { NOW, chat, ownerChat, seed } from "./helpers";
 
 const COLIN = "own_colin";
 const AARON = "own_aaron";
 const types = (r: { actions: { type: string }[] }) => r.actions.map((a) => a.type);
 const byRef = (d: ReturnType<typeof seed>, ref: string) => d.bookings.find((b) => b.ref === ref)!;
+
+// No API key here, so a scripted client stands in for Claude: each create() returns the next reply.
+const claude = vi.hoisted(() => ({ replies: [] as unknown[] }));
+vi.mock("@anthropic-ai/sdk", () => ({ default: class { beta = { messages: { create: async () => claude.replies.shift() } }; } }));
+const toolUse = (name: string, input: Record<string, unknown>) => ({ stop_reason: "tool_use", content: [{ type: "tool_use", id: `tu_${name}`, name, input }] });
 
 describe("low stakes run at once", () => {
   test("what's on lists unclaimed runs and the waiting payout", () => {
@@ -131,6 +142,23 @@ describe("money and settings wait for YES", () => {
     expect(cashAt(d)).toBe(cash0);
   });
 
+  // A prefix match used to read "okay, cancel that" and "yeah nah" as YES.
+  test.each(["okay, cancel that", "yeah nah", "ok what's on", "go through the inbox"])("%s posts nothing", (reply) => {
+    const d = seed();
+    const cash0 = cashAt(d);
+    const [, r] = ownerChat(d, COLIN, ["$42 CO2 refill", reply]);
+    expect(r.reply).not.toMatch(/^Done\. I added/);
+    expect(cashAt(d)).toBe(cash0);
+  });
+
+  test.each(["yes", "YES.", "yes please", "y"])("%s still confirms", (reply) => {
+    const d = seed();
+    const cash0 = cashAt(d);
+    const [, r] = ownerChat(d, COLIN, ["$42 CO2 refill", reply]);
+    expect(r.reply).toMatch(/^Done\. I added a \$42 CO2 expense/);
+    expect(cashAt(d) - cash0).toBe(-42);
+  });
+
   test("payout needs two directors, then pays", () => {
     const d = seed();
     const dist = d.distributions.find((x) => x.status === "awaiting")!;
@@ -150,13 +178,107 @@ describe("money and settings wait for YES", () => {
     expect(Math.round(cash0 - cashAt(d))).toBe(total);
   });
 
-  test("setting change on YES; guardrail settings are admin only", () => {
+  test("pay is refused when it would spend customer money (review C09)", () => {
     const d = seed();
-    ownerChat(d, COLIN, ["set the deposit to $300", "yes"]);
-    expect(d.settings.deposit).toBe(300);
-    const [r] = ownerChat(d, COLIN, ["set approvals to 1"]);
-    expect(r.reply).toMatch(/only be changed in the admin/);
-    expect(d.settings.approvalsRequired).toBe(2);
+    ownerChat(d, COLIN, ["approve the payout", "yes"]);
+    ownerChat(d, AARON, ["approve the payout", "yes"]);
+    // Over the SMS expense cap, so it goes in through the admin.
+    addExpense(d, "2026-10-22", "maintenance", 11203, "Gearbox");
+    const [pay] = ownerChat(d, COLIN, ["pay the payout"]);
+    const cash = cashAt(d);
+    expect(pay.reply).toBe("Q3 2026 (Jul–Sep) can't be paid yet. $840 of it would come out of customer money, the reserve, tax or other runner fees owed.");
+    expect(pay.state.pending).toBeUndefined();
+    expect(d.distributions.find((x) => x.quarter === "2026-Q3")!.status).toBe("awaiting");
+    expect(cashAt(d)).toBe(cash);
+  });
+
+  test("an expense between staging the pay and YES: the YES pays nothing", () => {
+    const d = seed();
+    ownerChat(d, COLIN, ["approve the payout", "yes"]);
+    ownerChat(d, AARON, ["approve the payout", "yes"]);
+    let state: AgentState = {};
+    const send = (ownerId: string, text: string) => {
+      const ctx: OwnerCtx = { data: ownerSnapshot(d, NOW), owner: d.owners.find((o) => o.id === ownerId)!, now: NOW, actions: [], used: [] };
+      const r = runOwnerRules(ctx, text, state);
+      state = r.state;
+      r.actions.forEach((a) => applyOwnerAction(d, a, ownerId));
+      return r;
+    };
+    expect(send(COLIN, "pay the payout").reply).toMatch(/^To confirm: pay the Q3 2026/);
+    addExpense(d, "2026-10-22", "maintenance", 11203, "Gearbox");
+    const cash = cashAt(d);
+    expect(send(COLIN, "yes").reply).toMatch(/^I didn't do it: Q3 2026 \(Jul–Sep\) can't be paid yet/);
+    expect(cashAt(d)).toBe(cash);
+  });
+
+  test("a non-director can't pay, even with enough approvals", () => {
+    const d = seed();
+    d.owners.find((o) => o.id === "own_joe")!.isDirector = false;
+    ownerChat(d, COLIN, ["approve the payout", "yes"]);
+    ownerChat(d, AARON, ["approve the payout", "yes"]);
+    const [r] = ownerChat(d, "own_joe", ["pay the payout"]);
+    expect(r.reply).toBe("Only directors pay payouts.");
+    expect(r.state.pending).toBeUndefined();
+    expect(d.distributions.find((x) => x.quarter === "2026-Q3")!.status).toBe("awaiting");
+  });
+
+  test("an approval from an owner who is no longer a director doesn't count", () => {
+    const d = seed();
+    ownerChat(d, COLIN, ["approve the payout", "yes"]);
+    ownerChat(d, AARON, ["approve the payout", "yes"]);
+    d.owners.find((o) => o.id === COLIN)!.isDirector = false;
+    const [r] = ownerChat(d, AARON, ["pay the payout"]);
+    expect(r.reply).toBe("Q3 2026 (Jul–Sep) has 1 of 2 director approvals, so it can't be paid yet.");
+  });
+
+  test("booking rule change on YES", () => {
+    const d = seed();
+    const [staged] = ownerChat(d, COLIN, ["set notice to 10 days", "yes"]);
+    expect(staged.reply).toMatch(/^To confirm: change "Online bookings need at least" from 7 days notice to 10 days notice/);
+    expect(d.settings.minNoticeDays).toBe(10);
+  });
+
+  // R7: one owner by SMS can't move money settings or guardrails.
+  test.each([
+    ["set the deposit to $0", "deposit", 250],
+    ["set the 4 hour price to $1", "price4", 600],
+    ["set the runner fee to $500", "runnerFee", 60],
+    ["set the tax to 0", "taxRate", 0.25],
+    ["set cancellation to 0 days", "cancelDays", 30],
+    ["set the reserve to 0 months", "reserveMonths", 3],
+    ["set fixed costs to $0", "fixedMonthly", 295],
+    ["set approvals to 1", "approvalsRequired", 2],
+    ["set the expense cap to $5000", "smsExpenseCap", 500],
+  ] as const)("%s is refused with a pointer to the admin", (text, key, was) => {
+    const d = seed();
+    const [r, after] = ownerChat(d, COLIN, [text, "yes"]);
+    expect(r.reply).toMatch(/only be changed in the admin, under Settings/);
+    expect(r.state.pending).toBeUndefined();
+    expect(after.actions).toEqual([]);
+    expect(d.settings[key]).toBe(was);
+  });
+
+  test("an out-of-range booking rule is refused", () => {
+    const d = seed();
+    const [r] = ownerChat(d, COLIN, ["set holds to 0 minutes"]);
+    expect(r.reply).toBe("Unpaid holds expire after: that needs to be between 5 and 1440.");
+    expect(r.state.pending).toBeUndefined();
+  });
+
+  test("an expense over the SMS cap is refused and points to the admin", () => {
+    const d = seed();
+    const cash = cashAt(d);
+    const [r, after] = ownerChat(d, COLIN, ["$999999 fuel", "yes"]);
+    expect(r.reply).toBe("$999,999 is over the $500 SMS limit for expenses. Add it in the admin, under Money.");
+    expect(r.state.pending).toBeUndefined();
+    expect(after.actions).toEqual([]);
+    expect(cashAt(d)).toBe(cash);
+  });
+
+  test("applying a settings action skips admin-only and out-of-range keys", () => {
+    const d = seed();
+    applyOwnerAction(d, { type: "settings", patch: { deposit: 0, holdMinutes: 0, minNoticeDays: 9 } }, COLIN);
+    expect(d.settings).toMatchObject({ deposit: 250, holdMinutes: 30, minNoticeDays: 9 });
   });
 
   test("knowledge line added on YES", () => {
@@ -180,5 +302,117 @@ describe("customer agent is unchanged", () => {
   test("a customer number still gets the customer agent", () => {
     const [r] = chat(seed(), "0499 000 111", ["What's on?"]);
     expect(r.reply).not.toMatch(/Unclaimed/);
+  });
+});
+
+describe("two conversations share a name", () => {
+  const REAL = "Harbour Collective (events)";
+  // A customer who books under a real customer's name gets a conversation with that name, placed first.
+  function withImpostor() {
+    const d = seed();
+    const real = d.conversations.find((x) => x.name === REAL)!;
+    const fake: Conversation = { ...real, id: "conv_fake", channel: "sms", contact: "0413 555 818", messages: [], draft: undefined };
+    d.conversations.unshift(fake);
+    return { d, real, fake };
+  }
+  const got = (c: { messages: { from: string; body: string }[] }) => c.messages.filter((m) => m.from === "owner" && /4471/.test(m.body));
+
+  test("a reply sends nothing and lists both with masked contacts", () => {
+    const { d, real, fake } = withImpostor();
+    const [r] = ownerChat(d, COLIN, [`tell ${REAL}: the gate code is 4471`]);
+    expect(r.actions).toEqual([]);
+    expect(r.reply).toBe(`That matches 2 conversations:\n1. ${REAL}, 0413 ••• 818\n2. ${REAL}, ev•••@harbourcollective.com.au\nReply with the number or the end of the contact.`);
+    expect(got(real)).toHaveLength(0);
+    expect(got(fake)).toHaveLength(0);
+  });
+
+  test.each(["2", "#2", "harbourcollective.com.au", "ev•••@harbourcollective.com.au", "the email one"])("picking the email one with %s sends only there", (pick) => {
+    const { d, real, fake } = withImpostor();
+    const [, r] = ownerChat(d, COLIN, [`tell ${REAL}: the gate code is 4471`, pick]);
+    expect(r.reply).toMatch(/^Sent to Harbour Collective \(events\) by email to events@harbourcollective\.com\.au/);
+    expect(got(real)).toHaveLength(1);
+    expect(got(fake)).toHaveLength(0);
+  });
+
+  test("the phone tail picks the SMS one", () => {
+    const { d, real, fake } = withImpostor();
+    ownerChat(d, COLIN, [`tell ${REAL}: the gate code is 4471`, "818"]);
+    expect(got(fake)).toHaveLength(1);
+    expect(got(real)).toHaveLength(0);
+  });
+
+  test("a text that is not a pick drops the list and runs as a new message", () => {
+    const { d, real, fake } = withImpostor();
+    const [, r, after] = ownerChat(d, COLIN, [`tell ${REAL}: the gate code is 4471`, "What's on?", "2"]);
+    expect(r.reply).toMatch(/Unclaimed/);
+    expect(after.actions).toEqual([]);
+    expect(got(real).length + got(fake).length).toBe(0);
+  });
+
+  test("an out-of-range number picks nothing", () => {
+    const { d, real, fake } = withImpostor();
+    const [, r] = ownerChat(d, COLIN, [`tell ${REAL}: the gate code is 4471`, "3"]);
+    expect(r.actions).toEqual([]);
+    expect(got(real).length + got(fake).length).toBe(0);
+  });
+
+  test("send the draft asks which, then stages the picked one by id", () => {
+    const { d, real, fake } = withImpostor();
+    fake.draft = "Hi, one of the owners here. We can do festival rates, call us on Monday to talk it through.";
+    const [ask, staged, done] = ownerChat(d, COLIN, ["send the draft for Harbour", "2", "yes"]);
+    expect(ask.reply).toMatch(/^That matches 2 conversations/);
+    expect(staged.reply).toMatch(/^To confirm: send Harbour Collective \(events\) the agent's draft by email to events@harbourcollective\.com\.au/);
+    expect(done.reply).toMatch(/^Done\. I sent Harbour/);
+    expect(real.messages.at(-1)).toMatchObject({ from: "owner", via: "email" });
+    expect(fake.messages).toHaveLength(0);
+  });
+
+  test("hand back asks which and keeps 'anyway' through the pick", () => {
+    const { d, real, fake } = withImpostor();
+    fake.agentActive = true;
+    fake.escalated = undefined;
+    const [ask, r] = ownerChat(d, COLIN, ["hand back Harbour anyway", "2"]);
+    expect(ask.reply).toMatch(/^That matches 2 conversations/);
+    expect(r.reply).toMatch(/^Handed Harbour Collective \(events\) back to the agent\. Heads up/);
+    expect(real.agentActive).toBe(true);
+  });
+
+  test("one exact match plus a partial match still sends to the exact one", () => {
+    const { d, real, fake } = withImpostor();
+    fake.name = `${REAL} 2`;
+    const [r] = ownerChat(d, COLIN, [`tell ${REAL}: the gate code is 4471`]);
+    expect(r.reply).toMatch(/^Sent to Harbour Collective \(events\) by email/);
+    expect(got(real)).toHaveLength(1);
+    expect(got(fake)).toHaveLength(0);
+  });
+});
+
+describe("owner Claude path", () => {
+  const ctxFor = (d: ReturnType<typeof seed>): OwnerCtx => ({ data: ownerSnapshot(d, NOW), owner: d.owners.find((o) => o.id === COLIN)!, now: NOW, actions: [], used: [], staged: undefined });
+  const said = (body: string) => [{ id: "m1", from: "customer" as const, body, at: NOW.toISOString() }];
+  const expense = { account: "co2", amount: 42, memo: "CO2 refill", date: null };
+
+  test("a staged change is dropped when the loop ends in a refusal", async () => {
+    claude.replies.push(toolUse("add_expense", expense), { stop_reason: "refusal", content: [] });
+    const r = await runOwnerClaude(ctxFor(seed()), said("$42 CO2 refill"), {});
+    expect(r.state.pending).toBeUndefined();
+    expect(r.actions).toEqual([]);
+    expect(r.reply).toMatch(/couldn't sort that one/);
+  });
+
+  test("a staged change is dropped when the loop runs too long, and nothing that ran is kept", async () => {
+    claude.replies.push(toolUse("claim_run", { ref: "SST-1049", suburb: null, date: null, which: "deliver" }), ...Array.from({ length: 5 }, () => toolUse("add_expense", expense)));
+    const r = await runOwnerClaude(ctxFor(seed()), said("take the Fremantle delivery and log the CO2"), {});
+    expect(r.state.pending).toBeUndefined();
+    expect(r.actions).toEqual([]);
+  });
+
+  test("a YES after a dropped stage posts nothing", async () => {
+    const d = seed();
+    claude.replies.push(toolUse("add_expense", expense), { stop_reason: "refusal", content: [] });
+    const first = await runOwnerClaude(ctxFor(d), said("$42 CO2 refill"), {});
+    claude.replies.push({ stop_reason: "end_turn", content: [{ type: "text", text: "Yes to what?" }] });
+    const second = await runOwnerClaude(ctxFor(d), said("yes"), first.state);
+    expect(second.actions).toEqual([]);
   });
 });

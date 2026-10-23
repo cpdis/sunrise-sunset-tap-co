@@ -41,6 +41,7 @@ const TOOL_LABEL: Record<string, string> = {
   find_booking: "found the booking",
   quote: "quoted",
   hold_and_send_deposit_link: "held the date and sent the deposit link",
+  cancel_quote: "quoted the cancellation",
   cancel_booking: "cancelled the booking",
   escalate_to_owner: "handed over",
   "stripe:webhook": "payment received",

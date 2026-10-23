@@ -13,10 +13,11 @@ import {
   post,
   runJobs,
 } from "./domain";
+import { returnedClean } from "./ops";
 import type { Block, Conversation, Data, Owner, Scenario } from "./types";
 import { addDays, addMonths, daysBetween, quarterOf, todayISO } from "./util";
 
-export const DATA_VERSION = 6;
+export const DATA_VERSION = 9;
 
 function rng(seed: number) {
   return () => {
@@ -214,6 +215,8 @@ export function buildSeed(now = new Date(), scenario: Scenario = "base"): Data {
     const at = new Date(day + "T07:00:00+08:00");
     for (const b of d.bookings) {
       if (b.state === "balance_paid" && b.date < day) completeBooking(d, b, b.date);
+      // The owner who collected the truck checked it back clean, so past bonds are released.
+      if (b.state === "completed" && b.bondStatus === "held") returnedClean(d, b.id, b.collect.ownerId ?? d.owners[0].id, at);
     }
     runJobs(d, at > now ? now : at);
   }
@@ -295,7 +298,7 @@ function seedConversations(d: Data, now: Date): Conversation[] {
       state: {},
       messages: [
         { id: "m1", from: "customer", body: "Hi team, we're running a 3-day festival in Fremantle in March. Could we hire the truck for all three days, and could a sponsor's logo go on it?", at: t(180) },
-        { id: "m2", from: "agent", body: "Thanks! Multi-day hire and sponsor branding need a person to approve. I've passed this to the owners with your dates, and someone will reply by tomorrow.", at: t(179), tools: ["check_availability", "escalate_to_owner"] },
+        { id: "m2", from: "agent", body: "Thanks! Multi-day hire and sponsor branding need a person to approve. I've passed this to the owners with your dates.", at: t(179), tools: ["check_availability", "escalate_to_owner"] },
         { id: "m3", from: "system", body: "Agent handed over: Asked for a 3-day festival rate and a sponsor wrap. Outside policy, so handed to a person.", at: t(179) },
       ],
     },
