@@ -112,7 +112,7 @@ export function runOwnerRules(ctx: OwnerCtx, text: string, prev: AgentState): Ag
   if (back) {
     const raw = (back[1] ?? back[2]).trim();
     const r = handBack(ctx, raw, force);
-    return out(r.ok ? `Handed ${r.to} back to the agent.${r.withoutReply ? " Heads up: they were told an owner would reply, and nobody has." : ""}` : r.reason);
+    return out(r.ok ? `${r.flagOnly ? `Cleared the flag on ${r.to}; the agent still has it.` : `Handed ${r.to} back to the agent.`}${r.withoutReply ? " Heads up: they were told an owner would reply, and nobody has." : ""}` : r.reason);
   }
 
   // Knowledge: "add to keg guide: we now carry G-type couplers".

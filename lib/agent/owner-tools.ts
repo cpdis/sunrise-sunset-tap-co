@@ -6,7 +6,7 @@
 import { ADMIN_ONLY_SETTINGS, SETTING_GROUPS } from "../config";
 import { ACCOUNT_LABEL, cancelPolicy, dayStatus } from "../domain";
 import type { Account, AgentAction, AgentState, Channel, Data, Distribution, Owner, PendingOwnerAction, Settings, TruckLog } from "../types";
-import { owesReply, replyRoute } from "../ops";
+import { handBack as opsHandBack, owesReply, replyRoute } from "../ops";
 import { daysBetween, fmtDate, money, quarterLabel, todayISO } from "../util";
 
 export interface OwnerInboxItem {
@@ -184,12 +184,16 @@ export function handBack(ctx: OwnerCtx, who: string, force = false) {
   if (!c) return { ok: false as const, reason: `No conversation matches "${who}".` };
   if ("ambiguous" in c) return { ok: false as const, reason: `That matches ${c.ambiguous.join(", ")}. Which one?` };
   if (c.agentActive && !c.escalated) return { ok: false as const, reason: `The agent already has ${c.name}.` };
-  // The agent told the customer an owner would reply. Handing back without one breaks that, so it takes an explicit "anyway".
-  if (owesReply(c) && !force) {
-    return { ok: false as const, owesReply: true, reason: `${c.name} was told an owner would reply, and nobody has yet. Reply first${c.draft ? ", send the agent's draft" : ""}, or text "hand back ${c.name.split(" ")[0]} anyway".` };
+  // Dry run of the shared op, so the SMS refusal is the same guard the admin button and applyOwnerAction use.
+  const dry = { owners: ctx.data.owners, conversations: [{ ...c, messages: [] }] } as unknown as Data;
+  const r = opsHandBack(dry, c.id, ctx.owner.id, force);
+  if (!r.ok) {
+    return { ok: false as const, owesReply: true, reason: `${r.reason} Reply first${c.draft ? ", send the agent's draft" : ""}, or text "hand back ${c.name.split(" ")[0]} anyway".` };
   }
   ctx.actions.push({ type: "hand_back", convId: c.id, force: force || undefined });
-  return { ok: true as const, to: c.name, withoutReply: owesReply(c) };
+  // A flag-only hand-over never took the agent off, so this clears the flag rather than handing anything back.
+  // The customer can still have been told an owner will reply ("They'll reply today"), so the warning stands.
+  return { ok: true as const, to: c.name, flagOnly: c.agentActive, withoutReply: owesReply(c) };
 }
 
 // ---------- staged: run only after YES ----------
@@ -281,6 +285,8 @@ export function addKnowledge(ctx: OwnerCtx, q: { page: string; line: string }, c
   return { ok: true as const, done: true, summary };
 }
 
+const MIN_DRAFT = 40;
+
 // Sends a text the owner may not have read, so it is staged: the summary quotes the draft in full.
 export function sendDraft(ctx: OwnerCtx, who: string, commit = false) {
   ctx.used.push("send_draft");
@@ -288,6 +294,8 @@ export function sendDraft(ctx: OwnerCtx, who: string, commit = false) {
   if (!c) return { ok: false as const, reason: `No conversation matches "${who}".` };
   if ("ambiguous" in c) return { ok: false as const, reason: `That matches ${c.ambiguous.join(", ")}. Which one?` };
   if (!c.draft) return { ok: false as const, reason: `There's no draft reply for ${c.name}. Text "tell ${c.name.split(" ")[0]}: ..." to write one.` };
+  // A greeting on its own ("Hi, one of the owners here.") would reach the customer as the whole reply.
+  if (c.draft.trim().length < MIN_DRAFT) return { ok: false as const, reason: `The agent only drafted a greeting. Text "tell ${c.name.split(" ")[0]}: ..." instead.` };
   const r = route(c);
   const summary = `send ${c.name} the agent's draft by ${r.via} to ${r.contact}: "${c.draft}"`;
   if (!commit) return stage(ctx, "send_draft", { who: c.name }, summary);

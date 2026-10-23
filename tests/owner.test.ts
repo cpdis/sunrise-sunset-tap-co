@@ -56,7 +56,7 @@ describe("hand back keeps the agent's promise", () => {
   test("refused while the customer is owed a reply; 'anyway' forces it", () => {
     const d = seed();
     const [refused] = ownerChat(d, COLIN, ["hand back Harbour"]);
-    expect(refused.reply).toMatch(/was told an owner would reply, and nobody has yet/);
+    expect(refused.reply).toMatch(/was told an owner will reply, and nobody has\. Reply first, send the agent's draft/);
     expect(harbour(d).agentActive).toBe(false);
     const [forced] = ownerChat(d, COLIN, ["hand back Harbour anyway"]);
     expect(forced.reply).toMatch(/^Handed Harbour Collective \(events\) back to the agent\. Heads up/);
@@ -87,6 +87,27 @@ describe("hand back keeps the agent's promise", () => {
     expect(done.reply).toMatch(/^Done\. I sent Harbour/);
     expect(harbour(d).messages.at(-1)).toMatchObject({ from: "owner", body: draft, ownerId: COLIN, via: "email" });
     expect(harbour(d).draft).toBeUndefined();
+  });
+
+  test("send the draft refuses a greeting-only stub", () => {
+    const d = seed();
+    harbour(d).draft = "Hi, one of the owners here. ";
+    const [r] = ownerChat(d, COLIN, ["send the draft for Harbour"]);
+    expect(r.reply).toBe(`The agent only drafted a greeting. Text "tell Harbour: ..." instead.`);
+    expect(r.state.pending).toBeUndefined();
+    expect(harbour(d).messages.some((m) => m.from === "owner")).toBe(false);
+  });
+
+  test("a flag-only hand-over is cleared, not handed back, and still needs 'anyway'", () => {
+    const d = seed();
+    const c = d.conversations.find((x) => x.agentActive && !x.ownerId)!;
+    c.escalated = "Short-notice request for Mon 26 Oct 2026";
+    const first = c.name.split(" ")[0];
+    const [refused, forced] = ownerChat(d, COLIN, [`hand back ${first}`, `hand back ${first} anyway`]);
+    expect(refused.reply).toMatch(/was told an owner will reply/);
+    expect(forced.reply).toBe(`Cleared the flag on ${c.name}; the agent still has it. Heads up: they were told an owner would reply, and nobody has.`);
+    expect(c.escalated).toBeUndefined();
+    expect(c.messages.at(-1)?.body).toBe("Colin cleared the flag");
   });
 });
 
