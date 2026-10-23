@@ -137,13 +137,13 @@ function QueueCard({ conv: c, data, open }: { conv: Conversation; data: Data; op
       {confirm ? (
         <div className="confirm">
           <span>The customer was told an owner will reply. Hand back anyway?</span>
-          <button type="button" className="btn small danger" onClick={() => a.setAgentActive(c.id, true)}>Hand back without replying</button>
+          <button type="button" className="btn small danger" onClick={() => a.handBack(c.id, true)}>Hand back without replying</button>
           <button type="button" className="btn small ghost" onClick={() => setConfirm(false)}>Keep</button>
         </div>
       ) : (
         <div className="acts">
           <button type="button" className="btn small primary" disabled={!draft.trim()} onClick={() => a.ownerReply(c.id, draft.trim())}>Send as {me}</button>
-          <button type="button" className="btn small" onClick={() => (owesReply(c) ? setConfirm(true) : a.setAgentActive(c.id, true))}>Hand back to agent</button>
+          <button type="button" className="btn small" onClick={() => (owesReply(c) ? setConfirm(true) : a.handBack(c.id))}>Hand back to agent</button>
           <span className="meta">Sends by {route.via === "sms" ? "SMS" : "email"} to {route.to}</span>
         </div>
       )}
@@ -175,7 +175,7 @@ function Thread({ conv, data, back }: { conv: Conversation; data: Data; back: ()
   }
   function handBack() {
     if (owesReply(conv)) setConfirm(true);
-    else a.setAgentActive(conv.id, true);
+    else a.handBack(conv.id);
   }
 
   return (
@@ -205,7 +205,7 @@ function Thread({ conv, data, back }: { conv: Conversation; data: Data; back: ()
       {confirm && (
         <div className="card confirm" style={{ padding: "12px 16px" }}>
           <span>The customer was told an owner will reply. Hand back anyway?</span>
-          <button type="button" className="btn small danger" onClick={() => { setConfirm(false); a.setAgentActive(conv.id, true); }}>Hand back without replying</button>
+          <button type="button" className="btn small danger" onClick={() => { setConfirm(false); a.handBack(conv.id, true); }}>Hand back without replying</button>
           <button type="button" className="btn small ghost" onClick={() => setConfirm(false)}>Keep</button>
         </div>
       )}

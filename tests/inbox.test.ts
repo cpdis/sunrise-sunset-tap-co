@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { applyOwnerAction, ownerReply, owesReply, replyRoute, setAgentActive } from "@/lib/ops";
+import { applyOwnerAction, handBack, ownerReply, owesReply, replyRoute, setAgentActive } from "@/lib/ops";
 import { chat, seed } from "./helpers";
 
 const COLIN = "own_colin";
@@ -40,6 +40,30 @@ describe("inbox hand-overs", () => {
     applyOwnerAction(d, { type: "hand_back", convId: c.id, force: true }, COLIN);
     expect(c.agentActive).toBe(true);
     expect(c.messages.at(-1)?.body).toBe("Colin handed back to the agent");
+  });
+
+  test("handBack is one guard for admin and SMS", () => {
+    const d = seed();
+    const c = harbour(d);
+    expect(handBack(d, c.id, COLIN)).toMatchObject({ ok: false, reason: expect.stringMatching(/told an owner will reply/) });
+    expect(c.agentActive).toBe(false);
+    expect(handBack(d, c.id, COLIN, true)).toEqual({ ok: true });
+    expect(c.agentActive).toBe(true);
+  });
+
+  test("clearing a flag-only hand-over does not claim a hand-back", () => {
+    const d = seed();
+    const c = d.conversations.find((x) => x.channel === "sms")!;
+    c.escalated = "Short-notice request";
+    expect(handBack(d, c.id, COLIN, true)).toEqual({ ok: true });
+    expect(c.messages.at(-1)?.body).toBe("Colin cleared the flag");
+  });
+
+  test("the couldn't-answer hand-over carries no draft", () => {
+    const [r] = chat(seed(), "0499 120 554", ["what colour are the taps"]);
+    const esc = r.actions.find((a) => a.type === "escalate");
+    expect(esc).toBeTruthy();
+    expect(esc && "draft" in esc ? esc.draft : undefined).toBeUndefined();
   });
 
   test("take over names the owner", () => {

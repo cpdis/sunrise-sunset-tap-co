@@ -97,16 +97,28 @@ export function setAgentActive(d: Data, convId: string, active: boolean, ownerId
   const c = d.conversations.find((x) => x.id === convId);
   if (!c) return;
   const who = ownerId ? ownerName(d, ownerId) : "An owner";
+  // A flag-only hand-over (short notice, unknown suburb) never took the agent off; clearing it is not a hand-back.
+  const flagOnly = active && c.agentActive;
   c.agentActive = active;
   c.handledBy = active ? undefined : ownerId;
   if (active) c.escalated = undefined;
   c.messages.push({
     id: uid("m"),
     from: "system",
-    body: active ? `${who} handed back to the agent` : `${who} took over this conversation`,
+    body: active ? (flagOnly ? `${who} cleared the flag` : `${who} handed back to the agent`) : `${who} took over this conversation`,
     at: new Date().toISOString(),
     ownerId,
   });
+}
+
+// Hands a conversation back to the agent. Refused while the customer is owed an owner reply unless forced;
+// the admin button and the owner SMS agent both go through here so the guard lives in one place.
+export function handBack(d: Data, convId: string, ownerId?: string, force = false): { ok: true } | { ok: false; reason: string } {
+  const c = d.conversations.find((x) => x.id === convId);
+  if (!c) return { ok: false, reason: "No such conversation." };
+  if (owesReply(c) && !force) return { ok: false, reason: `${c.name} was told an owner will reply, and nobody has.` };
+  setAgentActive(d, convId, true, ownerId);
+  return { ok: true };
 }
 
 // An owner reply takes the conversation off the agent until someone hands it back.
@@ -172,10 +184,8 @@ export function applyOwnerAction(d: Data, a: AgentAction, ownerId: string) {
       if (c?.draft) ownerReply(d, a.convId, c.draft, ownerId);
       break;
     }
-    case "hand_back": {
-      const c = d.conversations.find((x) => x.id === a.convId);
-      if (c && (a.force || !owesReply(c))) setAgentActive(d, a.convId, true, ownerId);
+    case "hand_back":
+      handBack(d, a.convId, ownerId, a.force);
       break;
-    }
   }
 }
