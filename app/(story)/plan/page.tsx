@@ -9,7 +9,7 @@ import { planData } from "./data";
 
 export const metadata: Metadata = {
   title: "Business plan · Sunrise Sunset Tap Co.",
-  description: "Nine friends, one eight-tap kei truck, dry hire across Perth. What it costs, what it earns, and what we check before we buy.",
+  description: "A group of friends, one eight-tap kei truck, dry hire across Perth. What it costs, what it earns, and what we check before we buy.",
 };
 
 // Signed amounts for the tables: a loss shows as −$594.
@@ -67,10 +67,10 @@ export default function Plan() {
   return (
     <article className="col">
       <h1>Business plan</h1>
-      <p className="byline">Draft for the {P.owners} owners · v1 of 22 October 2026, numbers from the demo&apos;s simulated year</p>
+      <p className="byline">Draft for review · v1 of 22 October 2026, numbers from the demo&apos;s simulated year</p>
 
       <p>We buy one 2018 Suzuki Carry tap truck, wrap it, and hire it out across Perth metro on a dry-hire basis. The client buys the drinks. We deliver a cold, clean, eight-tap truck with glassware, and we collect it after.</p>
-      <p>Software takes the bookings, the payments and the questions. <Link href="/how-it-works">How it works</Link> shows that part. {P.owners} friends own it equally. Cold brew for the Wednesday hill run in the morning, beer at a wedding in the evening.</p>
+      <p>Software takes the bookings, the payments and the questions. <Link href="/how-it-works">How it works</Link> shows that part. A group of friends own it equally. Cold brew for the Wednesday hill run in the morning, beer at a wedding in the evening.</p>
 
       <figure className="wide photo">
         <img src="/plan/front.jpg" alt="The 2018 Suzuki Carry from the Marketplace listing, shown with the Sunrise Sunset wrap: white cab with three stripes, landscape poster on the box" width={1300} height={1267} style={{ maxHeight: 640, objectFit: "cover" }} />
@@ -78,10 +78,10 @@ export default function Plan() {
       </figure>
 
       <h2>The ask</h2>
-      <p>Each owner puts in <strong>{money(P.perOwner)}</strong>. We form a Pty Ltd with all {P.owners} owners as directors, inspect the truck, and buy it at $25,000 to $29,000 (asking price $29,500). We plan on {money(P.startup.find((x) => x.item.includes("Suzuki"))?.amount ?? 0)}.</p>
+      <p>Each owner puts in <strong>{money(P.perOwner)}</strong>. We form a Pty Ltd with every owner as a director, inspect the truck, and buy it at $25,000 to $29,000 (asking price $29,500). We plan on {money(P.startup.find((x) => x.item.includes("Suzuki"))?.amount ?? 0)}.</p>
       <p>In return, each owner gets an equal share of profit, paid each quarter. {money(s.runnerFee)} for each delivery or collection they run. Personal use of the truck when nobody has paid for the date. In the base case the company earns back the capital in about {P.yearsBack} years and still owns the truck.</p>
       <ul className="stats">
-        <li><b className="num">{money(P.capital)}</b><span>Capital: {P.owners} owners at {money(P.perOwner)} each</span></li>
+        <li><b className="num">{money(P.capital)}</b><span>Capital, at {money(P.perOwner)} per owner</span></li>
         <li><b className="num">{b.hires}</b><span>Hires in the base year, about 3 a month</span></li>
         <li><b className="num">{money(b.revenue)}</b><span>Base-year revenue: hire, travel and forfeited deposits</span></li>
         <li><b className="num">~{P.breakEven}</b><span>Hires a year to cover every cost, depreciation included</span></li>
@@ -162,7 +162,7 @@ export default function Plan() {
 
       <h2>Ownership and money</h2>
       <ul className="plain">
-        <li>Pty Ltd. {P.owners} equal owners, all directors: {P.names.slice(0, -1).join(", ")} and {P.names.at(-1)}.</li>
+        <li>Pty Ltd. Equal owners, all directors.</li>
         <li>Every owner sees everything in the admin: bookings, ledger, payouts.</li>
         <li>A departing owner offers their share to the others pro rata.</li>
         <li>Deposits and balances sit as a liability until the hire is done or forfeited. Only then are they revenue.</li>
@@ -228,13 +228,13 @@ export default function Plan() {
       <ul className="plain">
         <li><strong>The fridge runs off the engine.</strong> The truck idles for the whole event. Check for a 240 V standby plug at inspection, or make one a condition of sale.</li>
         <li><strong>Payload.</strong> About 350 kg. Eight 50 L kegs weigh 500 kg, so we limit hires to 19 to 30 L kegs.</li>
-        <li><strong>Structure.</strong> Ask an accountant about personal use (FBT and Division 7A) and confirm that {P.owners} friends do not need a managed investment scheme.</li>
-        <li><strong>Insurance.</strong> $20M public liability plus commercial vehicle cover for {P.owners} named drivers, about $1,800 a year.</li>
+        <li><strong>Structure.</strong> Ask an accountant about personal use (FBT and Division 7A) and confirm that a group of friends does not need a managed investment scheme.</li>
+        <li><strong>Insurance.</strong> $20M public liability plus commercial vehicle cover with every owner as a named driver, about $1,800 a year.</li>
       </ul>
 
       <h2>Next steps</h2>
       <ol className="plain">
-        <li>All {P.owners} owners say yes to this plan and the {money(P.perOwner)}.</li>
+        <li>All owners say yes to this plan and the {money(P.perOwner)}.</li>
         <li>Pre-purchase inspection, with the fridge power question answered.</li>
         <li>Accountant review of the structure, then register the Pty Ltd.</li>
         <li>Buy the truck, aiming for $25,000 to $27,000.</li>

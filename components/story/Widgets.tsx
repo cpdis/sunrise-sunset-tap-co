@@ -89,6 +89,12 @@ export function BookingLife({ life }: { life: { ok: { ref: string; date: string;
         {d.bond === "held" && <span className="s-pill s-bond">Bond held</span>}
       </div>
       <div className="life-track">
+        <span className="life-fill" aria-hidden="true" style={{ width: `calc((100% - 16px) * ${at / max})` }} />
+        <div className="life-ticks" aria-hidden="true">
+          {stops.map((s) => (
+            <i key={s} style={{ left: `${(s / max) * 100}%` }} />
+          ))}
+        </div>
         <input
           type="range"
           min={0}
@@ -98,11 +104,6 @@ export function BookingLife({ life }: { life: { ok: { ref: string; date: string;
           aria-valuetext={`${fmtDate(d.date, { dow: true })}, ${when}`}
           onChange={(e) => setI(Number(e.target.value))}
         />
-        <div className="life-ticks" aria-hidden="true">
-          {stops.map((s) => (
-            <button key={s} type="button" tabIndex={-1} style={{ left: `${(s / max) * 100}%` }} className={s === at ? "on" : ""} onClick={() => setI(s)} />
-          ))}
-        </div>
       </div>
       <div className="life-jump">
         {stops.map((s) => (
@@ -178,7 +179,7 @@ export function PayoutCalc({ payouts, approvalsRequired }: { payouts: Payout[]; 
         <Row label="Room to pay" v={room} w={bar(room)} sum />
       </div>
       <p className="wf-result">
-        The payout is the smaller test: <b className="num">{money(raw)}</b>. Split {p.owners} ways and rounded down to $10, that is <b className="num">{money(p.each)}</b> each ({money(p.distributable)} in all), plus <b className="num">{money(p.runnerFees)}</b> of runner fees to whoever ran.{" "}
+        The payout is the smaller test: <b className="num">{money(raw)}</b>. Split equally and rounded down to $10, that is <b className="num">{money(p.each)}</b> each ({money(p.distributable)} in all), plus <b className="num">{money(p.runnerFees)}</b> of runner fees to whoever ran.{" "}
         {p.status === "paid" ? `${approvalsRequired} directors approved it and it was paid.` : `It waits for ${approvalsRequired} director approvals (${p.approvals} so far).`}
       </p>
     </div>

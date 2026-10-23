@@ -196,10 +196,20 @@ html:has(.story) body { background: #fff; }
 .story .s-pill.s-balance_paid, .story .s-pill.s-completed { background: color-mix(in srgb, var(--good) 14%, white); color: var(--good); }
 .story .s-pill.s-cancelled { background: color-mix(in srgb, var(--bad) 12%, white); color: var(--bad); }
 .story .s-pill.s-bond { background: color-mix(in srgb, var(--gold) 28%, white); color: var(--warn-ink); }
-.story .life-track { position: relative; margin: 18px 0 6px; }
-.story .life-track input { width: 100%; margin: 0; accent-color: var(--ink); }
-.story .life-ticks { position: absolute; left: 8px; right: 8px; top: -8px; height: 0; pointer-events: none; }
-.story .life-ticks button { position: absolute; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 0 1.5px var(--s-ink); pointer-events: auto; }
+.story .life-track { position: relative; height: 24px; margin: 14px 0 6px; }
+/* Own track so the event dots sit on the line, under the thumb. 8px insets = half the thumb, where the native range puts min and max. */
+.story .life-track::before { content: ""; position: absolute; left: 8px; right: 8px; top: 10px; height: 4px; border-radius: 2px; background: var(--s-hair); }
+.story .life-fill { position: absolute; left: 8px; top: 10px; height: 4px; border-radius: 2px; background: var(--s-ink); }
+.story .life-ticks { position: absolute; left: 8px; right: 8px; top: 12px; height: 0; pointer-events: none; }
+.story .life-ticks i { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 0 1.5px var(--s-ink); }
+.story .life-track input { position: relative; z-index: 1; display: block; width: 100%; height: 24px; margin: 0; background: transparent; -webkit-appearance: none; appearance: none; cursor: pointer; }
+.story .life-track input::-webkit-slider-runnable-track { height: 24px; background: transparent; }
+.story .life-track input::-moz-range-track { height: 24px; background: transparent; }
+.story .life-track input::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; margin-top: 4px; border-radius: 50%; background: var(--s-ink); box-shadow: 0 0 0 3px #fff; }
+.story .life-track input::-moz-range-thumb { width: 16px; height: 16px; border: 0; border-radius: 50%; background: var(--s-ink); box-shadow: 0 0 0 3px #fff; }
+.story .life-track input:focus-visible { outline: none; }
+.story .life-track input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--gold); }
+.story .life-track input:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--gold); }
 .story .life-jump { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
 .story .life-jump button { height: 26px; padding: 0 10px; border-radius: 9999px; font-size: 12px; color: var(--s-body); background: var(--s-soft); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 7%, transparent); }
 .story .life-jump button.on { background: var(--s-ink); color: #fff; box-shadow: none; }

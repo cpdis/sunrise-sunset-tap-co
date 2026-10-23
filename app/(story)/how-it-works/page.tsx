@@ -12,7 +12,7 @@ import { diagrams } from "./diagrams";
 
 export const metadata: Metadata = {
   title: "How the tap truck runs itself · Sunrise Sunset Tap Co.",
-  description: "How people book, how the agent works, how money moves and how nine owners run one tap truck with no staff. Live demo, real numbers from the simulated year.",
+  description: "How people book, how the agent works, how money moves and how the owners run one tap truck with no staff. Live demo, real numbers from the simulated year.",
 };
 
 const REPO = "https://github.com/cpdis/sunrise-sunset-tap-co";
@@ -27,9 +27,9 @@ export default function HowItWorks() {
   return (
     <article className="col">
       <h1>How the tap truck runs itself</h1>
-      <p className="byline">For the {D.owners} owners · a proof of concept, everything simulated · 23 October 2026</p>
+      <p className="byline">For review · proof of concept · 23 October 2026</p>
 
-      <p>We want to buy one tap truck and hire it out across Perth. There are {D.owners} of us and no staff. Somebody still has to answer the texts, take the money, chase the balance, and work out what each owner gets.</p>
+      <p>We want to buy one tap truck and hire it out across Perth. We have no staff. Somebody still has to answer the texts, take the money, chase the balance, and work out what each owner gets.</p>
       <p>So software does the desk work, and owners do the driving. This page shows how. Every number and every text on it comes from running the demo&apos;s own code against its simulated year of trading.</p>
       <p>This is the booking page, live, with made-up data. Pick a date and go through to checkout. The card <code>4242 4242 4242 4242</code> pays.</p>
 
