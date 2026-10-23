@@ -290,7 +290,7 @@ function seedConversations(d: Data, now: Date): Conversation[] {
       name: "Harbour Collective (events)",
       agentActive: false,
       escalated: "Asked for a 3-day festival rate and a sponsor wrap. Outside policy, so handed to a person.",
-      draft: "Hi, thanks for thinking of us for the festival. We can do each of the three days as a standard full-day hire and those dates are free at the moment. We don't put sponsor branding on the truck, sorry. Want me to hold the dates for you?",
+      draft: "Hi, thanks for thinking of us for the festival. We don't put sponsor branding on the truck, sorry. A three-day hire is one for the owners to work out, so tell me the dates, the site and the crowd you expect and I'll come back to you.",
       unread: true,
       state: {},
       messages: [

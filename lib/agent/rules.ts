@@ -325,7 +325,8 @@ export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentRes
   }
   if (has(t, /\b(thanks|thank you|cheers|legend|ta)\b/)) return out("Cheers! Text any time.");
 
-  escalate(ctx, `Agent couldn't answer: "${text.slice(0, 160)}"`, false, `${hi(ctx)} one of the owners here. `);
+  // No draft here: the agent has nothing to say, and a bare greeting would get sent as the whole reply.
+  escalate(ctx, `Agent couldn't answer: "${text.slice(0, 160)}"`);
   return out(`Good question. I'm not sure, so I've asked one of the owners to reply. They usually do within a few hours${when === "today" ? "" : `, so ${when}`}.`);
 }
 
