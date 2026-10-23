@@ -111,7 +111,9 @@ function Row({ conv: c, data, open }: { conv: Conversation; data: Data; open: ()
 function QueueCard({ conv: c, data, open }: { conv: Conversation; data: Data; open: () => void }) {
   const a = useApp();
   const me = ownerName(data, a.ownerId ?? undefined);
+  // Edits live on the conversation (saved on blur), so leaving the page or sending by SMS uses the edited text.
   const [draft, setDraft] = useState(c.draft ?? "");
+  useEffect(() => setDraft(c.draft ?? ""), [c.draft]);
   const [confirm, setConfirm] = useState(false);
   const ask = [...c.messages].reverse().find((m) => m.from === "customer");
   const said = [...c.messages].reverse().find((m) => m.from === "agent");
@@ -132,7 +134,7 @@ function QueueCard({ conv: c, data, open }: { conv: Conversation; data: Data; op
       </div>
       <div className="field">
         <label htmlFor={`draft-${c.id}`}>Reply{c.draft ? ", drafted by the agent" : ""}</label>
-        <textarea id={`draft-${c.id}`} className="input" rows={3} value={draft} onChange={(e) => setDraft(e.target.value)} />
+        <textarea id={`draft-${c.id}`} className="input" rows={3} value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={() => { if (draft !== (c.draft ?? "")) a.setDraft(c.id, draft); }} />
       </div>
       {confirm ? (
         <div className="confirm">

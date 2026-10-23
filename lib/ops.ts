@@ -111,6 +111,12 @@ export function setAgentActive(d: Data, convId: string, active: boolean, ownerId
   });
 }
 
+// An owner's edit to the agent's draft, kept on the conversation so another owner (or the SMS "send the draft") sends the edited text.
+export function setDraft(d: Data, convId: string, draft: string) {
+  const c = d.conversations.find((x) => x.id === convId);
+  if (c) c.draft = draft.trim() || undefined;
+}
+
 // Hands a conversation back to the agent. Refused while the customer is owed an owner reply unless forced;
 // the admin button and the owner SMS agent both go through here so the guard lives in one place.
 export function handBack(d: Data, convId: string, ownerId?: string, force = false): { ok: true } | { ok: false; reason: string } {
