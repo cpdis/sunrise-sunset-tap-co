@@ -50,12 +50,11 @@ export function quote(s: Settings, block: Block, suburb: string) {
   };
 }
 
+// An unpaid hold past its time. The daily job cancels it; until then it no longer counts.
+export const holdExpired = (b: Booking, now = new Date()) => b.state === "held" && !!b.heldUntil && Date.parse(b.heldUntil) < now.getTime();
+
 export function liveBookings(d: Data, now = new Date()) {
-  return d.bookings.filter(
-    (b) =>
-      b.state !== "cancelled" &&
-      !(b.state === "held" && b.heldUntil && Date.parse(b.heldUntil) < now.getTime()),
-  );
+  return d.bookings.filter((b) => b.state !== "cancelled" && !holdExpired(b, now));
 }
 
 export type DayStatus = "free" | "booked" | "held" | "personal" | "blackout" | "past" | "too_far" | "short_notice" | "invalid";
@@ -67,11 +66,14 @@ export function dayStatus(d: Data, date: string, now = new Date()): DayStatus {
   if (date <= today) return "past";
   if (date > addMonths(today, d.settings.bookAheadMonths)) return "too_far";
   if (d.blackouts.includes(date)) return "blackout";
-  const b = liveBookings(d, now).find((x) => x.date === date);
-  if (b && b.kind === "paid") return b.state === "held" ? "held" : "booked";
+  // A paid booking or hold wins over an owner's own use on the same day, so look for one first: an own-use day
+  // with a live hold on it is not free (R12, R13).
+  const onDay = liveBookings(d, now).filter((x) => x.date === date);
+  const paid = onDay.find((x) => x.kind === "paid");
+  if (paid) return paid.state === "held" ? "held" : "booked";
   // Inside the notice period an open day can't be booked online; an owner decides.
   if (daysBetween(today, date) < d.settings.minNoticeDays) return "short_notice";
-  return b ? "personal" : "free";
+  return onDay.length ? "personal" : "free";
 }
 
 // Personal-use bookings yield to paid ones, so they count as free for customers.
@@ -187,12 +189,6 @@ export function createHold(d: Data, n: NewBooking, now = new Date()): Booking {
   if (late) throw new Error(`Start ${startTime}: ${late}`);
   const q = quote(d.settings, n.block, n.suburb);
   const c = upsertCustomer(d, n.name, n.email, n.phone);
-  // A paid booking bumps a personal-use booking on the same day.
-  for (const p of d.bookings.filter((x) => x.date === n.date && x.kind === "personal" && x.state !== "cancelled")) {
-    p.state = "cancelled";
-    p.cancelledAt = now.toISOString();
-    p.notes = (p.notes ? p.notes + " · " : "") + "Bumped by a paid booking";
-  }
   const b: Booking = {
     id: n.id ?? uid("bk"),
     ref: n.ref ?? nextRef(d),
@@ -237,6 +233,13 @@ export function payDeposit(d: Data, bookingId: string, card: string, now = new D
   pay(d, b, "deposit", b.deposit, now.toISOString(), card);
   b.state = "confirmed";
   b.heldUntil = undefined;
+  // Only a paid booking bumps an owner's own use on the same day. An unpaid hold leaves it alone, so a hold that
+  // lapses never costs the owner their day (R13).
+  for (const p of d.bookings.filter((x) => x.date === b.date && x.kind === "personal" && x.state !== "cancelled")) {
+    p.state = "cancelled";
+    p.cancelledAt = now.toISOString();
+    p.notes = (p.notes ? p.notes + " · " : "") + "Bumped by a paid booking";
+  }
   if (daysBetween(todayISO(now), b.date) <= d.settings.balanceDaysBefore) {
     pay(d, b, "balance", b.total - b.deposit, now.toISOString(), card);
     b.state = "balance_paid";
@@ -325,7 +328,7 @@ export function runJobs(d: Data, now = new Date()): string[] {
   const log: string[] = [];
   if (d.ledger.some((e) => e.account === "truck") && depreciate(d, today)) log.push("Posted this month's truck depreciation");
   for (const b of d.bookings) {
-    if (b.state === "held" && b.heldUntil && Date.parse(b.heldUntil) < now.getTime()) {
+    if (holdExpired(b, now)) {
       b.state = "cancelled";
       b.cancelledAt = now.toISOString();
       b.notes = (b.notes ? b.notes + " · " : "") + "Hold expired unpaid";

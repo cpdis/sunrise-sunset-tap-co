@@ -1,4 +1,5 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+import { runOwnerClaude } from "@/lib/agent/owner-claude";
 import { runOwnerRules } from "@/lib/agent/owner-rules";
 import type { OwnerCtx } from "@/lib/agent/owner-tools";
 import { balance, cashAt } from "@/lib/domain";
@@ -11,6 +12,11 @@ const COLIN = "own_colin";
 const AARON = "own_aaron";
 const types = (r: { actions: { type: string }[] }) => r.actions.map((a) => a.type);
 const byRef = (d: ReturnType<typeof seed>, ref: string) => d.bookings.find((b) => b.ref === ref)!;
+
+// No API key here, so a scripted client stands in for Claude: each create() returns the next reply.
+const claude = vi.hoisted(() => ({ replies: [] as unknown[] }));
+vi.mock("@anthropic-ai/sdk", () => ({ default: class { beta = { messages: { create: async () => claude.replies.shift() } }; } }));
+const toolUse = (name: string, input: Record<string, unknown>) => ({ stop_reason: "tool_use", content: [{ type: "tool_use", id: `tu_${name}`, name, input }] });
 
 describe("low stakes run at once", () => {
   test("what's on lists unclaimed runs and the waiting payout", () => {
@@ -378,5 +384,35 @@ describe("two conversations share a name", () => {
     expect(r.reply).toMatch(/^Sent to Harbour Collective \(events\) by email/);
     expect(got(real)).toHaveLength(1);
     expect(got(fake)).toHaveLength(0);
+  });
+});
+
+describe("owner Claude path", () => {
+  const ctxFor = (d: ReturnType<typeof seed>): OwnerCtx => ({ data: ownerSnapshot(d, NOW), owner: d.owners.find((o) => o.id === COLIN)!, now: NOW, actions: [], used: [], staged: undefined });
+  const said = (body: string) => [{ id: "m1", from: "customer" as const, body, at: NOW.toISOString() }];
+  const expense = { account: "co2", amount: 42, memo: "CO2 refill", date: null };
+
+  test("a staged change is dropped when the loop ends in a refusal", async () => {
+    claude.replies.push(toolUse("add_expense", expense), { stop_reason: "refusal", content: [] });
+    const r = await runOwnerClaude(ctxFor(seed()), said("$42 CO2 refill"), {});
+    expect(r.state.pending).toBeUndefined();
+    expect(r.actions).toEqual([]);
+    expect(r.reply).toMatch(/couldn't sort that one/);
+  });
+
+  test("a staged change is dropped when the loop runs too long, and nothing that ran is kept", async () => {
+    claude.replies.push(toolUse("claim_run", { ref: "SST-1049", suburb: null, date: null, which: "deliver" }), ...Array.from({ length: 5 }, () => toolUse("add_expense", expense)));
+    const r = await runOwnerClaude(ctxFor(seed()), said("take the Fremantle delivery and log the CO2"), {});
+    expect(r.state.pending).toBeUndefined();
+    expect(r.actions).toEqual([]);
+  });
+
+  test("a YES after a dropped stage posts nothing", async () => {
+    const d = seed();
+    claude.replies.push(toolUse("add_expense", expense), { stop_reason: "refusal", content: [] });
+    const first = await runOwnerClaude(ctxFor(d), said("$42 CO2 refill"), {});
+    claude.replies.push({ stop_reason: "end_turn", content: [{ type: "text", text: "Yes to what?" }] });
+    const second = await runOwnerClaude(ctxFor(d), said("yes"), first.state);
+    expect(second.actions).toEqual([]);
   });
 });

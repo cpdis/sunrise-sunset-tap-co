@@ -172,6 +172,8 @@ export interface AgentState {
   agreed?: boolean;
   // Consecutive replies that didn't give the thing the agent asked for.
   misses?: number;
+  // SST- references in a row that aren't the sender's. The second goes to an owner.
+  refMisses?: number;
   awaiting?: "date" | "name" | "suburb" | "confirm_hold" | "confirm_cancel";
   bookingId?: string;
   refDate?: string;

@@ -4,7 +4,7 @@ import {
   dayStatus, heldFor, nextFreeDates, payDeposit, payDistribution, periodTotals, runJobs, truckBookValue, upsertCustomer,
 } from "@/lib/domain";
 import { DEFAULT_SETTINGS, fitStart, settingProblem, startProblem } from "@/lib/config";
-import { addExpense, approveDistribution, customerCancel, payOut, returnedClean, updateSettings } from "@/lib/ops";
+import { addExpense, addPersonalUse, approveDistribution, customerCancel, payOut, returnedClean, updateSettings } from "@/lib/ops";
 import { buildSeed } from "@/lib/seed";
 import type { Data, Distribution, Settings } from "@/lib/types";
 import { snapshot } from "@/lib/store";
@@ -35,6 +35,49 @@ describe("booking rules", () => {
     expect(() => payDeposit(d, b.id, "Visa •• 4242", NOW)).toThrow(/terms/);
     payDeposit(d, b.id, "Visa •• 4242", NOW, true);
     expect(b.state).toBe("confirmed");
+  });
+});
+
+describe("owner's own use (R13)", () => {
+  const ownUse = (d: Data, date: string) => {
+    addPersonalUse(d, date, "Hill run cold brew", "own_colin");
+    return d.bookings.at(-1)!;
+  };
+  const stranger = (d: Data, date: string, phone = "0411 222 333") =>
+    createHold(d, { date, block: 4, suburb: "Subiaco", name: "Stranger", phone, via: "sms" }, NOW);
+
+  test("a hold that lapses leaves the own-use day booked", () => {
+    const d = seed();
+    const date = freeDate(d, 60);
+    const own = ownUse(d, date);
+    const h = stranger(d, date);
+    expect(own.state).toBe("confirmed");
+    runJobs(d, new Date(NOW.getTime() + (d.settings.holdMinutes + 1) * 60000));
+    expect(h.state).toBe("cancelled");
+    expect(own.state).toBe("confirmed");
+    expect(dayStatus(d, date, NOW)).toBe("personal");
+  });
+
+  test("paying the deposit is what bumps the own-use day", () => {
+    const d = seed();
+    const date = freeDate(d, 60);
+    const own = ownUse(d, date);
+    const h = createHold(d, { date, block: 4, suburb: "Subiaco", name: "Payer", phone: "0411 222 333", via: "web", agreed: true }, NOW);
+    expect(own.state).toBe("confirmed");
+    payDeposit(d, h.id, "Visa •• 4242", NOW);
+    expect(own.state).toBe("cancelled");
+    expect(own.notes).toMatch(/Bumped by a paid booking/);
+  });
+
+  test("an own-use day with an unpaid hold refuses a second customer's hold", () => {
+    const d = seed();
+    const date = freeDate(d, 60);
+    ownUse(d, date);
+    expect(dayStatus(d, date, NOW)).toBe("personal");
+    stranger(d, date);
+    expect(dayStatus(d, date, NOW)).toBe("held");
+    expect(nextFreeDates(d, addDays(date, -1), 1, false, NOW)[0]).not.toBe(date);
+    expect(() => stranger(d, date, "0499 888 777")).toThrow(/can't be booked \(held\)/);
   });
 });
 

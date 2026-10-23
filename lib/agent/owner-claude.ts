@@ -179,6 +179,10 @@ export async function runOwnerClaude(ctx: OwnerCtx, history: Msg[], prev: AgentS
   const confirmed = last ? resolvePending(ctx, state, last.body) : undefined;
   if (confirmed) return done(confirmed);
   const r = await toolLoop({ system: system(ctx), tools: TOOLS, messages: toMessages(history), exec: (n, i) => exec(ctx, n, i) });
-  if (r.stop !== "done") return done("I couldn't sort that one. Try it in the admin.");
+  if (r.stop !== "done") {
+    // The owner is told nothing was done, so nothing is: no staged change waits for a YES and nothing ran.
+    Object.assign(ctx, { actions: [], used: [], staged: undefined });
+    return done("I couldn't sort that one. Try it in the admin.");
+  }
   return done(r.reply || "Sorry, could you say that again?");
 }
