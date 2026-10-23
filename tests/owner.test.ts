@@ -63,6 +63,13 @@ describe("hand back keeps the agent's promise", () => {
     expect(harbour(d).agentActive).toBe(true);
   });
 
+  test.each(["hand Harbour back anyway", "hand Harbour back to the agent without replying", "hand back to the agent Harbour anyway"])("%s", (msg) => {
+    const d = seed();
+    const [r] = ownerChat(d, COLIN, [msg]);
+    expect(r.reply).toMatch(/^Handed Harbour Collective \(events\) back to the agent\. Heads up/);
+    expect(harbour(d).agentActive).toBe(true);
+  });
+
   test("a phone caller's reply goes by SMS to their number", () => {
     const d = seed();
     const caller = d.conversations.find((x) => x.channel === "phone")!;
