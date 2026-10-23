@@ -120,7 +120,7 @@ export function ownerSnapshot(d: Data, now = new Date()): OwnerSnapshot {
     seq: d.seq,
     inbox: d.conversations
       .filter((c) => !c.ownerId)
-      .map((c) => ({ id: c.id, name: c.name, channel: c.channel, escalated: c.escalated, agentActive: c.agentActive, last: c.messages.at(-1)?.body.slice(0, 140) })),
+      .map((c) => ({ id: c.id, name: c.name, channel: c.channel, contact: c.contact, escalated: c.escalated, agentActive: c.agentActive, last: c.messages.at(-1)?.body.slice(0, 140), draft: c.draft })),
     money: {
       cash: Math.round(cashAt(d)),
       reserve: reserveTarget(d, today),

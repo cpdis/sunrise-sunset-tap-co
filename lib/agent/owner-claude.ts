@@ -17,6 +17,7 @@ import {
   claimRun,
   findBookings,
   handBack,
+  sendDraft,
   inboxList,
   logTruck,
   payout,
@@ -54,14 +55,25 @@ const TOOLS: Tool[] = [
     input_schema: obj({ action: { type: "string", enum: ["block", "unblock", "own_use"] }, date, note: { type: ["string", "null"] } }, ["action", "date", "note"]),
     strict: true,
   },
-  { name: "inbox", description: "Customer conversations that need a person or that an owner is handling.", input_schema: obj({}, []), strict: true },
+  { name: "inbox", description: "Customer conversations that need a person or that an owner is handling, with the agent's draft reply where it wrote one.", input_schema: obj({}, []), strict: true },
   {
     name: "reply_to_customer",
     description: "Send a reply to a customer conversation as this owner, on the customer's channel. This takes the conversation off the agent until someone hands it back. Send exactly the words the owner gave; don't add promises.",
     input_schema: obj({ who: { type: "string", description: "Customer name as shown in the inbox" }, text: { type: "string" } }, ["who", "text"]),
     strict: true,
   },
-  { name: "hand_back", description: "Give a customer conversation back to the agent.", input_schema: obj({ who: { type: "string" } }, ["who"]), strict: true },
+  {
+    name: "hand_back",
+    description: "Give a customer conversation back to the agent. Refused while the customer is still owed the owner reply the agent promised; set without_reply only when the owner explicitly says to hand back without replying.",
+    input_schema: obj({ who: { type: "string" }, without_reply: { type: "boolean" } }, ["who", "without_reply"]),
+    strict: true,
+  },
+  {
+    name: "send_draft",
+    description: `Send the customer the reply the agent drafted when it handed over, as this owner. ${STAGED}`,
+    input_schema: obj({ who: { type: "string", description: "Customer name as shown in the inbox" } }, ["who"]),
+    strict: true,
+  },
   {
     name: "add_expense",
     description: `Add a business expense paid by the owner. ${STAGED}`,
@@ -113,7 +125,9 @@ function exec(ctx: OwnerCtx, name: string, i: Record<string, unknown>): unknown 
     case "reply_to_customer":
       return replyToCustomer(ctx, String(i.who), String(i.text));
     case "hand_back":
-      return handBack(ctx, String(i.who));
+      return handBack(ctx, String(i.who), i.without_reply === true);
+    case "send_draft":
+      return sendDraft(ctx, String(i.who));
     case "add_expense":
       return addExpense(ctx, { account: i.account as never, amount: Number(i.amount), memo: String(i.memo), date: s(i.date) });
     case "payout":
@@ -137,7 +151,7 @@ Voice: brief and plain, like texting a business partner. One to four short sente
 Rules:
 - Use tools for every fact and every change. Never invent bookings, numbers or results.
 - Tools that "run at once" are done when they return ok; say what was done.
-- Staged tools (expenses, payouts, cancellations, settings, knowledge) never run straight away. Stage one change per reply. Give the owner the returned summary and ask them to reply YES. Never say it's done.
+- Staged tools (expenses, payouts, cancellations, settings, knowledge, sending a draft) never run straight away. Stage one change per reply. Give the owner the returned summary and ask them to reply YES. Never say it's done.
 - If a tool says something must be done in the admin, say so. Refunds over the limit, bond captures, share transfers, the approvals setting and the refund limit are admin only.
 - When you reply to a customer, send only what the owner asked you to send.
 - Knowledge base pages: ${ctx.data.kb.map((p) => `${p.slug} (${p.title})`).join(", ")}.`;
