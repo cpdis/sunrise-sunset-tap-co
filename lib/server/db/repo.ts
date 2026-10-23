@@ -1,7 +1,7 @@
 // Each business's data as one versioned document, written with compare-and-swap (KTD1). Domain code stays pure:
 // mutate loads the document, runs the same lib/domain.ts or lib/ops.ts function on it, and saves only if no other
 // write landed in between. Every read and write takes the tenant id and filters on it (R16).
-import { and, desc, eq, lt, sql } from "drizzle-orm";
+import { and, desc, eq, like, lt, notLike, sql } from "drizzle-orm";
 import { BUSINESS } from "@/lib/config";
 import { DATA_VERSION, buildSeed } from "@/lib/seed";
 import type { Data } from "@/lib/types";
@@ -12,6 +12,13 @@ import { approvals, idempotencyKeys, outbox, rateLimits, tenantState, tenants } 
 
 // The one business the demo runs (KTD12).
 export const DEMO_TENANT = "sunrise-sunset";
+
+// Inbound message ids are idempotency keys under this prefix (lib/server/inbound.ts). They are kept INBOUND_DAYS, not
+// the day other keys get, so a captured webhook can't be replayed the next day (SS-10).
+export const INBOUND_KEYS = "inbound:";
+export const INBOUND_DAYS = 30;
+// The simulated outbox keeps a week of mail (A6).
+export const OUTBOX_DAYS = 7;
 
 // Tries per mutate before it returns a conflict. One truck writes rarely, so losing five races in a row means
 // something is wrong, and the caller should fail loudly (409) instead of retrying forever.
@@ -119,7 +126,7 @@ export function createRepo(db: Db, opts: RepoOptions = {}) {
 
   // Like mutate, but runs at most once per tenant and key (a command's idempotency key). The result is stored in the
   // same transaction as the save, so a retry with the key gets the first run's result back and changes nothing.
-  // A document fn leaves unchanged is not saved. Keys older than a day are pruned.
+  // A document fn leaves unchanged is not saved. Keys older than a day are pruned, except inbound message ids (prune).
   async function mutateOnce<T>(tenantId: string, key: string, command: string, fn: (d: Data) => T): Promise<OnceResult<T>> {
     const byKey = and(eq(idempotencyKeys.tenantId, tenantId), eq(idempotencyKeys.key, key));
     for (let attempt = 1; attempt <= MUTATE_ATTEMPTS; attempt++) {
@@ -136,7 +143,9 @@ export function createRepo(db: Db, opts: RepoOptions = {}) {
           // A concurrent run with the same key that committed first wins, and the retry returns its result.
           const kept = await tx.insert(idempotencyKeys).values({ tenantId, key, command, result: value ?? {} }).onConflictDoNothing().returning({ key: idempotencyKeys.key });
           if (kept.length === 0) throw LOST_RACE;
-          await tx.delete(idempotencyKeys).where(and(eq(idempotencyKeys.tenantId, tenantId), lt(idempotencyKeys.createdAt, sql`now() - interval '1 day'`)));
+          await tx
+            .delete(idempotencyKeys)
+            .where(and(eq(idempotencyKeys.tenantId, tenantId), notLike(idempotencyKeys.key, `${INBOUND_KEYS}%`), lt(idempotencyKeys.createdAt, sql`now() - interval '1 day'`)));
           return { ok: true, replay: false, value };
         });
       } catch (err) {
@@ -240,8 +249,33 @@ export function createRepo(db: Db, opts: RepoOptions = {}) {
     await db.insert(outbox).values({ id: uid("ob"), tenantId, ...m });
   }
 
+  // Writes m in place of every earlier message to the same address with the same subject, such as an owner's older
+  // sign-in links. The outbox keeps only the newest (A6), so asking for links again and again can't bury the rest.
+  async function replaceOutbox(tenantId: string, m: OutboxMessage & { subject: string }) {
+    await db.transaction(async (tx) => {
+      await tx.delete(outbox).where(and(eq(outbox.tenantId, tenantId), eq(outbox.to, m.to), eq(outbox.subject, m.subject)));
+      await tx.insert(outbox).values({ id: uid("ob"), tenantId, ...m });
+    });
+  }
+
   function readOutbox(tenantId: string, limit = 50) {
     return db.select().from(outbox).where(eq(outbox.tenantId, tenantId)).orderBy(desc(outbox.createdAt)).limit(limit);
+  }
+
+  // The daily tidy-up (lib/server/jobs.ts): outbox rows older than OUTBOX_DAYS and inbound message ids older than
+  // INBOUND_DAYS. Other idempotency keys go after a day (mutateOnce).
+  async function prune(tenantId: string, now = new Date()) {
+    const before = (days: number) => new Date(now.getTime() - days * 86_400_000);
+    await db.delete(outbox).where(and(eq(outbox.tenantId, tenantId), lt(outbox.createdAt, before(OUTBOX_DAYS))));
+    await db
+      .delete(idempotencyKeys)
+      .where(and(eq(idempotencyKeys.tenantId, tenantId), like(idempotencyKeys.key, `${INBOUND_KEYS}%`), lt(idempotencyKeys.createdAt, before(INBOUND_DAYS))));
+  }
+
+  // A business's own row: whether it is the demo (A1). Undefined for an unknown business.
+  async function tenant(tenantId: string) {
+    const [row] = await db.select({ demo: tenants.demo }).from(tenants).where(eq(tenants.id, tenantId));
+    return row;
   }
 
   // Every business's id, for the scheduled jobs.
@@ -250,22 +284,24 @@ export function createRepo(db: Db, opts: RepoOptions = {}) {
   }
 
   // Adds a tenant with its first document. False when the tenant already exists, so a second start never reseeds.
-  function create(tenantId: string, name: string, data: Data) {
+  // `demo` is for seedDemo only.
+  function create(tenantId: string, name: string, data: Data, demo = false) {
     return db.transaction(async (tx) => {
-      const added = await tx.insert(tenants).values({ id: tenantId, name }).onConflictDoNothing().returning({ id: tenants.id });
+      const added = await tx.insert(tenants).values({ id: tenantId, name, demo }).onConflictDoNothing().returning({ id: tenants.id });
       if (added.length === 0) return false;
       await tx.insert(tenantState).values({ tenantId, version: 1, dataVersion: data.version, data });
       return true;
     });
   }
 
-  // The first start seeds the demo business from lib/seed.ts. Later starts find it and leave it alone.
+  // The first start seeds the demo business from lib/seed.ts, the one business marked as the demo. Later starts find
+  // it and leave it alone.
   async function seedDemo(now = new Date()) {
     if (await read(DEMO_TENANT)) return false;
-    return create(DEMO_TENANT, BUSINESS.name, buildSeed(now));
+    return create(DEMO_TENANT, BUSINESS.name, buildSeed(now), true);
   }
 
-  return { load, mutate, mutateOnce, mutateApprovals, stagedApprovals, ownerApprovals, claimKey, bump, counted, writeOutbox, readOutbox, tenantIds, create, seedDemo };
+  return { load, mutate, mutateOnce, mutateApprovals, stagedApprovals, ownerApprovals, claimKey, bump, counted, writeOutbox, replaceOutbox, readOutbox, prune, tenant, tenantIds, create, seedDemo };
 }
 
 // The app's repo on the process-wide database, with the demo business seeded on first use.

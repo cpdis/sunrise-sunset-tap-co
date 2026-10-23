@@ -6,7 +6,6 @@ import { BUSINESS } from "@/lib/config";
 import { balance, balanceDueDate, cashAt, createHold, heldFor, nextFreeDates, payDeposit } from "@/lib/domain";
 import * as ops from "@/lib/ops";
 import { agentTurn } from "@/lib/server/agent";
-import { sessionCookie } from "@/lib/server/auth";
 import { type Caller, runCommand } from "@/lib/server/commands";
 import { type Connection, connect } from "@/lib/server/db/client";
 import { DEMO_TENANT, type Repo, type RepoOptions, createRepo } from "@/lib/server/db/repo";
@@ -14,7 +13,7 @@ import { DEV_CRON_SECRET, cronSecret, jobsHandler } from "@/lib/server/jobs";
 import { conversationUrl } from "@/lib/server/outbox";
 import type { Booking, Data } from "@/lib/types";
 import { addDays, todayISO } from "@/lib/util";
-import { NOW } from "../helpers";
+import { NOW, sessionFor } from "../helpers";
 
 // The routes read the process-wide repo; here it is each test's in-memory one.
 const h = vi.hoisted(() => ({ repo: undefined as unknown as Repo }));
@@ -79,7 +78,7 @@ describe("the jobs route", () => {
 
   test("production needs CRON_SECRET; the dev default works only outside it", () => {
     expect(() => cronSecret({ NODE_ENV: "production" })).toThrow(/CRON_SECRET/);
-    expect(cronSecret({ NODE_ENV: "production", CRON_SECRET: "real" })).toBe("real");
+    expect(cronSecret({ NODE_ENV: "production", CRON_SECRET: "a-real-cron-secret-of-32-characters" })).toBe("a-real-cron-secret-of-32-characters");
     expect(cronSecret({ NODE_ENV: "development" })).toBe(DEV_CRON_SECRET);
   });
 
@@ -209,10 +208,7 @@ describe("owner notifications", () => {
 
 describe("the owners' outbox view", () => {
   const get = (cookie?: string) => outboxGET(new Request(`${BASE}/api/outbox`, { headers: cookie ? { cookie } : {} }));
-  const cookieFor = (ownerId: string) => {
-    const c = sessionCookie({ tenant: DEMO_TENANT, ownerId }, new URL(BASE));
-    return `${c.name}=${c.value}`;
-  };
+  const cookieFor = (ownerId: string) => sessionFor(ownerId);
 
   test("needs an owner session, and leaves out mail to another owner", async () => {
     const repo = await setup();

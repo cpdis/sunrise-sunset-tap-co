@@ -1,4 +1,4 @@
-import { LINK_MINUTES, demoMode } from "@/lib/server/auth";
+import { LINK_MINUTES, demoFor } from "@/lib/server/auth";
 import { DEMO_TENANT, getRepo } from "@/lib/server/db/repo";
 import { LoginForm } from "./LoginForm";
 
@@ -6,10 +6,11 @@ import { LoginForm } from "./LoginForm";
 export const dynamic = "force-dynamic";
 
 // Owner sign-in by emailed link (KTD7). The demo lists its owners so a visitor can pick one, and the email lands in
-// the simulated outbox (KTD12). Elsewhere it is an email field only.
+// the simulated outbox (KTD12). Elsewhere, or once the business isn't the demo (A1), it is an email field only.
 export default async function Login({ searchParams }: { searchParams: Promise<{ link?: string }> }) {
-  const demo = demoMode();
-  const doc = demo ? await (await getRepo()).load(DEMO_TENANT) : null;
+  const repo = await getRepo();
+  const demo = await demoFor(repo, DEMO_TENANT);
+  const doc = demo ? await repo.load(DEMO_TENANT) : null;
   const owners = (doc?.data.owners ?? []).map(({ name, email }) => ({ name, email }));
   return <LoginForm owners={owners} demo={demo} minutes={LINK_MINUTES} expired={(await searchParams).link === "used"} />;
 }

@@ -42,6 +42,9 @@ export interface Owner {
   isDirector: boolean;
   payoutAccount: string;
   joined: string;
+  // Counts this owner's sign-outs (lib/server/auth.ts): a session cookie is good only while it carries the current
+  // value, so signing out ends the owner's sessions on every device. Absent is 0.
+  sessionVersion?: number;
 }
 
 export interface Customer {

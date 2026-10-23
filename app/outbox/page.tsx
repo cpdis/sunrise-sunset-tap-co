@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Fragment } from "react";
 import { Logo } from "@/components/Logo";
-import { demoMode } from "@/lib/server/auth";
+import { demoFor } from "@/lib/server/auth";
 import { DEMO_TENANT, getRepo } from "@/lib/server/db/repo";
 import { fmtDateTime } from "@/lib/util";
 
@@ -22,11 +22,13 @@ function Body({ text }: { text: string }) {
   );
 }
 
-// The simulated outbox: what would have gone out by email or SMS, sign-in links included. It exists outside
-// production, and in production only with DEMO_MODE on (KTD12), and shows only the demo business.
+// The simulated outbox: what would have gone out by email or SMS, sign-in links included (each owner's newest only,
+// repo.replaceOutbox). It shows only the demo business, and only while its demo features are on: outside
+// production, or in production with DEMO_MODE on (KTD12, A1).
 export default async function Outbox() {
-  if (!demoMode()) notFound();
-  const messages = await (await getRepo()).readOutbox(DEMO_TENANT);
+  const repo = await getRepo();
+  if (!(await demoFor(repo, DEMO_TENANT))) notFound();
+  const messages = await repo.readOutbox(DEMO_TENANT);
   return (
     <div style={{ minHeight: "100vh", background: "var(--paper)", padding: "40px 16px" }}>
       <div className="stack" style={{ maxWidth: 720, margin: "0 auto", gap: 20 }}>

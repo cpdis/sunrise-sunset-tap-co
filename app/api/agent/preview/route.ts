@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { CommandError, isObj } from "@/lib/server/args";
 import { previewInput, previewTurn } from "@/lib/server/agent";
-import { readSession, refusedWrite } from "@/lib/server/auth";
+import { refusedWrite, requestSession } from "@/lib/server/auth";
 import { getRepo } from "@/lib/server/db/repo";
 import { overBudget, spend } from "@/lib/server/limits";
+import { publicBaseUrl } from "@/lib/server/signature";
 
 export const runtime = "nodejs";
 
@@ -23,15 +24,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Bad request" }, { status: 400 });
   }
   try {
-    const session = readSession(req);
+    const repo = await getRepo();
+    const { tenant, session } = await requestSession(req, repo);
     if (!session) throw new CommandError(401, "Sign in first.");
     if (!isObj(raw)) throw new CommandError(400, "Bad request");
-    const repo = await getRepo();
     // A preview spends model tokens too, so it counts against the business's daily budget (KTD8).
-    const out = await previewTurn(repo, { tenant: session.tenant, ownerId: session.ownerId }, previewInput(raw), {
-      origin: new URL(req.url).origin,
-      rulesOnly: await overBudget(repo, session.tenant),
-      onTokens: (n) => spend(repo, session.tenant, n),
+    const out = await previewTurn(repo, { tenant, ownerId: session.ownerId, sv: session.sv }, previewInput(raw), {
+      origin: publicBaseUrl(),
+      rulesOnly: await overBudget(repo, tenant),
+      onTokens: (n) => spend(repo, tenant, n),
     });
     return NextResponse.json(out);
   } catch (err) {

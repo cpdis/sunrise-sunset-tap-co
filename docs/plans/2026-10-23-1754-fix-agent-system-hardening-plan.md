@@ -190,6 +190,7 @@ stateDiagram-v2
 | U12 | Prompt-injection boundary | `lib/agent/owner-claude.ts`, `lib/agent/claude.ts`, `tests/injection.eval.ts` | U11 |
 | U13 | Server jobs and notifications | `app/api/jobs/route.ts`, `lib/server/outbox.ts` | U8 |
 | U14 | Business-id check and docs | `lib/server/db/repo.ts`, `AGENTS.md`, `README.md` | U7 to U13 |
+| U15 | Auth hardening (U15a platform, U15b approvals and data) | `lib/server/auth.ts`, `lib/server/secrets.ts`, `lib/server/limits.ts`, `app/login/confirm/` | U8 to U14 |
 
 ### Phase 1: logic fixes on the current architecture
 
@@ -595,6 +596,56 @@ stateDiagram-v2
 - A repo read with the wrong business id returns no data.
 
 **Verification:** The business-id tests pass. Colin reads the updated `AGENTS.md`.
+
+### U15. Auth hardening
+
+**Goal:** Close the findings of the second adversarial review, on sign-in, sessions, approvals and the demo surfaces (U8 to U14 at `59cca56`), so a real business can run with the demo code in the same deployment.
+
+**Requirements:** R3, R5, R7, R14, R15, R16, R17
+
+**Dependencies:** U8 to U14
+
+**Sources:** Fable (`SS-xx`), Codex (`AUTH-xx`) and Argon (`Fxx`) reports in `agents/counselors/` (untracked, Colin's machine). Not fixed: AUTH-09 (concurrent model-budget overspend; the daily budget is a soft cap), real email delivery of sign-in links, a real authenticator app.
+
+**Files:**
+- Create: `lib/server/secrets.ts`, `app/login/confirm/`, `app/api/session/confirm/route.ts`, `drizzle/0002_tenant_demo.sql`
+- Modify: `lib/server/auth.ts`, `lib/server/limits.ts`, `lib/server/signature.ts`, `lib/server/inbound.ts`, `lib/server/commands.ts`, `lib/server/db/repo.ts`, `lib/server/db/schema.ts`, `lib/server/jobs.ts`, `lib/server/approvals.ts`, the session, state, outbox, commands and simulate routes
+- Test: `tests/server/auth.test.ts` (one test per finding, each failing before its fix), `tests/server/tenancy.test.ts`
+
+**Approach, U15a (platform):**
+1. A1. Demo features need two keys: `DEMO_MODE` and a `demo` flag on the tenant row, which only `seedDemo` sets. They gate `/outbox`, `/api/dev/simulate`, the `?chat=` read, the login owner picker and the `reset` and `runJobs` commands. `reset` refuses any non-demo tenant whatever the caller says. A session cookie records the demo state it was signed in, and stops working when that state changes (SS-01, AUTH-01, F12).
+2. A2. One form parser for the signature check and the message. A repeated field name gets 400 before the signature is checked (AUTH-02).
+3. A3. Production, or any run with `DATABASE_URL`, refuses a secret that is missing, equal to a dev default, or shorter than 32 characters. Secret compares hash both sides, so a wrong length takes the same path (SS-08, AUTH-03, F13).
+4. A4. Sign-in links use `PUBLIC_BASE_URL`. With it set (always in production), the Origin check compares against it, not against Host (SS-04, F01).
+5. A5. The link opens `/login/confirm` with the token in the fragment. Its button posts the token to `/api/session/confirm`. A GET of the link changes nothing. Same-origin links in the admin are never prefetched (SS-05, AUTH-11, F11).
+6. A6. Rate limits on the browser routes, per client IP (Vercel's `x-real-ip`, else one shared window) and per contact: sign-in links (5 an email, 20 an IP, per 15 minutes), the public `book` command (5 a contact, 10 an IP, per hour) and the simulator (10 numbers an IP an hour). The outbox keeps one sign-in link per owner, and the daily job drops rows older than 7 days (SS-06, AUTH-10, F08).
+7. A7. Signing out bumps the owner's session version, which ends their sessions on every device. Approval codes use their own `APPROVAL_SECRET`. The session and sign-out cookies are Secure in production and on any https request (SS-07, SS-13).
+8. A8. Inbound message ids are kept 30 days. The rate check runs before the id is spent, so a 429 does not burn it (SS-10).
+
+**Approach, U15b (approvals, roles, data; a later unit):**
+1. B1. Count wrong nonces and codes per owner sender per day; after 5, stop staging for the day and alert the owners. Three wrong codes close an approval. A concurrent message does not drop the cancel of a wrong nonce (SS-02, AUTH-04, F04, F07, SS-12).
+2. B2. Approval nonces, one-time codes and customer cancel codes never reach a stored message body or a view (AUTH-05, F05, SS-14).
+3. B3. A stage that replaces a live one says so in its confirm text (SS-11).
+4. B4. Owner read tools mask customer phones and emails, and the phone field is untrusted text (SS-03, F14).
+5. B5. Guardrail settings need a director. Lowering `approvalsRequired` or moving shares needs a second director. `captureBond` runs once, on a held bond, up to its amount (SS-09, F06).
+6. B6. `payDeposit` refuses an expired hold or a date no longer bookable. The public `book` command needs a phone or email and holds one unpaid date per contact (AUTH-08, F02, F10).
+7. B7. `receiptTo` shows only the email given with that booking (AUTH-06).
+8. B8. An idempotency key binds to its command, a digest of its arguments and its caller; a replay that differs is refused (AUTH-07, F09).
+9. B9. Contacts are normalised at ingress on every route, and `receive()` and `stateFor()` compare with `sameContact` (F03).
+
+**Test scenarios (U15a):**
+- `reset` for a tenant without the demo flag returns 404 and changes nothing, even with a demo caller.
+- With `DEMO_MODE` on and the flag off: the simulator and `/outbox` return 404, the chat read is empty, the owner picker is empty.
+- A demo cookie stops working when `DEMO_MODE` goes off.
+- Codex's repeated-`From` body with a valid signature returns 400 and stores nothing.
+- Each of the five secrets refuses a dev default, a 31-character value and no value in production and with `DATABASE_URL`.
+- A spoofed Host and Origin get 403; the link points at `PUBLIC_BASE_URL`.
+- The link has no query, only a fragment; the confirm POST signs in once.
+- The 6th link for one email and the 21st from one IP in 15 minutes get 429; the 6th booking for one phone and the 11th from one IP in an hour get 429; the 11th new number from one IP gets 429.
+- Signing out on one device ends the owner's cookie on another.
+- A message turned away by the rate limit goes through on the provider's retry, and a replay two days later runs nothing.
+
+**Verification:** Each U15a test fails before its fix and passes after. `RUNS=3` simulator owner flows and review attacks, with the rig signing in through the confirm page. Screenshots of `/login/confirm` at 375, 768 and 1440 px.
 
 ---
 

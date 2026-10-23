@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { demoMode, readSession, refusedWrite } from "@/lib/server/auth";
+import { refusedWrite, requestSession } from "@/lib/server/auth";
 import { CommandError, runCommand } from "@/lib/server/commands";
-import { DEMO_TENANT, getRepo } from "@/lib/server/db/repo";
+import { getRepo } from "@/lib/server/db/repo";
+import { clientIp } from "@/lib/server/limits";
 
 export const runtime = "nodejs";
 
@@ -23,8 +24,9 @@ export async function POST(req: Request) {
   }
   if (typeof body !== "object" || body === null || Array.isArray(body)) return NextResponse.json({ error: "Bad request" }, { status: 400 });
   try {
-    const session = readSession(req);
-    const out = await runCommand(await getRepo(), { tenant: session?.tenant ?? DEMO_TENANT, ownerId: session?.ownerId, demo: demoMode() }, body);
+    const repo = await getRepo();
+    const { tenant, demo, session } = await requestSession(req, repo);
+    const out = await runCommand(repo, { tenant, ownerId: session?.ownerId, sv: session?.sv, demo, ip: clientIp(req) }, body);
     return NextResponse.json(out);
   } catch (err) {
     if (err instanceof CommandError) return NextResponse.json({ error: err.message }, { status: err.status });

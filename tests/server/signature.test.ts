@@ -27,17 +27,19 @@ async function setup() {
 
 const doc = async () => (await h.repo.load(DEMO_TENANT))!.data;
 const FROM = "0400 222 301";
+// The shape of a real Twilio auth token: 32 characters.
+const REAL_TOKEN = "0123456789abcdef0123456789abcdef";
 const messagesFrom = async (contact: string) => (await doc()).conversations.find((c) => c.contact === contact)?.messages.length ?? 0;
 
 describe("the signature (Twilio's scheme)", () => {
   const url = "https://example.com/api/inbound/sms";
-  const fields: [string, string][] = [["From", FROM], ["To", "0480 016 450"], ["Body", "hi"]];
+  const fields = { From: FROM, To: "0480 016 450", Body: "hi" };
 
   test("verifies its own signature in any field order, and nothing else", () => {
     const sig = sign("s3cret", url, fields);
-    expect(verify("s3cret", url, [...fields].reverse(), sig)).toBe(true);
-    expect(verify("s3cret", url, [["From", FROM], ["To", "0480 016 450"], ["Body", "hi!"]], sig)).toBe(false);
-    expect(verify("s3cret", url, [...fields, ["Extra", "1"]], sig)).toBe(false);
+    expect(verify("s3cret", url, { Body: "hi", To: "0480 016 450", From: FROM }, sig)).toBe(true);
+    expect(verify("s3cret", url, { ...fields, Body: "hi!" }, sig)).toBe(false);
+    expect(verify("s3cret", url, { ...fields, Extra: "1" }, sig)).toBe(false);
     expect(verify("s3cret", "https://evil.test/api/inbound/sms", fields, sig)).toBe(false);
     expect(verify("other", url, fields, sig)).toBe(false);
     expect(verify("s3cret", url, fields, null)).toBe(false);
@@ -55,7 +57,7 @@ describe("the signature (Twilio's scheme)", () => {
     expect(webhookSecret("email", {})).toBe(DEV_WEBHOOK_SECRET.email);
     expect(() => webhookSecret("sms", { NODE_ENV: "production" })).toThrow(/TWILIO_AUTH_TOKEN is not set/);
     expect(() => webhookSecret("email", { NODE_ENV: "production" })).toThrow(/EMAIL_WEBHOOK_SECRET is not set/);
-    expect(webhookSecret("sms", { NODE_ENV: "production", TWILIO_AUTH_TOKEN: "real" })).toBe("real");
+    expect(webhookSecret("sms", { NODE_ENV: "production", TWILIO_AUTH_TOKEN: REAL_TOKEN })).toBe(REAL_TOKEN);
     expect(() => publicBaseUrl({ NODE_ENV: "production" })).toThrow(/PUBLIC_BASE_URL is not set/);
     expect(inboundUrl("email", { PUBLIC_BASE_URL: "https://demo.example.com/" })).toBe("https://demo.example.com/api/inbound/email");
   });
@@ -114,10 +116,11 @@ describe("the inbound routes (R15)", () => {
 });
 
 describe("the simulate route (KTD12)", () => {
-  const simReq = () =>
+  // From a page on `origin`. With PUBLIC_BASE_URL set, only that origin may post (lib/server/auth.ts sameOrigin).
+  const simReq = (origin = "http://localhost:3000") =>
     new Request("http://localhost:3000/api/dev/simulate", {
       method: "POST",
-      headers: { origin: "http://localhost:3000", host: "localhost:3000", "content-type": "application/json" },
+      headers: { origin, host: "localhost:3000", "content-type": "application/json" },
       body: JSON.stringify({ channel: "sms", contact: FROM, body: "Do you supply staff?" }),
     });
 
@@ -134,12 +137,13 @@ describe("the simulate route (KTD12)", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("DEMO_MODE", "on");
     vi.stubEnv("PUBLIC_BASE_URL", "https://demo.example.com");
-    vi.stubEnv("TWILIO_AUTH_TOKEN", "configured-token");
-    const res = await simulatePOST(simReq());
+    vi.stubEnv("TWILIO_AUTH_TOKEN", REAL_TOKEN);
+    expect((await simulatePOST(simReq())).status).toBe(403);
+    const res = await simulatePOST(simReq("https://demo.example.com"));
     expect(res.status).toBe(200);
     expect((await res.json()).conversation.messages.at(-1).body).toMatch(/No staff stay/);
     // The secret is the configured one: a request signed with the dev default is refused.
-    expect((await smsPOST(new Request("https://demo.example.com/api/inbound/sms", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", "x-twilio-signature": sign(DEV_WEBHOOK_SECRET.sms, "https://demo.example.com/api/inbound/sms", [["From", FROM]]) }, body: "From=0400+222+301" }))).status).toBe(403);
+    expect((await smsPOST(new Request("https://demo.example.com/api/inbound/sms", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", "x-twilio-signature": sign(DEV_WEBHOOK_SECRET.sms, "https://demo.example.com/api/inbound/sms", { From: FROM }) }, body: "From=0400+222+301" }))).status).toBe(403);
   });
 
   test("works outside production with no env set", async () => {

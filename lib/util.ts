@@ -121,7 +121,9 @@ export function randomToken(): string {
   return crypto.randomUUID().replace(/-/g, "");
 }
 
-// Compares two secrets in time that depends only on their length, so a wrong guess learns nothing from timing.
+// Compares two values in time that depends only on their length, so a wrong guess learns nothing from timing. For
+// values whose length is public, such as a booking token or a 4-digit code. A server secret, whose length is not,
+// uses secretEqual (lib/server/secrets.ts), which this browser-safe module can't import.
 export function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let diff = 0;

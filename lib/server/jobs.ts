@@ -2,23 +2,17 @@
 // quarter's payout record run for every business without a browser open. Vercel Cron calls GET /api/jobs once a
 // day (vercel.json) with `Authorization: Bearer <CRON_SECRET>`.
 import * as ops from "@/lib/ops";
-import { safeEqual } from "@/lib/util";
 import type { Repo } from "./db/repo";
+import { DEV_SECRETS, type Env, secret, secretEqual } from "./secrets";
 
-type Env = Partial<Record<"NODE_ENV" | "CRON_SECRET", string>>;
+// Works only outside production (lib/server/secrets.ts). Production without a real CRON_SECRET refuses every call.
+export const DEV_CRON_SECRET = DEV_SECRETS.CRON_SECRET;
 
-// Works only outside production. Production without CRON_SECRET refuses every call.
-export const DEV_CRON_SECRET = "dev-only-cron-secret";
+export const cronSecret = (env: Env = process.env) => secret("CRON_SECRET", env);
 
-export function cronSecret(env: Env = process.env) {
-  if (env.CRON_SECRET) return env.CRON_SECRET;
-  if (env.NODE_ENV === "production") throw new Error("CRON_SECRET is not set. Production checks the jobs route with it; the dev default works only outside production.");
-  return DEV_CRON_SECRET;
-}
-
-// True only for exactly `Bearer <secret>`. Constant-time compare.
+// True only for exactly `Bearer <secret>`. Constant-time compare, which hides the secret's length too.
 export function authorised(req: Request, env?: Env) {
-  return safeEqual(req.headers.get("authorization") ?? "", `Bearer ${cronSecret(env)}`);
+  return secretEqual(req.headers.get("authorization") ?? "", `Bearer ${cronSecret(env)}`);
 }
 
 export interface JobsRun {
@@ -29,12 +23,14 @@ export interface JobsRun {
 }
 
 // Runs the jobs for each business in its own repo.mutate, so they save together, once, or not at all. One
-// business failing doesn't stop the others.
+// business failing doesn't stop the others. Then the business's old outbox rows and inbound message ids go
+// (repo.prune).
 export async function runAllJobs(repo: Repo, now = new Date()): Promise<JobsRun[]> {
   const out: JobsRun[] = [];
   for (const tenant of await repo.tenantIds()) {
     const r = await repo.mutate(tenant, (d) => ops.runScheduled(d, now));
     out.push(r.ok ? { tenant, ran: r.value } : { tenant, ran: [], error: r.reason });
+    await repo.prune(tenant, now);
   }
   return out;
 }

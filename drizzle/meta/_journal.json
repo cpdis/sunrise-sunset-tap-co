@@ -15,6 +15,13 @@
       "when": 1792768512323,
       "tag": "0001_approval_binding",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792776555116,
+      "tag": "0002_tenant_demo",
+      "breakpoints": true
     }
   ]
 }

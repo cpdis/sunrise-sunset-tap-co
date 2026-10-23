@@ -11,7 +11,9 @@ import type { Account, Data, Owner, Scenario, Settings, TruckLog } from "@/lib/t
 import { uid } from "@/lib/util";
 import { bookingByToken } from "@/lib/views";
 import { CommandError, type Raw, bad, date, flag, id, isObj, match, maybeNum, maybeText, num, obj, oneOf, text } from "./args";
+import { sessionOwner } from "./auth";
 import type { Repo } from "./db/repo";
+import { publicLimited } from "./limits";
 
 export { CommandError };
 
@@ -19,8 +21,13 @@ export { CommandError };
 export interface Caller {
   tenant: string;
   ownerId?: string;
-  // demoMode() (KTD12): the demo reset works only then.
+  // The owner's session version the cookie carries (lib/server/auth.ts sessionOwner). Left out, it is 0.
+  sv?: number;
+  // demoFor() (KTD12, A1): DEMO_MODE and the business's demo flag. The demo-only commands check the flag again.
   demo: boolean;
+  // The client IP (lib/server/limits.ts clientIp), for the public commands' limit. Left out, only the per-contact
+  // limit applies.
+  ip?: string;
   now?: Date;
 }
 
@@ -39,6 +46,8 @@ interface Ctx {
 interface Command<A> {
   role: Role;
   demoOnly?: boolean;
+  // A public command's phone numbers and emails, each limited per hour (A6).
+  contacts?(a: A): (string | undefined)[];
   // Parses the arguments, throwing a 400 on anything malformed.
   args(raw: Raw): A;
   // Runs inside the save, so it must be synchronous (KTD10). A plain Error is a refusal: nothing is saved (409).
@@ -85,6 +94,7 @@ const COMMANDS: Record<string, Command<unknown>> = {
       notes: maybeText(r, "notes", 1000),
       agreed: flag(r, "agreed"),
     }),
+    contacts: (n) => [n.phone, n.email],
     run(d, n, ctx) {
       try {
         const b = createHold(d, { ...n, via: "web" }, ctx.now);
@@ -279,13 +289,16 @@ const COMMANDS: Record<string, Command<unknown>> = {
     },
   }),
 
-  // Regenerates the demo year. The data is shared by everyone using the demo, so it resets for them too.
+  // Regenerates the demo year. The data is shared by everyone using the demo, so it resets for them too. Sign-outs
+  // carry over, so a cookie that was ended stays ended (A7).
   reset: command({
     role: "owner",
     demoOnly: true,
     args: (r) => ({ scenario: r.scenario === undefined ? undefined : oneOf(r, "scenario", Object.keys(SCENARIOS) as Scenario[]) }),
     run(d, a, ctx) {
+      const signOuts = new Map(d.owners.map((o) => [o.id, o.sessionVersion]));
       Object.assign(d, buildSeed(ctx.now, a.scenario ?? d.scenario));
+      for (const o of d.owners) if (signOuts.get(o.id)) o.sessionVersion = signOuts.get(o.id);
       ops.runScheduled(d, ctx.now);
     },
   }),
@@ -316,13 +329,20 @@ export interface CommandBody {
 export async function runCommand(repo: Repo, caller: Caller, body: CommandBody) {
   const name = typeof body.command === "string" ? body.command : "";
   const def = Object.hasOwn(COMMANDS, name) ? COMMANDS[name] : undefined;
-  if (!def || (def.demoOnly && !caller.demo)) throw new CommandError(404, "No such command.");
+  const tenant = await repo.tenant(caller.tenant);
+  if (!tenant) throw new CommandError(404, "No such business.");
+  // A demo-only command needs the business's own demo flag whatever the caller says, so a reset never reaches a
+  // real business (A1).
+  if (!def || (def.demoOnly && !(caller.demo && tenant.demo))) throw new CommandError(404, "No such command.");
   if (typeof body.key !== "string" || !/^[\w:-]{8,100}$/.test(body.key)) throw new CommandError(400, "Every command needs an idempotency key.");
   if ((def.role === "owner" || def.role === "director") && !caller.ownerId) throw new CommandError(401, "Sign in first.");
   const args = def.args(isObj(body.args) ? body.args : {});
   const now = caller.now ?? new Date();
+  if (def.role === "public" && (await publicLimited(repo, caller.tenant, caller.ip, def.contacts?.(args) ?? [], now))) {
+    throw new CommandError(429, "Too many booking requests from here this hour. Try again later.");
+  }
   const ctxFor = (d: Data): Ctx => {
-    const ctx = { now, owner: d.owners.find((o) => o.id === caller.ownerId) };
+    const ctx = { now, owner: sessionOwner(d, caller.ownerId, caller.sv) };
     authorise(def.role, ctx);
     return ctx;
   };

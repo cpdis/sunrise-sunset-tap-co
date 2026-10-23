@@ -10,7 +10,7 @@ Everything external is simulated. No accounts, keys or payments are needed to ru
 
 ```bash
 npm ci
-npm run dev             # http://localhost:3000
+npm run dev             # http://localhost:3000 (on another port, set PUBLIC_BASE_URL to its origin)
 npm test                # domain, agent, server and tenancy tests (vitest, in-memory PGlite)
 npm run typecheck && npm test && npm run build   # the full check before a push
 npm run eval:injection  # review injection payloads against the live model (needs ANTHROPIC_API_KEY)
@@ -18,21 +18,27 @@ npm run eval:injection  # review injection payloads against the live model (need
 
 Data lives on the server. Locally that is PGlite (Postgres compiled to WASM) in `.data/pglite`, created and seeded
 with one simulated year on first start, and shared by every browser that opens the dev server. Set `DATABASE_URL` to
-use hosted Postgres instead. No env var is needed locally: each secret has a `dev-only-...` default that throws in
-production.
+use hosted Postgres instead. No env var is needed locally: each secret has a `dev-only-...` default. Production, and any
+run with `DATABASE_URL` set, refuses a missing secret, a dev default, or one shorter than 32 characters
+(`lib/server/secrets.ts`).
 
 Optional: set `ANTHROPIC_API_KEY` and the agent switches from the built-in rules engine to Claude, using the same tools.
 Messages reach the agent only through signed webhooks, `/api/inbound/sms` and `/api/inbound/email` (Twilio's
 HMAC scheme over `PUBLIC_BASE_URL` plus the route path). The SMS widget and the inbox simulator post to
-`/api/dev/simulate`, which signs on the server and works outside production or with `DEMO_MODE` on. Limits
-live in Postgres: 20 messages a minute per sender, 120 per business, and a daily model token budget, past which the
-rules engine answers and the owners get one alert in the outbox (`lib/server/limits.ts`).
+`/api/dev/simulate`, which signs on the server and works for the demo business outside production or with `DEMO_MODE`
+on. Limits live in Postgres: 20 messages a minute per sender, 120 per business, and a daily model token budget, past
+which the rules engine answers and the owners get one alert in the outbox (`lib/server/limits.ts`). The browser
+routes have their own: 5 sign-in links per email and 20 per IP each 15 minutes, 5 web bookings per phone or email and
+10 per IP each hour, and 10 different numbers per IP each hour in the simulator. The IP is Vercel's `x-real-ip`; off
+Vercel every request shares one window.
 
 ## Debug
 
 - Start from a fresh seed: stop the dev server, delete `.data/pglite`, start it again. In the app, Settings has
   "Reset demo data", which does the same for the running database.
-- Sign in: on `/login`, pick an owner, then open the sign-in link in `/outbox`.
+- Sign in: on `/login`, pick an owner, open the sign-in link in `/outbox`, then press "Sign in" on the page it
+  opens (`/login/confirm`). Opening the link alone changes nothing. "Switch owner" in the admin signs that owner out
+  on every device.
 - Every SMS and email the business would send is in `/admin/outbox`. Run the daily jobs with "Run daily jobs now" in
   Settings, or `curl -H "Authorization: Bearer dev-only-cron-secret" http://localhost:3000/api/jobs`.
 - Send a signed inbound text by hand: sign the form fields with the dev secret `dev-only-twilio-auth-token` (see
@@ -49,7 +55,7 @@ rules engine answers and the owners get one alert in the outbox (`lib/server/lim
 | `/` | Site. "Text us" opens an SMS simulator wired to the agent. Try "Is the second Saturday in December free?", then follow it through to a deposit link. |
 | `/book` | Calendar, block, suburb (travel fee over 60 min), hire terms, then the simulated Stripe checkout. `4242…` pays, `4000 0000 0000 0002` declines. |
 | `/booking/[id]` | Customer view: payment timeline, self-serve cancellation with the refund rule applied. |
-| `/login` | Simulated magic link. Pick any owner. |
+| `/login` | Simulated magic link. Pick any owner, open the link in `/outbox`, press "Sign in". |
 | `/admin` | Today: cash, unclaimed delivery and collection runs, conversations that need a person, payouts awaiting approval, job log. |
 | `/admin/inbox` | All channels. Simulate an inbound email, call or web form; take over from the agent; hand back. |
 | `/admin/outbox` | Every simulated SMS and email: owner notices for hand-overs, owners' replies to customers, alerts. |
@@ -104,7 +110,9 @@ rules engine answers and the owners get one alert in the outbox (`lib/server/lim
 - Everything the business would send goes to the `outbox` table, written in the same transaction as the change that
   sent it: sign-in links, owner notices when a conversation needs an owner, owners' replies to customers (as the SMS or
   email they would be) and the model budget alert. Owners read it at `/admin/outbox` (mail to another owner, such as
-  their sign-in link, is left out). The public `/outbox` page exists only in demo mode, for sign-in links.
+  their sign-in link, is left out). The public `/outbox` page exists only in demo mode, for sign-in links. Each owner's
+  newest sign-in link replaces the older ones, and the daily job drops outbox rows older than 7 days and inbound message
+  ids older than 30 days.
 
 ## Deploy checklist (Colin)
 
@@ -112,11 +120,14 @@ rules engine answers and the owners get one alert in the outbox (`lib/server/lim
 2. Migrations: `DATABASE_URL=<from vercel env pull> npm run db:migrate` (`drizzle-kit migrate`). Run it again before
    each deploy that adds a file to `drizzle/`. The app never migrates hosted Postgres itself. The demo business seeds
    itself on the first request.
-3. Env vars (Production): `DATABASE_URL`, `SESSION_SECRET`, `PUBLIC_BASE_URL` (the site's https origin, no trailing
-   slash), `TWILIO_AUTH_TOKEN`, `EMAIL_WEBHOOK_SECRET`, `CRON_SECRET`. Use long random values for the secrets. Each one
-   missing makes its route fail closed. `ANTHROPIC_API_KEY` is optional.
+3. Env vars (Production): `DATABASE_URL`, `SESSION_SECRET`, `APPROVAL_SECRET`, `PUBLIC_BASE_URL` (the site's https
+   origin, no trailing slash; set it per environment, since writes must come from that origin), `TWILIO_AUTH_TOKEN`,
+   `EMAIL_WEBHOOK_SECRET`, `CRON_SECRET`. Use random values of at least 32 characters (for example
+   `openssl rand -hex 32`); a dev default or anything shorter is refused. Each one missing or weak makes its route fail
+   closed. `ANTHROPIC_API_KEY` is optional.
 4. Public demo: set `DEMO_MODE=on`. It turns on `/outbox` (sign-in links), `/api/dev/simulate` (the SMS widget and
-   inbox simulator) and the demo reset. Sign-in emails are simulated, so without it nobody can sign in.
+   inbox simulator) and the demo reset, for the demo business only (its tenant row has `demo` set by `seedDemo`).
+   Sign-in emails are simulated, so without it nobody can sign in, and cookies from the demo stop working.
 5. Cron: `vercel.json` runs `/api/jobs` daily at 22:00 UTC. It works once `CRON_SECRET` is set (step 3).
 
 ## Production path

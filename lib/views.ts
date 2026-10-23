@@ -123,7 +123,7 @@ export interface StateQuery {
   booking?: string;
   token?: string;
   chat?: string;
-  // demoMode() (KTD12): the widget may read a customer number's conversation without a session.
+  // demoFor() (KTD12, A1): the demo business's widget may read a customer number's conversation without a session.
   demo?: boolean;
 }
 

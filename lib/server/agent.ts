@@ -19,6 +19,7 @@ import { canon, sameContact, uid } from "@/lib/util";
 import { type ChatView, chatView, ownerByContact, ownerHolds, ownerSnapshot, snapshot } from "@/lib/views";
 import { pendingApproval, settleApprovals } from "./approvals";
 import { CommandError, type Raw, bad, isObj, maybeText, oneOf, text } from "./args";
+import { sessionOwner } from "./auth";
 import type { Caller } from "./commands";
 import type { ApprovalRow, ApprovalWrites, Repo } from "./db/repo";
 
@@ -296,10 +297,10 @@ export function previewInput(r: Raw): PreviewInput {
   return { kb, messages, state: isObj(r.state) ? (r.state as AgentState) : {} };
 }
 
-export async function previewTurn(repo: Repo, caller: Pick<Caller, "tenant" | "ownerId" | "now">, input: PreviewInput, opts: TurnOptions) {
+export async function previewTurn(repo: Repo, caller: Pick<Caller, "tenant" | "ownerId" | "sv" | "now">, input: PreviewInput, opts: TurnOptions) {
   const doc = await repo.load(caller.tenant);
   if (!doc) throw new CommandError(404, "No such business.");
-  if (!doc.data.owners.some((o) => o.id === caller.ownerId)) throw new CommandError(401, "Sign in first.");
+  if (!sessionOwner(doc.data, caller.ownerId, caller.sv)) throw new CommandError(401, "Sign in first.");
   const now = caller.now ?? new Date();
   const c: Conversation = {
     id: "preview",

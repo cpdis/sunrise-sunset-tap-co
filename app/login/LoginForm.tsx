@@ -25,6 +25,8 @@ export function LoginForm({ owners, demo, minutes, expired }: Props) {
     setErr("");
     const res = await fetch("/api/session", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: to.trim() }) }).catch(() => null);
     setBusy(false);
+    // A 429 says how long to wait (lib/server/limits.ts).
+    if (res?.status === 429) return setErr((await res.json().catch(() => null))?.error ?? "Too many sign-in links asked for. Try again soon.");
     if (!res?.ok) return setErr("That didn't send. Try again?");
     setSent(to.trim());
   }

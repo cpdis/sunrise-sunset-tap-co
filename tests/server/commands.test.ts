@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { GET as stateGET } from "@/app/api/state/route";
 import { POST as commandPOST } from "@/app/api/commands/route";
-import { DELETE as sessionDELETE, GET as sessionGET, POST as sessionPOST } from "@/app/api/session/route";
+import { POST as confirmPOST } from "@/app/api/session/confirm/route";
+import { DELETE as sessionDELETE, POST as sessionPOST } from "@/app/api/session/route";
 import { LINK_MINUTES, demoMode, linkToken, openLink, readSession, sessionCookie } from "@/lib/server/auth";
 import { agentTurn } from "@/lib/server/agent";
 import { COMMAND_NAMES, type Caller, CommandError, runCommand } from "@/lib/server/commands";
@@ -11,7 +12,7 @@ import { DEMO_TENANT, type Repo, createRepo } from "@/lib/server/db/repo";
 import { buildSeed } from "@/lib/seed";
 import type { Data } from "@/lib/types";
 import { publicView, snapshot, stateFor } from "@/lib/views";
-import { NOW } from "../helpers";
+import { NOW, sessionFor } from "../helpers";
 
 // The routes read the process-wide repo; here it is each test's in-memory one.
 const h = vi.hoisted(() => ({ repo: undefined as unknown as Repo }));
@@ -250,10 +251,8 @@ describe("what each caller sees (state scoping)", () => {
 // ---------- the routes ----------
 
 const BASE = "http://localhost:3000";
-const cookieFor = (ownerId: string, tenant = DEMO_TENANT) => {
-  const c = sessionCookie({ tenant, ownerId }, new URL(BASE));
-  return `${c.name}=${c.value}`;
-};
+// `demo`: whether the demo was on when the cookie was signed; a cookie is good only while that still holds.
+const cookieFor = (ownerId: string, demo = true) => sessionFor(ownerId, { demo });
 const commandReq = (body: object, headers: Record<string, string> = {}) =>
   new Request(`${BASE}/api/commands`, { method: "POST", headers: { origin: BASE, host: "localhost:3000", "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
 
@@ -318,7 +317,7 @@ describe("/api/state", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("SESSION_SECRET", "a production secret for this test");
     expect(await chatOf(number)).toBeUndefined();
-    expect((await chatOf(number, { cookie: cookieFor("own_colin") }))?.contact).toBe(number);
+    expect((await chatOf(number, { cookie: cookieFor("own_colin", false) }))?.contact).toBe(number);
     vi.stubEnv("DEMO_MODE", "on");
     expect((await chatOf(number))?.contact).toBe(number);
   });
@@ -335,7 +334,11 @@ describe("/api/state", () => {
 describe("sign-in by simulated magic link", () => {
   const ask = (email: string, headers: Record<string, string> = {}) =>
     sessionPOST(new Request(`${BASE}/api/session`, { method: "POST", headers: { origin: BASE, host: "localhost:3000", "content-type": "application/json", ...headers }, body: JSON.stringify({ email }) }));
-  const linkIn = (body: string) => body.match(/http:\/\/localhost:3000\/api\/session\?token=\S+/)![0];
+  // The token in a sent link's fragment (/login/confirm#token=...).
+  const tokenIn = (body: string) => new URLSearchParams(new URL(body.match(/http:\/\/localhost:3000\/login\/confirm#token=\S+/)![0]).hash.slice(1)).get("token")!;
+  // What the confirm page's button does.
+  const confirm = (token: string) =>
+    confirmPOST(new Request(`${BASE}/api/session/confirm`, { method: "POST", headers: { origin: BASE, host: "localhost:3000", "content-type": "application/json" }, body: JSON.stringify({ token }) }));
 
   test("a link goes to the outbox, signs the owner in once, and sets a strict httpOnly cookie", async () => {
     const repo = await setup();
@@ -345,19 +348,18 @@ describe("sign-in by simulated magic link", () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ channel: "email", to: "colin@sunrisesunsettapco.com" });
 
-    const first = await sessionGET(new Request(linkIn(sent[0].body)));
-    expect(first.status).toBe(303);
-    expect(first.headers.get("location")).toBe(`${BASE}/admin`);
+    const first = await confirm(tokenIn(sent[0].body));
+    expect(first.status).toBe(200);
     const cookie = first.headers.get("set-cookie")!;
     expect(cookie).toMatch(/^sst_session=/);
     expect(cookie).toMatch(/HttpOnly/i);
     expect(cookie).toMatch(/SameSite=strict/i);
     // localhost runs on plain http in development.
     expect(cookie).not.toMatch(/Secure/i);
-    expect(readSession(new Request(BASE, { headers: { cookie: cookie.split(";")[0] } }))).toEqual({ tenant: DEMO_TENANT, ownerId: "own_colin" });
+    expect(readSession(new Request(BASE, { headers: { cookie: cookie.split(";")[0] } }))).toEqual({ tenant: DEMO_TENANT, ownerId: "own_colin", sv: 0, demo: true });
 
-    const second = await sessionGET(new Request(linkIn(sent[0].body)));
-    expect(second.headers.get("location")).toBe(`${BASE}/login?link=used`);
+    const second = await confirm(tokenIn(sent[0].body));
+    expect(second.status).toBe(400);
     expect(second.headers.get("set-cookie")).toBeNull();
   });
 
@@ -367,7 +369,7 @@ describe("sign-in by simulated magic link", () => {
     expect(openLink(t, NOW.getTime())?.ownerId).toBe("own_colin");
     expect(openLink(t, NOW.getTime() + (LINK_MINUTES + 1) * 60_000)).toBeUndefined();
     expect(readSession(new Request(BASE, { headers: { cookie: `sst_session=${t}` } }))).toBeUndefined();
-    expect(sessionCookie({ tenant: DEMO_TENANT, ownerId: "own_colin" }, new URL("https://sunrisesunset.example")).secure).toBe(true);
+    expect(sessionCookie({ tenant: DEMO_TENANT, ownerId: "own_colin", sv: 0, demo: true }, new URL("https://sunrisesunset.example")).secure).toBe(true);
     expect(() => linkToken({ tenant: DEMO_TENANT, ownerId: "own_colin" }, Date.now(), { NODE_ENV: "production" })).toThrow(/SESSION_SECRET/);
   });
 

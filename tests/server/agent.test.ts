@@ -5,14 +5,13 @@ import { POST as previewPOST } from "@/app/api/agent/preview/route";
 import { POST as simulatePOST } from "@/app/api/dev/simulate/route";
 import { KB_CHARS, agentTurn } from "@/lib/server/agent";
 import { approvalCode } from "@/lib/server/approvals";
-import { sessionCookie } from "@/lib/server/auth";
 import { type Caller, CommandError, runCommand } from "@/lib/server/commands";
 import { type Connection, connect } from "@/lib/server/db/client";
 import { DEMO_TENANT, type Repo, type RepoOptions, createRepo } from "@/lib/server/db/repo";
 import type { Data } from "@/lib/types";
 import { nextFreeDates } from "@/lib/domain";
 import { inboundWebhook } from "@/lib/server/inbound";
-import { NOW, inboundReq } from "../helpers";
+import { NOW, inboundReq, sessionFor } from "../helpers";
 
 // The routes read the process-wide repo; here it is each test's in-memory one.
 const h = vi.hoisted(() => ({ repo: undefined as unknown as Repo }));
@@ -283,10 +282,7 @@ describe("the apply checks again (KTD10)", () => {
 
 // ---------- the routes ----------
 
-const cookieFor = (ownerId: string) => {
-  const c = sessionCookie({ tenant: DEMO_TENANT, ownerId }, new URL(BASE));
-  return `${c.name}=${c.value}`;
-};
+const cookieFor = (ownerId: string) => sessionFor(ownerId);
 const sms = (fields: Record<string, string>) => inboundWebhook("sms", inboundReq("sms", fields), { now: NOW });
 
 describe("the inbound route ignores what the sender says about data (R14, review probes P1 and P1b)", () => {

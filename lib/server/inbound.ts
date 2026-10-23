@@ -1,15 +1,15 @@
 // Inbound SMS and email (KTD3, R15). A provider posts a signed form; the signature proves the sender (From) and the
 // business line it was sent to (To), so those two decide whose conversation it is and which business answers. Then
-// come the provider's message id (a retried webhook runs once), the rate limits and the model budget (KTD8), and the
+// come the rate limits, the provider's message id (a retried webhook runs once), the model budget (KTD8), and the
 // agent's turn (lib/server/agent.ts).
 import { BUSINESS } from "@/lib/config";
 import type { Conversation } from "@/lib/types";
 import { sameContact } from "@/lib/util";
 import { BODY_CHARS, type TurnOutput, agentTurn } from "./agent";
 import { CommandError, match, maybeText, text } from "./args";
-import { DEMO_TENANT, type Repo, getRepo } from "./db/repo";
+import { DEMO_TENANT, INBOUND_KEYS, type Repo, getRepo } from "./db/repo";
 import { admit, overBudget, spend } from "./limits";
-import { type InboundKind, SIGNATURE_HEADER, inboundUrl, publicBaseUrl, verify, webhookSecret } from "./signature";
+import { type InboundKind, SIGNATURE_HEADER, formFields, inboundUrl, publicBaseUrl, verify, webhookSecret } from "./signature";
 
 // Each business's own number and address, which providers post as To. One business runs for now (KTD12); the next
 // adds its line here.
@@ -47,13 +47,14 @@ export interface InboundOptions {
 }
 
 // One message the caller has already authenticated. Undefined when the provider already delivered this message id:
-// a replay gets nothing, not a second agent run.
+// a replay gets nothing, not a second agent run. The limit comes first, so a message it turns away keeps its id and
+// the provider's retry still gets through (SS-10). The id is kept INBOUND_DAYS (repo.prune).
 export async function receiveInbound(repo: Repo, m: Inbound, opts: InboundOptions = {}): Promise<TurnOutput | undefined> {
   const now = opts.now ?? new Date();
   const tenant = tenantFor(m.to);
   if (!tenant) throw new CommandError(404, "No business on that number.");
-  if (!(await repo.claimKey(tenant, `inbound:${m.channel}:${m.messageId}`, `inbound_${m.channel}`))) return undefined;
   if (await admit(repo, tenant, m.from, now)) throw new CommandError(429, "Too many messages, try again in a minute.");
+  if (!(await repo.claimKey(tenant, `${INBOUND_KEYS}${m.channel}:${m.messageId}`, `inbound_${m.channel}`))) return undefined;
   return agentTurn(
     repo,
     { tenant, now },
@@ -70,18 +71,20 @@ function replyOf(out: TurnOutput | undefined) {
 }
 
 // The webhook for one inbound route: Twilio-shaped form fields From, To, Body, MessageSid and an optional FromName,
-// signed over the public URL (never one built from request headers). An unsigned or altered request gets 403 and
-// touches nothing. The SMS answer is TwiML, so the provider texts the reply back; email answers with JSON.
+// signed over the public URL (never one built from request headers). The form is read once (formFields), so the
+// signature covers exactly the fields the route acts on; a form that repeats a field gets 400. An unsigned or altered
+// request gets 403. Either touches nothing. The SMS answer is TwiML, so the provider texts the reply back; email
+// answers with JSON.
 export async function inboundWebhook(kind: InboundKind, req: Request, opts: InboundOptions = {}): Promise<Response> {
   // Bytes, not characters: an emoji is one character and four bytes.
   if (Number(req.headers.get("content-length") ?? 0) > MAX_BYTES) return Response.json({ error: "Too large" }, { status: 413 });
   const buf = await req.arrayBuffer();
   if (buf.byteLength > MAX_BYTES) return Response.json({ error: "Too large" }, { status: 413 });
-  const fields = [...new URLSearchParams(new TextDecoder().decode(buf))];
-  if (!verify(webhookSecret(kind), inboundUrl(kind), fields, req.headers.get(SIGNATURE_HEADER[kind]))) {
+  const f = formFields(new TextDecoder().decode(buf));
+  if (!f) return Response.json({ error: "Bad request" }, { status: 400 });
+  if (!verify(webhookSecret(kind), inboundUrl(kind), f, req.headers.get(SIGNATURE_HEADER[kind]))) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
-  const f = Object.fromEntries(fields);
   try {
     const m: Inbound = {
       channel: kind,

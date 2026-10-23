@@ -5,12 +5,11 @@ import { APPROVAL_MINUTES } from "@/lib/agent/owner-tools";
 import { cashAt, computeDistribution } from "@/lib/domain";
 import { agentTurn } from "@/lib/server/agent";
 import { approvalCode, codesFor } from "@/lib/server/approvals";
-import { sessionCookie } from "@/lib/server/auth";
 import { type Caller, runCommand } from "@/lib/server/commands";
 import { type Connection, connect } from "@/lib/server/db/client";
 import { DEMO_TENANT, type Repo, type RepoOptions, createRepo } from "@/lib/server/db/repo";
 import type { Data } from "@/lib/types";
-import { NOW } from "../helpers";
+import { NOW, sessionFor } from "../helpers";
 
 // The state route reads the process-wide repo; here it is each test's in-memory one.
 const h = vi.hoisted(() => ({ repo: undefined as unknown as Repo }));
@@ -231,10 +230,7 @@ describe("one approval applies once (KTD4)", () => {
 });
 
 describe("the one-time code on the admin page (KTD6)", () => {
-  const cookieFor = (ownerId: string) => {
-    const c = sessionCookie({ tenant: DEMO_TENANT, ownerId }, new URL(BASE));
-    return `${c.name}=${c.value}`;
-  };
+  const cookieFor = (ownerId: string) => sessionFor(ownerId);
   // The route reads the clock, so it reads the tests' clock.
   async function stateAs(ownerId?: string) {
     vi.useFakeTimers({ toFake: ["Date"], now: NOW });
@@ -280,7 +276,7 @@ describe("the one-time code on the admin page (KTD6)", () => {
     expect(Object.keys(row).sort()).toEqual(["args", "binding", "consumedAt", "conversationId", "createdAt", "expiresAt", "id", "needsCode", "nonce", "ownerId", "policyVersion", "status", "summary", "tenantId", "tool"]);
     for (const v of Object.values(row)) expect(String(v)).not.toBe(code);
     // Each approval gets its own code from its random id, under the server's secret.
-    expect(approvalCode(DEMO_TENANT, row.id, { NODE_ENV: "test", SESSION_SECRET: "another secret" })).not.toBe(code);
+    expect(approvalCode(DEMO_TENANT, row.id, { NODE_ENV: "test", APPROVAL_SECRET: "another secret" })).not.toBe(code);
   });
 });
 

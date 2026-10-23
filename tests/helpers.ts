@@ -6,6 +6,7 @@ import type { ToolCtx } from "@/lib/agent/tools";
 import { BUSINESS } from "@/lib/config";
 import { buildSeed } from "@/lib/seed";
 import { approvalCode } from "@/lib/server/approvals";
+import { sessionCookie } from "@/lib/server/auth";
 import { DEMO_TENANT } from "@/lib/server/db/repo";
 import { DEV_WEBHOOK_SECRET, type InboundKind, SIGNATURE_HEADER, inboundUrl, sign } from "@/lib/server/signature";
 import { ownerSnapshot, snapshot } from "@/lib/views";
@@ -15,6 +16,15 @@ export const NOW = new Date("2026-10-22T12:00:00+08:00");
 
 export function seed(): Data {
   return buildSeed(NOW);
+}
+
+// A Cookie header for an owner's session, as the confirm page's sign-in sets it. `sv` is the owner's session
+// version when it was signed and `demo` whether the business's demo features were on (lib/server/auth.ts): the
+// demo business has them on in tests, any other business off.
+export function sessionFor(ownerId: string, opts: { tenant?: string; sv?: number; demo?: boolean } = {}) {
+  const tenant = opts.tenant ?? DEMO_TENANT;
+  const c = sessionCookie({ tenant, ownerId, sv: opts.sv ?? 0, demo: opts.demo ?? tenant === DEMO_TENANT }, new URL("http://localhost:3000"));
+  return `${c.name}=${c.value}`;
 }
 
 let sid = 0;
@@ -29,7 +39,7 @@ export function inboundReq(
 ) {
   const all: [string, string][] = Object.entries({ To: kind === "sms" ? BUSINESS.sms : BUSINESS.email, MessageSid: `SMtest${++sid}`, ...fields });
   const url = inboundUrl(kind);
-  const sig = opts.signature === undefined ? sign(opts.secret ?? DEV_WEBHOOK_SECRET[kind], opts.url ?? url, all) : opts.signature;
+  const sig = opts.signature === undefined ? sign(opts.secret ?? DEV_WEBHOOK_SECRET[kind], opts.url ?? url, Object.fromEntries(all)) : opts.signature;
   return new Request(url, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded", ...(sig !== null && { [SIGNATURE_HEADER[kind]]: sig }) },

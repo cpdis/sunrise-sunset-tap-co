@@ -74,7 +74,8 @@ export function toolWords(tools: string[] | undefined): string {
     .join(", ");
 }
 
-// Turns URLs in agent messages into links; links to this site stay in the tab, with their link token (?t=).
+// Turns URLs in agent messages into links; links to this site stay in the tab, with their link token (?t=) or
+// fragment (a sign-in link's #token=). They are never prefetched, so a link is opened only by a click (A5).
 export function Linkify({ text }: { text: string }) {
   const parts = text.split(/(https?:\/\/[^\s]+)/g);
   return (
@@ -86,11 +87,11 @@ export function Linkify({ text }: { text: string }) {
         let path: string | null = null;
         try {
           const u = new URL(url);
-          if (typeof window !== "undefined" && u.origin === window.location.origin) path = u.pathname + u.search;
+          if (typeof window !== "undefined" && u.origin === window.location.origin) path = u.pathname + u.search + u.hash;
         } catch {}
         return (
           <Fragment key={i}>
-            {path ? <Link href={path}>{url}</Link> : <a href={url} target="_blank" rel="noreferrer">{url}</a>}
+            {path ? <Link href={path} prefetch={false}>{url}</Link> : <a href={url} target="_blank" rel="noreferrer">{url}</a>}
             {tail}
           </Fragment>
         );

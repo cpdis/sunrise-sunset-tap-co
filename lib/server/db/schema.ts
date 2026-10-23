@@ -8,6 +8,9 @@ const createdAt = () => timestamp("created_at", { withTimezone: true }).defaultN
 export const tenants = pgTable("tenants", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
+  // The public demo business (A1): only seedDemo sets it. The demo features (simulated sign-in links, the SMS
+  // simulator, the reset) need it as well as DEMO_MODE, so a real business never has them.
+  demo: boolean("demo").notNull().default(false),
   createdAt: createdAt(),
 });
 

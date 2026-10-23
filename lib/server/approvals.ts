@@ -5,19 +5,19 @@
 // second, stale, expired or misdirected YES applies nothing.
 //
 // The one-time code is not stored, not even hashed: six digits have only a million values, so a hash in the
-// database gives the code to anyone with a copy. It is an HMAC of the approval's random id under the server
-// secret, which the admin page works out again, for the owner who staged it only.
+// database gives the code to anyone with a copy. It is an HMAC of the approval's random id under APPROVAL_SECRET,
+// which the admin page works out again, for the owner who staged it only. That secret is its own, apart from the
+// session secret, so rotating one leaves the other alone (A7).
+import { createHmac } from "node:crypto";
 import { type OwnerCtx, PICK, replan } from "@/lib/agent/owner-tools";
 import type { ApprovalChange, ApprovalCode, Data, Owner, PendingApproval, StagedApproval } from "@/lib/types";
 import { ownerSnapshot } from "@/lib/views";
-import { serverMac } from "./auth";
 import type { ApprovalRow, ApprovalWrites, NewApprovalRow, Repo } from "./db/repo";
-
-type Env = Parameters<typeof serverMac>[2];
+import { type Env, secret } from "./secrets";
 
 // The six-digit code for one approval. Each approval's id is random, so each gets its own code.
 export function approvalCode(tenant: string, approvalId: string, env?: Env) {
-  const n = serverMac("approval-code", `${tenant}:${approvalId}`, env).readUInt32BE(0);
+  const n = createHmac("sha256", secret("APPROVAL_SECRET", env)).update(`${tenant}:${approvalId}`).digest().readUInt32BE(0);
   return String(n % 1_000_000).padStart(6, "0");
 }
 

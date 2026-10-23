@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { POST as commandPOST } from "@/app/api/commands/route";
+import { POST as confirmPOST } from "@/app/api/session/confirm/route";
 import { GET as stateGET } from "@/app/api/state/route";
-import { sessionCookie } from "@/lib/server/auth";
+import { linkToken } from "@/lib/server/auth";
 import { type Connection, connect } from "@/lib/server/db/client";
 import { DEMO_TENANT, type Repo, createRepo } from "@/lib/server/db/repo";
 import { approvals, idempotencyKeys, outbox, rateLimits, tenantState, tenants } from "@/lib/server/db/schema";
 import { inboundWebhook } from "@/lib/server/inbound";
-import { NOW, inboundReq } from "../helpers";
+import { NOW, inboundReq, sessionFor } from "../helpers";
 
 // R16: every record belongs to one business, and every read and write filters on it. Only the demo business is
 // seeded; "nobody" is a business id that does not exist.
@@ -37,10 +38,7 @@ async function setup() {
 
 const NOBODY = "nobody";
 const BASE = "http://localhost:3000";
-const cookieFor = (tenant: string, ownerId = "own_colin") => {
-  const c = sessionCookie({ tenant, ownerId }, new URL(BASE));
-  return `${c.name}=${c.value}`;
-};
+const cookieFor = (tenant: string, ownerId = "own_colin") => sessionFor(ownerId, { tenant });
 
 describe("an unknown business id (R16)", () => {
   test("a command for it returns 404 and changes nothing", async () => {
@@ -62,6 +60,21 @@ describe("an unknown business id (R16)", () => {
     const before = await everything();
     const res = await stateGET(new Request(`${BASE}/api/state`, { headers: { host: "localhost:3000", cookie: cookieFor(NOBODY) } }));
     expect(res.status).toBe(404);
+    expect(await everything()).toBe(before);
+  });
+
+  test("a sign-in link for it opens nothing and changes nothing", async () => {
+    const { everything } = await setup();
+    const before = await everything();
+    const res = await confirmPOST(
+      new Request(`${BASE}/api/session/confirm`, {
+        method: "POST",
+        headers: { origin: BASE, host: "localhost:3000", "content-type": "application/json" },
+        body: JSON.stringify({ token: linkToken({ tenant: NOBODY, ownerId: "own_colin" }) }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(res.headers.get("set-cookie")).toBeNull();
     expect(await everything()).toBe(before);
   });
 
@@ -100,6 +113,7 @@ describe("repo reads filter on the business id (R16)", () => {
 
     // Any other business id sees nothing.
     expect(await repo.load(NOBODY)).toBeNull();
+    expect(await repo.tenant(NOBODY)).toBeUndefined();
     expect(await repo.readOutbox(NOBODY)).toEqual([]);
     expect(await repo.counted(NOBODY, "tenant", window)).toBe(0);
     expect(await repo.stagedApprovals(NOBODY, "conv_1")).toEqual([]);
@@ -109,5 +123,11 @@ describe("repo reads filter on the business id (R16)", () => {
     expect(await repo.mutateApprovals(NOBODY, "conv_1", () => ({ value: undefined, writes: { consume: "apr_1" } }))).toEqual({ ok: false, reason: "not_found" });
     expect(await repo.mutateOnce(NOBODY, "link:abc", "sign_in", () => undefined)).toEqual({ ok: false, reason: "not_found" });
     expect(await repo.stagedApprovals(DEMO_TENANT, "conv_1")).toHaveLength(1);
+
+    // Nor prune its outbox or inbound message ids, however late the clock.
+    expect(await repo.claimKey(DEMO_TENANT, "inbound:sms:SM1", "inbound_sms")).toBe(true);
+    await repo.prune(NOBODY, new Date("2100-01-01"));
+    expect(await repo.readOutbox(DEMO_TENANT)).toHaveLength(1);
+    expect(await repo.claimKey(DEMO_TENANT, "inbound:sms:SM1", "inbound_sms")).toBe(false);
   });
 });
