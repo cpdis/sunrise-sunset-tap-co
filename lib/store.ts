@@ -52,6 +52,7 @@ interface AppState {
   ownerReply: (convId: string, body: string) => void;
   setAgentActive: (convId: string, active: boolean) => void;
   handBack: (convId: string, force?: boolean) => void;
+  setDraft: (convId: string, draft: string) => void;
   markRead: (convId: string) => void;
   claimRun: (bookingId: string, which: "deliver" | "collect") => void;
   captureBond: (bookingId: string, amount: number, note: string) => void;
@@ -290,6 +291,8 @@ export const useApp = create<AppState>()(
       setAgentActive: (convId, active) => get().mutate((d) => ops.setAgentActive(d, convId, active, get().ownerId ?? undefined)),
 
       handBack: (convId, force) => get().mutate((d) => ops.handBack(d, convId, get().ownerId ?? undefined, force)),
+
+      setDraft: (convId, draft) => get().mutate((d) => ops.setDraft(d, convId, draft)),
 
       markRead: (convId) =>
         get().mutate((d) => {
