@@ -6,10 +6,10 @@ import { nextFreeDates } from "../domain";
 import type { AgentResult, AgentState, Block } from "../types";
 import { fmtDate, fmtTime, money, todayISO } from "../util";
 import {
-  CANCEL_YES,
+  type CancelQuote,
   type ToolCtx,
-  cancelAnswer,
   cancelBookingTool,
+  cancelReply,
   checkAvailability,
   customerBookings,
   escalate,
@@ -141,6 +141,19 @@ export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentRes
     const lines = kbLines(ctx, f.page, f.lines);
     return lines.length ? out([...lines, f.then].filter(Boolean).join(" ")) : unsure();
   };
+  // The terms of a cancel and the code a YES must echo (KTD11), kept in the state for the next message.
+  // The terms follow the real policy for this booking: a full refund outside the window, the deposit kept inside it.
+  const quoteCancel = (r: CancelQuote, lead = "") => {
+    const q = ctx.quotedCancel;
+    if (q) Object.assign(state, { awaiting: "confirm_cancel", bookingId: q.id, code: q.code, refund: q.refund });
+    const yes = `Reply YES ${r.code}`;
+    if (r.held) return out(`${lead}${r.ref} is only held, not paid, so there's nothing to refund. ${yes} and I'll release the date.`);
+    const on = `${r.ref} on ${fmtDate(r.date, { dow: true })} is ${r.daysOut} days away`;
+    const terms = r.fullRefund
+      ? `${on}, so you'd get a full refund of ${money(r.refund)}.`
+      : `${on}, inside the ${s.cancelDays}-day window, so the ${money(r.kept)} deposit is kept${r.refund > 0 ? ` and ${money(r.refund)} would be refunded` : ""}.`;
+    return out(`${lead}${r.needsOwner ? `${terms} A refund that size needs an owner's OK. ${yes} and I'll send it to the owners now.` : `${terms} ${yes} to cancel.`}`);
+  };
 
   // After a hand-over the agent still answers general questions, but bookings and cancellations wait for an owner.
   if (ctx.handover) {
@@ -149,17 +162,23 @@ export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentRes
     return out("An owner has this conversation now. I can still answer questions about the truck, kegs or prices.");
   }
 
-  // 1. Pending confirmations. Anything but a clear yes ends them, so a later "yes" confirms nothing.
-  ctx.confirmCancel = cancelAnswer(prev, t);
-  if (state.awaiting === "confirm_cancel" && state.bookingId) {
-    state.awaiting = undefined;
-    if (ctx.confirmCancel) {
+  // 1. Pending confirmations. Anything but a clear yes ends them, so a later "yes" confirms nothing. A cancel also
+  // needs the quote's code (cancelReply).
+  const pending = cancelReply(ctx, prev, text);
+  if (state.awaiting === "confirm_cancel") {
+    Object.assign(state, { awaiting: undefined, code: undefined, refund: undefined });
+    if (pending.kind === "ask") {
+      if (pending.keep) Object.assign(state, { awaiting: prev.awaiting, code: prev.code, refund: prev.refund });
+      return out(pending.say);
+    }
+    if (pending.kind === "yes" && state.bookingId) {
       const r = cancelBookingTool(ctx, state.bookingId, true);
       if (r.ok && r.done) return out(`Done, ${r.ref} is cancelled.${r.refund > 0 ? ` I've requested a ${money(r.refund)} refund to your card.` : ""}`);
+      if (r.ok && "code" in r) return quoteCancel(r, "The terms have changed since my last message. ");
       if (!r.ok && "needsOwner" in r) return out("I've sent your cancellation to the owners, as a refund that size needs their OK. Nothing is cancelled until an owner approves it.");
       return out("I couldn't cancel that one. Send the SST- reference and I'll check it again.");
     }
-    if (parseConfirm(t, CANCEL_YES) === "no") return out("All good, your booking stays as is.");
+    if (pending.kind === "no") return out("All good, your booking stays as is.");
   }
 
   // A no to "Want the link?" or "What name should I put the booking under?" drops the draft booking.
@@ -213,16 +232,8 @@ export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentRes
     if (!bs.length) return out(`${policy} If you've already booked, text from the number you booked with or send the SST- reference.`);
     if (has(t, /\b(policy|what if|what happens|how does)\b/) && !ref) return out(`${policy} Want to cancel ${bs[0].ref}? Just say so.`);
     const r = cancelBookingTool(ctx, bs[0].id, false);
-    if (!r.ok) return out("I couldn't find that booking. Send the SST- reference and I'll check it again.");
-    state.bookingId = bs[0].id;
-    state.awaiting = "confirm_cancel";
-    if (r.held) return out(`${r.ref} is only held, not paid, so there's nothing to refund. Reply YES and I'll release the date.`);
-    // The terms follow the real policy for this booking: a full refund outside the window, the deposit kept inside it.
-    const on = `${r.ref} on ${fmtDate(bs[0].date, { dow: true })} is ${r.daysOut} days away`;
-    const terms = r.fullRefund
-      ? `${on}, so you'd get a full refund of ${money(r.refund)}.`
-      : `${on}, inside the ${s.cancelDays}-day window, so the ${money(r.kept)} deposit is kept${r.refund > 0 ? ` and ${money(r.refund)} would be refunded` : ""}.`;
-    return out(r.needsOwner ? `${terms} A refund that size needs an owner's OK. Reply YES and I'll send it to the owners now.` : `${terms} Reply YES to cancel.`);
+    if (!r.ok || !("code" in r)) return out("I couldn't find that booking. Send the SST- reference and I'll check it again.");
+    return quoteCancel(r);
   }
 
   // 4. Existing booking status / balance.

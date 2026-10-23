@@ -1,4 +1,4 @@
-// Reads a reply to "Reply YES to ...". Shared by the customer and owner agents, so the two cannot drift.
+// Reads a reply to "Reply YES ...". Shared by the customer and owner agents, so the two cannot drift.
 // A refusal word anywhere wins, and a yes must be the whole message: "yeah nah", "okay, cancel that"
 // and "yes, but what about kegs?" never confirm anything.
 
@@ -49,4 +49,20 @@ export function parseConfirm(text: string, extraYes: string[] = []): Confirm {
   // One or two yes phrases ("ok go ahead"), then any courtesy words.
   const whole = new RegExp(`^(${yes})(\\s(${yes}))?(\\s(${alt(COURTESY)}))*$`);
   return whole.test(t) ? "yes" : "other";
+}
+
+// KTD11: a confirmation sent to the sender's real handset carries a 4-digit code, and only a yes that echoes it
+// ("YES 4821") confirms. A spoofed caller ID never sees the code, so a blind "yes" confirms nothing.
+export function newCode() {
+  return String(1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000));
+}
+
+const CODE = /\b\d{4}\b/g;
+
+// A reply to "Reply YES 4821": its yes or no (the parser above, with the code taken out), the code it quotes (only
+// when it quotes exactly one), and whether the code is all it says.
+export function parseCoded(text: string, extraYes: string[] = []): { answer: Confirm; code?: string; bare: boolean } {
+  const codes = text.match(CODE) ?? [];
+  const rest = text.replace(CODE, " ");
+  return { answer: parseConfirm(rest, extraYes), code: codes.length === 1 ? codes[0] : undefined, bare: codes.length > 0 && normalise(rest) === "" };
 }

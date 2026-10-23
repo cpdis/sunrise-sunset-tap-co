@@ -5,8 +5,8 @@ import type { AgentResult, AgentState, Block, Msg } from "../types";
 import { fmtDate, fmtTime, todayISO } from "../util";
 import {
   type ToolCtx,
-  cancelAnswer,
   cancelBookingTool,
+  cancelReply,
   checkAvailability,
   escalate,
   getQuote,
@@ -63,7 +63,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "cancel_booking",
-    description: "Quote the terms for cancelling one of the sender's bookings (confirmed=false). Cancel it (confirmed=true) only when the customer's message right after your quote is a clear yes; otherwise it just quotes again and done is false. A refund over the owner limit goes to the owners instead and nothing is cancelled.",
+    description: "Quote the terms for cancelling one of the sender's bookings (confirmed=false); a quote returns a 4-digit code. Cancel it (confirmed=true) only when the customer's message right after your quote is YES with that code; otherwise it quotes again with a new code and done is false. A refund over the owner limit goes to the owners instead and nothing is cancelled.",
     input_schema: obj({ booking: { type: "string", description: "Booking id or SST- reference" }, confirmed: { type: "boolean" } }, ["booking", "confirmed"]),
     strict: true,
   },
@@ -91,7 +91,7 @@ Rules:
 - Use tools for anything about dates, prices, bookings or cancellations. Never invent availability or prices.
 - To book: confirm date, 4 or 8 hours, suburb and name, state the total, then call hold_and_send_deposit_link and send the link exactly as returned.
 - Never ask for card numbers. Payment only happens through the link.
-- To cancel: call cancel_booking with confirmed=false, tell the customer the terms and ask them to reply YES. Call it with confirmed=true only when their next message is a clear yes. If done is false, nothing was cancelled, so don't say it was.
+- To cancel: call cancel_booking with confirmed=false, tell the customer the terms and ask them to reply YES and the code it returns, for example "Reply YES 4821 to cancel." Call it with confirmed=true only when their next message is YES with that code. If done is false, nothing was cancelled, so don't say it was.
 - Say only what tools did. A refund is requested, not sent. Escalating flags the conversation for the owners and nothing else: say the owners have the message, and never promise a text, a call, an email or a time.
 - Moving a booking to another date is an owner's job. Escalate it, and don't hold the new date.
 - Only bookings from lookup_booking are the sender's. For any other reference, say you can't find it for this number, the same way every time.
@@ -140,13 +140,15 @@ function exec(ctx: ToolCtx, name: string, input: Record<string, unknown>): unkno
 }
 
 // The tool-use loop both agents share. Returns the final text, or undefined if the model refused or ran too long.
+// client: the API client, made from the environment when not given (tests pass a scripted one).
 export async function toolLoop(opts: {
   system: Anthropic.Beta.Messages.BetaTextBlockParam[];
   tools: Tool[];
   messages: MessageParam[];
   exec: (name: string, input: Record<string, unknown>) => unknown;
+  client?: Anthropic;
 }): Promise<{ reply?: string; stop: "done" | "refusal" | "too_long" }> {
-  const client = new Anthropic();
+  const client = opts.client ?? new Anthropic();
   const { messages } = opts;
   for (let turn = 0; turn < 6; turn++) {
     const res = await client.beta.messages.create({
@@ -182,20 +184,29 @@ export async function toolLoop(opts: {
   return { stop: "too_long" };
 }
 
-export async function runClaude(ctx: ToolCtx, history: Msg[], prev: AgentState): Promise<AgentResult> {
-  // Like the rules engine, a pending cancel lasts one message: this one confirms it only if it is a clear yes.
+export async function runClaude(ctx: ToolCtx, history: Msg[], prev: AgentState, client?: Anthropic): Promise<AgentResult> {
+  // Like the rules engine, a pending cancel lasts one message: this one confirms it only if it is YES with the
+  // quote's code. A missing or wrong code gets the same fixed reply the rules engine gives, without the model.
   const last = [...history].reverse().find((m) => m.from === "customer");
-  ctx.confirmCancel = cancelAnswer(prev, last?.body ?? "");
-  const state: AgentState = { ...prev, awaiting: undefined, bookingId: undefined };
+  const pending = cancelReply(ctx, prev, last?.body ?? "");
+  const state: AgentState = { ...prev, awaiting: undefined, bookingId: undefined, code: undefined, refund: undefined };
+  if (pending.kind === "ask") return { reply: pending.say, actions: [], tools: [], state: pending.keep ? { ...prev } : state, engine: "claude" };
   const r = await toolLoop({
     system: system(ctx),
     tools: ctx.handover ? TOOLS.filter((x) => !["hold_and_send_deposit_link", "cancel_booking"].includes(x.name)) : TOOLS,
     messages: toMessages(history),
     exec: (name, input) => exec(ctx, name, input),
+    client,
   });
-  const done = (reply: string): AgentResult => {
-    // A quote is saved so the customer's next message can confirm it (cancel_booking checks confirmCancel).
-    if (ctx.quotedCancel) Object.assign(state, { awaiting: "confirm_cancel", bookingId: ctx.quotedCancel });
+  const done = (text: string): AgentResult => {
+    let reply = text;
+    // A quote is saved so the customer's next message can confirm it (cancel_booking checks confirmCancel). The code
+    // is what makes that YES count, so the reply always carries it, whatever the model wrote.
+    const q = ctx.quotedCancel;
+    if (q) {
+      Object.assign(state, { awaiting: "confirm_cancel", bookingId: q.id, code: q.code, refund: q.refund });
+      if (!reply.includes(q.code)) reply += ` Reply YES ${q.code} to go ahead.`;
+    }
     return { reply, actions: ctx.actions, tools: ctx.used, state, engine: "claude" };
   };
   if (r.stop !== "done") {

@@ -183,6 +183,9 @@ export interface AgentState {
   refMisses?: number;
   awaiting?: "date" | "name" | "suburb" | "confirm_hold" | "confirm_cancel";
   bookingId?: string;
+  // A cancel quote: the code the customer's YES must echo (KTD11) and the refund the quote stated.
+  code?: string;
+  refund?: number;
   refDate?: string;
   // Owner agent: a staged change that runs only if the owner's next text is YES.
   pending?: PendingOwnerAction;
@@ -285,7 +288,7 @@ export interface Data {
 
 export type Scenario = "bear" | "base" | "bull";
 
-// Actions the agent returns. The agentReply command applies them on the server (lib/server/agent.ts).
+// Actions the agent returns. lib/server/agent.ts applies them after the turn, for the conversation's own sender.
 export type AgentAction =
   | {
       type: "hold";
@@ -296,12 +299,11 @@ export type AgentAction =
       startTime?: string;
       suburb: string;
       name: string;
-      contact: string;
-      channel: Channel;
       // The booking's link token, made with the hold so the link in the reply opens it.
       token: string;
     }
-  | { type: "cancel"; bookingId: string }
+  // refund: what the confirmed terms refund. The cancel applies only while the policy still gives exactly that.
+  | { type: "cancel"; bookingId: string; refund: number }
   // keepAgent: flag it for an owner but let the agent carry on (short notice, date changes, unknown suburbs).
   // draft: a reply the owner can send as-is (shown in the inbox queue, cleared by ownerReply).
   | { type: "escalate"; reason: string; keepAgent?: boolean; draft?: string }

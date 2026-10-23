@@ -1,63 +1,171 @@
-// The agent's turn, applied on the server by the agentReply command. Until U9 runs the agent here, the result comes
-// from the browser, so it is parsed like any other input and each action is checked again against the stored data:
-// a customer's conversation only holds and cancels its own sender's dates and never takes an owner action.
+// The agent's turn, on the server (R14, KTD10). The browser sends only the message and which conversation it is
+// for. The server stores the message, loads the data, the knowledge base, the owners and the conversation with its
+// state, and runs the agent (Claude, or the rules engine without a key) on that snapshot outside any write. Its
+// reply and actions then apply in one short repo.mutate that checks them again against the stored data: an owner
+// taking over, another message or turn landing, a booking that changed, or a refund that is no longer the one
+// confirmed. A version conflict in that write runs the apply again, never the model.
+import Anthropic from "@anthropic-ai/sdk";
+import { runClaude } from "@/lib/agent/claude";
+import { runOwnerClaude } from "@/lib/agent/owner-claude";
+import { runOwnerRules } from "@/lib/agent/owner-rules";
+import type { OwnerCtx } from "@/lib/agent/owner-tools";
+import { runRules } from "@/lib/agent/rules";
+import type { ToolCtx } from "@/lib/agent/tools";
 import { findSuburb } from "@/lib/config";
 import { cancelBooking, cancelNeedsOwner, cancelPolicy, createHold, holdExpired } from "@/lib/domain";
 import * as ops from "@/lib/ops";
-import type { AgentAction, AgentResult, AgentState, Conversation, Data } from "@/lib/types";
+import type { AgentAction, AgentResult, AgentState, Conversation, Data, KbPage, Msg } from "@/lib/types";
 import { sameContact, uid } from "@/lib/util";
-import { CHANNELS, type Raw, bad, date, flag, id, isObj, match, maybeText, obj, oneOf, text } from "./args";
+import { type ChatView, chatView, ownerByContact, ownerSnapshot, snapshot } from "@/lib/views";
+import { CHANNELS, CommandError, type Raw, bad, id, isObj, maybeText, oneOf, text } from "./args";
+import type { Caller } from "./commands";
+import type { Repo } from "./db/repo";
 
-const TOKEN = /^[A-Za-z0-9_-]{16,64}$/;
+// What the model reads, bounded by the stored data rather than by the request: the last HISTORY messages, each cut
+// to MESSAGE_CHARS, and the knowledge base cut to KB_CHARS in all.
+const HISTORY = 30;
+const MESSAGE_CHARS = 1000;
+export const KB_CHARS = 60_000;
+export const BODY_CHARS = 2000;
 
-function agentAction(x: unknown): AgentAction {
-  if (!isObj(x)) return bad("action");
-  switch (x.type) {
-    case "hold":
-      return {
-        type: "hold",
-        bookingId: id(x, "bookingId"),
-        ref: match(x, "ref", /^SST-\d{1,7}$/),
-        date: date(x, "date"),
-        block: oneOf(x, "block", [4, 8] as const),
-        startTime: maybeText(x, "startTime", 5),
-        suburb: text(x, "suburb", 60),
-        name: text(x, "name", 80),
-        contact: text(x, "contact", 120),
-        channel: oneOf(x, "channel", CHANNELS),
-        token: match(x, "token", TOKEN),
-      };
-    case "cancel":
-      return { type: "cancel", bookingId: id(x, "bookingId") };
-    case "escalate":
-      return { type: "escalate", reason: text(x, "reason", 300), keepAgent: flag(x, "keepAgent"), draft: maybeText(x, "draft", 2000) };
-    case "claim_run": case "truck_log": case "expense": case "approve_payout": case "pay_payout": case "settings":
-    case "kb_append": case "blackout": case "own_use": case "owner_reply": case "hand_back": case "send_draft":
-      // Owner actions apply only on an owner's conversation, for a signed-in owner, and ops re-checks each one.
-      return x as AgentAction;
-    default:
-      return bad("action type");
+// Which conversation a message is for: one the sender already has, or the one for its channel and contact, made
+// if new. Until U10 signs inbound messages, the SMS widget may claim any number.
+export type TurnInput = ({ convId: string } | { channel: Conversation["channel"]; contact: string; name?: string }) & { body: string };
+
+export interface TurnOptions {
+  // This site's origin, for the checkout links the agent sends.
+  origin: string;
+  // The model client. Left out, it is made from the environment when ANTHROPIC_API_KEY is set; otherwise the rules
+  // engine answers. Tests pass a scripted one.
+  client?: Anthropic;
+}
+
+export interface TurnOutput {
+  conversation: ChatView;
+  // Which engine answered, or undefined when the agent did not answer (an owner has the conversation).
+  engine?: AgentResult["engine"];
+}
+
+// The request body: only these fields count. A snapshot, a state or anything else in it is ignored.
+export function turnInput(r: Raw): TurnInput {
+  const body = text(r, "body", BODY_CHARS);
+  if (r.convId !== undefined) return { convId: id(r, "convId"), body };
+  return { channel: oneOf(r, "channel", CHANNELS), contact: text(r, "contact", 120), name: maybeText(r, "name", 80), body };
+}
+
+// An owner has the conversation: they took it over or replied, and the agent stays out of it until it is handed
+// back. A hand-over the owners haven't picked up yet still gets the agent's general answers.
+export const ownerHolds = (c: Conversation) => !c.agentActive && (!!c.handledBy || !c.escalated);
+
+// ---------- 1. the message goes in ----------
+
+function receive(d: Data, ownerId: string | undefined, input: TurnInput, now: Date) {
+  let c: Conversation | undefined;
+  if ("convId" in input) {
+    c = d.conversations.find((x) => x.id === input.convId);
+    if (!c) throw new CommandError(404, "No such conversation.");
+  } else {
+    c = d.conversations.find((x) => x.contact === input.contact && x.channel === input.channel);
+    if (!c) {
+      const owner = ownerByContact(d, input.contact);
+      c = { id: uid("conv"), channel: input.channel, contact: input.contact, name: owner?.name ?? input.name ?? "New contact", ...(owner && { ownerId: owner.id }), agentActive: true, unread: !owner, state: {}, messages: [] };
+      d.conversations.unshift(c);
+    }
   }
+  // A conversation with an owner's own number is the owner agent, so only a signed-in owner drives it. In the demo the
+  // SMS widget lets an owner text as any owner; U10 and U11 tie a text to the real handset.
+  if (c.ownerId && !d.owners.some((o) => o.id === ownerId)) throw new CommandError(401, "Sign in to text as an owner.");
+  c.messages.push({ id: uid("m"), from: "customer", body: input.body, at: now.toISOString() });
+  c.unread = !c.ownerId;
+  return c.id;
 }
 
-export function agentResult(r: Raw): AgentResult {
-  const tools = Array.isArray(r.tools) && r.tools.length <= 30 && r.tools.every((t) => typeof t === "string" && t.length <= 80) ? (r.tools as string[]) : bad("tools");
-  const actions = Array.isArray(r.actions) && r.actions.length <= 10 ? r.actions.map(agentAction) : bad("actions");
-  return { reply: text(r, "reply", 4000), tools, actions, state: obj(r, "state") as AgentState, engine: r.engine === "claude" ? "claude" : "rules" };
+// ---------- 2. the turn, outside any write ----------
+
+// Pages in order until KB_CHARS, the last one cut to fit.
+export function boundKb(kb: KbPage[]): KbPage[] {
+  let room = KB_CHARS;
+  const out: KbPage[] = [];
+  for (const p of kb) {
+    if (room <= 0) break;
+    out.push({ ...p, body: p.body.slice(0, room) });
+    room -= p.body.length;
+  }
+  return out;
 }
+
+// JSON with sorted keys and no undefined values, so a state read back from the database compares equal to itself.
+const canon = (x: unknown) =>
+  JSON.stringify(x, (_k, v) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : 1))) : v));
+
+// What the turn read of its conversation. The result applies only if this is unchanged: no newer message, no owner
+// taking over or handing back, no other turn's state (such as a concurrent YES that already used a staged change).
+const mark = (c: Conversation) => canon([c.messages.at(-1)?.id, c.agentActive, c.escalated ?? null, c.handledBy ?? null, c.state]);
+
+interface Turn {
+  convId: string;
+  mark: string;
+  run(client?: Anthropic): Promise<AgentResult>;
+}
+
+// The agent for this conversation, on what the server stored. Undefined when the agent doesn't answer.
+function prepare(d: Data, c: Conversation, now: Date, origin: string): Turn | undefined {
+  if (ownerHolds(c)) return undefined;
+  const history = c.messages.slice(-HISTORY).map((m) => ({ ...m, body: m.body.slice(0, MESSAGE_CHARS) }));
+  const last = history.at(-1)?.body ?? "";
+  // Each engine gets a fresh state and context, so a Claude failure leaves nothing behind for the fallback.
+  const state = () => structuredClone(c.state ?? {});
+  const kb = boundKb(d.kb);
+  const base = { convId: c.id, mark: mark(c) };
+  if (c.ownerId) {
+    const owner = d.owners.find((o) => o.id === c.ownerId);
+    if (!owner) return undefined;
+    const data = { ...ownerSnapshot(d, now), kb };
+    const ctx = (): OwnerCtx => ({ data, owner, now, actions: [], used: [] });
+    return { ...base, run: (client) => engine(client, (cl) => runOwnerClaude(ctx(), history, state(), cl), () => runOwnerRules(ctx(), last, state())) };
+  }
+  const data = { ...snapshot(d, c.contact), kb };
+  const ctx = (): ToolCtx => ({
+    data,
+    contact: c.contact,
+    channel: c.channel,
+    customerName: c.name && !/^(Caller|New contact)/.test(c.name) ? c.name : undefined,
+    now,
+    actions: [],
+    used: [],
+    origin,
+    handover: !!c.escalated && !c.agentActive,
+  });
+  return { ...base, run: (client) => engine(client, (cl) => runClaude(ctx(), history, state(), cl), () => runRules(ctx(), last, state())) };
+}
+
+async function engine(client: Anthropic | undefined, claude: (c: Anthropic) => Promise<AgentResult>, rules: () => AgentResult) {
+  const cl = client ?? (process.env.ANTHROPIC_API_KEY ? new Anthropic() : undefined);
+  if (cl) {
+    try {
+      return await claude(cl);
+    } catch (err) {
+      console.error("Claude agent failed, falling back to rules", err);
+    }
+  }
+  return rules();
+}
+
+// ---------- 3. the result applies, checked again ----------
 
 const sameAs = (d: Data, customerId: string | undefined, contact: string) =>
   d.customers.some((cu) => cu.id === customerId && (sameContact(cu.phone, contact) || sameContact(cu.email, contact)));
 
-function hold(d: Data, c: Conversation, a: Extract<AgentAction, { type: "hold" }>, now: Date) {
+// A hold for the conversation's own sender. Returns why it was refused, or undefined when it held.
+function hold(d: Data, c: Conversation, a: Extract<AgentAction, { type: "hold" }>, now: Date): string | undefined {
   const refuse = (why: string) => {
     // The link the agent sent won't open, so the owners take it.
     c.escalated = `Hold ${a.ref} for ${a.name} refused: ${why}`;
     c.messages.push({ id: uid("m"), from: "system", body: `Hold refused: ${why}`, at: now.toISOString() });
     ops.log(d, `Agent hold ${a.ref} refused: ${why}`);
+    return why;
   };
   const n = Number(a.ref.slice(4));
-  if (a.contact !== c.contact || a.channel !== c.channel) return refuse("it was for another contact");
   if (!findSuburb(a.suburb)) return refuse(`${a.suburb} is outside the service area`);
   if (d.bookings.some((b) => b.id === a.bookingId || b.ref === a.ref) || n > d.seq + 10) return refuse(`${a.ref} was just given to another booking`);
   // One contact holds one unpaid date at a time (R13), whichever surface asked.
@@ -75,16 +183,22 @@ function hold(d: Data, c: Conversation, a: Extract<AgentAction, { type: "hold" }
   ops.log(d, `Agent held ${b.ref} for ${a.name} via ${c.channel}`);
 }
 
-function cancel(d: Data, c: Conversation, bookingId: string, now: Date) {
-  const b = d.bookings.find((x) => x.id === bookingId);
-  if (!b) return;
+// A cancel on the terms that were confirmed. Returns the booking's ref when it was refused, or undefined.
+function cancel(d: Data, c: Conversation, a: Extract<AgentAction, { type: "cancel" }>, now: Date): string | undefined {
+  const b = d.bookings.find((x) => x.id === a.bookingId);
+  if (!b) return "that booking";
+  const pol = cancelPolicy(d.settings, b, now);
   // An owner by SMS cancels up to the refund limit; a customer only their own booking, and never past it (R3, R11).
-  const refused = c.ownerId
-    ? b.kind !== "paid" || cancelPolicy(d.settings, b, now).refund > d.settings.refundLimit
-    : !sameAs(d, b.customerId, c.contact) || !!cancelNeedsOwner(d.settings, b, now);
-  if (refused) return ops.log(d, `Cancel of ${b.ref} from ${c.name}'s conversation refused`);
-  const pol = cancelBooking(d, b.id, now);
-  if (pol) ops.log(d, `${c.ownerId ? `${c.name} cancelled ${b.ref} by SMS` : `Agent cancelled ${b.ref}`}; refunded $${pol.refund}`);
+  // Either way the refund must still be the one confirmed: a balance paid since then changes it.
+  const refused =
+    b.state === "cancelled" || b.state === "completed" || pol.refund !== a.refund ||
+    (c.ownerId ? b.kind !== "paid" || pol.refund > d.settings.refundLimit : !sameAs(d, b.customerId, c.contact) || !!cancelNeedsOwner(d.settings, b, now));
+  if (refused) {
+    ops.log(d, `Cancel of ${b.ref} from ${c.name}'s conversation refused`);
+    return b.ref;
+  }
+  cancelBooking(d, b.id, now);
+  ops.log(d, `${c.ownerId ? `${c.name} cancelled ${b.ref} by SMS` : `Agent cancelled ${b.ref}`}; refunded $${pol.refund}`);
 }
 
 function escalate(d: Data, c: Conversation, a: Extract<AgentAction, { type: "escalate" }>, now: Date) {
@@ -98,21 +212,98 @@ function escalate(d: Data, c: Conversation, a: Extract<AgentAction, { type: "esc
   ops.log(d, `Escalated to owners: ${a.reason}`);
 }
 
-export function applyAgentResult(d: Data, c: Conversation, r: AgentResult, now = new Date()) {
-  // An owner who took the conversation answers alone: the agent books and cancels nothing.
-  const ownerHolds = !c.agentActive;
+// Applies a turn's result to the stored data. Synchronous and repeatable, as repo.mutate needs (KTD10).
+export function applyTurn(d: Data, t: Pick<Turn, "convId" | "mark">, r: AgentResult, now: Date) {
+  const c = d.conversations.find((x) => x.id === t.convId);
+  if (!c || mark(c) !== t.mark) {
+    // An owner took over, another message came in, or another turn answered first. This answer is out of date, so
+    // none of it applies; the message waits for the owners or the newer turn.
+    ops.log(d, `Agent reply to ${c?.name ?? "a conversation"} dropped: the conversation changed while the agent was answering`);
+    return false;
+  }
   // The reply goes in first so a hand-over row reads after what the agent told the customer.
-  c.messages.push({ id: uid("m"), from: "agent", body: r.reply, at: now.toISOString(), tools: r.tools });
+  const reply: Msg = { id: uid("m"), from: "agent", body: r.reply, at: now.toISOString(), tools: r.tools };
+  c.messages.push(reply);
   for (const a of r.actions) {
+    // After a hand-over the agent books and cancels nothing (its tools refuse too).
+    if ((a.type === "hold" || a.type === "cancel") && !c.agentActive) continue;
+    // A refused hold or cancel makes the reply wrong, so it says what really happened instead (R4).
     if (a.type === "hold") {
-      if (!c.ownerId && !ownerHolds) hold(d, c, a, now);
+      if (!c.ownerId && hold(d, c, a, now)) reply.body = "Sorry, something changed while I was holding that date, so nothing is held and that link won't work. I've passed it to the owners.";
     } else if (a.type === "cancel") {
-      if (!ownerHolds) cancel(d, c, a.bookingId, now);
+      const ref = cancel(d, c, a, now);
+      if (ref) reply.body = c.ownerId ? `I didn't cancel ${ref}: it changed since you confirmed. Send it again if you still want it cancelled.` : `Sorry, something changed on ${ref} while I was on it, so I haven't cancelled it. Text "cancel ${ref}" to see where it stands.`;
     } else if (a.type === "escalate") {
       if (!c.ownerId) escalate(d, c, a, now);
     } else if (c.ownerId) {
       ops.applyOwnerAction(d, a, c.ownerId);
     }
   }
-  c.state = r.state;
+  c.state = structuredClone(r.state);
+  return true;
+}
+
+// ---------- the turn ----------
+
+function mutateFailed(r: { ok: false; reason: "conflict" | "not_found" }): never {
+  throw r.reason === "not_found" ? new CommandError(404, "No such business.") : new CommandError(409, "Too many changes at once. Try again.");
+}
+
+// The conversation after a write. A demo reset in between removes it.
+function find(d: Data, convId: string) {
+  const c = d.conversations.find((x) => x.id === convId);
+  if (!c) throw new CommandError(404, "No such conversation.");
+  return c;
+}
+
+// One inbound message and the agent's answer to it. The business and the owner come from the caller's session.
+export async function agentTurn(repo: Repo, caller: Pick<Caller, "tenant" | "ownerId" | "now">, input: TurnInput, opts: TurnOptions): Promise<TurnOutput> {
+  const now = caller.now ?? new Date();
+  // The message is stored first, so it stays for the owners even if the agent fails.
+  const got = await repo.mutate(caller.tenant, (d) => receive(d, caller.ownerId, input, now));
+  if (!got.ok) mutateFailed(got);
+  const convId = got.value;
+  const turn = prepare(got.data, find(got.data, convId), now, opts.origin);
+  if (!turn) return { conversation: chatView(find(got.data, convId)) };
+  const result = await turn.run(opts.client);
+  const put = await repo.mutate(caller.tenant, (d) => applyTurn(d, turn, result, now));
+  if (!put.ok) mutateFailed(put);
+  return { conversation: chatView(find(put.data, convId)), ...(put.value && { engine: result.engine }) };
+}
+
+// The knowledge page's "test the agent against this draft": the customer agent answers a test conversation from
+// the stored data with the draft pages in place of the knowledge base. Owners only, and nothing is stored or applied.
+// The test conversation's state comes back to the page, since it exists nowhere else.
+export interface PreviewInput {
+  kb: KbPage[];
+  messages: Pick<Msg, "from" | "body">[];
+  state: AgentState;
+}
+
+export function previewInput(r: Raw): PreviewInput {
+  const kb = Array.isArray(r.kb) && r.kb.length <= 50 ? r.kb.map((p) => (isObj(p) ? { slug: text(p, "slug", 60), title: text(p, "title", 120), body: maybeText(p, "body", 20_000) ?? "" } : bad("kb"))) : bad("kb");
+  const messages = Array.isArray(r.messages) && r.messages.length <= HISTORY ? r.messages.map((m) => (isObj(m) ? { from: oneOf(m, "from", ["customer", "agent"] as const), body: text(m, "body", BODY_CHARS) } : bad("messages"))) : bad("messages");
+  if (messages.at(-1)?.from !== "customer") bad("messages");
+  return { kb, messages, state: isObj(r.state) ? (r.state as AgentState) : {} };
+}
+
+export async function previewTurn(repo: Repo, caller: Pick<Caller, "tenant" | "ownerId" | "now">, input: PreviewInput, opts: TurnOptions) {
+  const doc = await repo.load(caller.tenant);
+  if (!doc) throw new CommandError(404, "No such business.");
+  if (!doc.data.owners.some((o) => o.id === caller.ownerId)) throw new CommandError(401, "Sign in first.");
+  const now = caller.now ?? new Date();
+  const c: Conversation = {
+    id: "preview",
+    channel: "sms",
+    contact: "test",
+    name: "Test",
+    agentActive: true,
+    unread: false,
+    state: input.state,
+    messages: input.messages.map((m, i) => ({ id: `m${i}`, ...m, at: now.toISOString() })),
+  };
+  const turn = prepare({ ...doc.data, kb: input.kb }, c, now, opts.origin);
+  if (!turn) throw new CommandError(409, "The agent can't answer that.");
+  const r = await turn.run(opts.client);
+  return { reply: r.reply, tools: r.tools, engine: r.engine, state: r.state, actions: r.actions.map((a) => a.type) };
 }

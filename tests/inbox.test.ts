@@ -128,7 +128,7 @@ describe("tool badges follow what happened", () => {
     const d = seed();
     const b = d.bookings.find((x) => x.ref === "SST-1052")!;
     const phone = d.customers.find((c) => c.id === b.customerId)!.phone;
-    const [quote, done] = chat(d, phone, ["cancel SST-1052", "yes"]);
+    const [quote, done] = chat(d, phone, ["cancel SST-1052", "yes {code}"]);
     expect(toolWords(quote.tools)).toMatch(/quoted the cancellation/);
     expect(toolWords(quote.tools)).not.toMatch(/cancelled the booking/);
     expect(toolWords(done.tools)).toMatch(/cancelled the booking/);

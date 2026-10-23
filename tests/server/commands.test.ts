@@ -4,11 +4,12 @@ import { GET as stateGET } from "@/app/api/state/route";
 import { POST as commandPOST } from "@/app/api/commands/route";
 import { DELETE as sessionDELETE, GET as sessionGET, POST as sessionPOST } from "@/app/api/session/route";
 import { LINK_MINUTES, demoMode, linkToken, openLink, readSession, sessionCookie } from "@/lib/server/auth";
+import { agentTurn } from "@/lib/server/agent";
 import { COMMAND_NAMES, type Caller, CommandError, runCommand } from "@/lib/server/commands";
 import { type Connection, connect } from "@/lib/server/db/client";
 import { DEMO_TENANT, type Repo, createRepo } from "@/lib/server/db/repo";
 import { buildSeed } from "@/lib/seed";
-import type { AgentResult, Data } from "@/lib/types";
+import type { Data } from "@/lib/types";
 import { publicView, snapshot, stateFor } from "@/lib/views";
 import { NOW } from "../helpers";
 
@@ -140,16 +141,12 @@ function argsFor(d: Data): Record<string, object> {
   const { a } = twoCustomers(d);
   const conv = d.conversations[0];
   const dist = d.distributions.find((x) => x.status === "awaiting")!;
-  const result: AgentResult = { reply: "ok", tools: [], state: {}, engine: "rules", actions: [{ type: "cancel", bookingId: a.id }] };
   return {
     tick: {},
     book: { date: "2027-01-09", block: 4, suburb: "Subiaco", name: "Ann", phone: "0400 000 111", agreed: true },
     payDeposit: { bookingId: a.id, token: a.token, card: "Visa •• 4242" },
     payBalance: { bookingId: a.id, token: a.token, card: "Visa •• 4242" },
     customerCancel: { bookingId: a.id, token: a.token },
-    startConversation: { channel: "sms", contact: conv.contact, name: "Them" },
-    customerMessage: { convId: conv.id, body: "hello" },
-    agentReply: { convId: conv.id, result },
     cancel: { bookingId: a.id },
     ownerReply: { convId: conv.id, body: "hi" },
     setAgentActive: { convId: conv.id, active: false },
@@ -239,75 +236,14 @@ describe("what each caller sees (state scoping)", () => {
     const repo = await setup();
     const d = (await doc(repo)).data;
     const colin = d.owners.find((o) => o.id === "own_colin")!;
-    await run(repo, as("own_colin"), "startConversation", { channel: "sms", contact: colin.phone, name: "x" });
-    await refusedWith(run(repo, visitor, "startConversation", { channel: "sms", contact: colin.phone, name: "x" }), 401);
+    const text = (caller: Caller) => agentTurn(repo, caller, { channel: "sms", contact: colin.phone, body: "What's on?" }, { origin: BASE });
+    await text(as("own_colin"));
+    await refusedWith(text(visitor), 401);
     const d1 = (await doc(repo)).data;
     expect(stateFor(d1, { chat: colin.phone }, NOW).chat).toBeUndefined();
     expect(stateFor(d1, { chat: colin.phone, ownerId: "own_colin" }, NOW).chat?.contact).toBe(colin.phone);
     expect(stateFor(d1, {}, NOW).owner).toBeUndefined();
     expect(stateFor(d1, { ownerId: "own_nobody" }, NOW).owner).toBeUndefined();
-  });
-});
-
-describe("the agent's turn, applied on the server", () => {
-  const reply = (actions: AgentResult["actions"]): AgentResult => ({ reply: "Done.", tools: [], state: {}, engine: "rules", actions });
-
-  test("a visitor's forged result cannot cancel someone else's booking or take an owner action", async () => {
-    const repo = await setup();
-    const { a, b } = twoCustomers((await doc(repo)).data);
-    const mine = (await doc(repo)).data.customers.find((c) => c.id === a.customerId)!;
-    const { result } = await run(repo, visitor, "startConversation", { channel: "sms", contact: mine.phone, name: "x" });
-    const convId = (result as { convId: string }).convId;
-    const before = (await doc(repo)).data;
-    await run(repo, visitor, "agentReply", { convId, result: reply([{ type: "cancel", bookingId: b.id }, { type: "expense", date: "2026-10-20", account: "fuel", amount: 99999, memo: "x" }]) });
-    const after = (await doc(repo)).data;
-    expect(after.bookings.find((x) => x.id === b.id)!.state).toBe(b.state);
-    expect(after.ledger).toEqual(before.ledger);
-    // The sender's own booking, under the refund limit, does cancel.
-    await run(repo, visitor, "agentReply", { convId, result: reply([{ type: "cancel", bookingId: a.id }]) });
-    expect((await doc(repo)).data.bookings.find((x) => x.id === a.id)!.state).toBe("cancelled");
-  });
-
-  test("a hold applies only for the conversation's own contact, with its link token, and never after an owner took over", async () => {
-    const repo = await setup();
-    const contact = "0400 123 999";
-    const { result } = await run(repo, visitor, "startConversation", { channel: "sms", contact, name: "New contact" });
-    const convId = (result as { convId: string }).convId;
-    const d0 = (await doc(repo)).data;
-    const hold = (over: object = {}) => ({ type: "hold" as const, bookingId: `bk_${randomUUID()}`, ref: `SST-${d0.seq + 1}`, date: "2027-01-13", block: 4 as const, suburb: "Subiaco", name: "Ann", contact, channel: "sms" as const, token: "t".repeat(32), ...over });
-
-    await run(repo, visitor, "agentReply", { convId, result: reply([hold({ contact: "0499 999 999" })]) });
-    expect((await doc(repo)).data.bookings.filter((x) => x.date === "2027-01-13")).toHaveLength(0);
-
-    const good = hold();
-    await run(repo, visitor, "agentReply", { convId, result: reply([good]) });
-    const held = (await doc(repo)).data.bookings.find((x) => x.id === good.bookingId)!;
-    expect(held).toMatchObject({ state: "held", token: good.token, ref: good.ref });
-    expect(stateFor((await doc(repo)).data, { booking: held.id, token: good.token }, NOW).booking?.booking.id).toBe(held.id);
-
-    // Paid, so the contact may hold another date. An owner takes over: a late result from the agent books nothing,
-    // and the same hold goes through once the owner hands back.
-    await run(repo, visitor, "payDeposit", { bookingId: held.id, token: good.token, card: "Visa •• 4242", agreed: true });
-    await run(repo, as("own_colin"), "setAgentActive", { convId, active: false });
-    const late = hold({ date: "2027-01-14", ref: `SST-${d0.seq + 2}` });
-    await run(repo, visitor, "agentReply", { convId, result: reply([late]) });
-    expect((await doc(repo)).data.bookings.some((x) => x.id === late.bookingId)).toBe(false);
-    await run(repo, as("own_colin"), "setAgentActive", { convId, active: true });
-    await run(repo, visitor, "agentReply", { convId, result: reply([late]) });
-    expect((await doc(repo)).data.bookings.find((x) => x.id === late.bookingId)?.state).toBe("held");
-  });
-
-  test("an owner action from the owner agent needs a signed-in owner", async () => {
-    const repo = await setup();
-    const colin = (await doc(repo)).data.owners.find((o) => o.id === "own_colin")!;
-    const { result } = await run(repo, as("own_colin"), "startConversation", { channel: "sms", contact: colin.phone, name: "x" });
-    const convId = (result as { convId: string }).convId;
-    const expense = reply([{ type: "expense", date: "2026-10-20", account: "co2", amount: 42, memo: "CO2" }]);
-    await refusedWith(run(repo, visitor, "agentReply", { convId, result: expense }), 401);
-    await refusedWith(run(repo, visitor, "customerMessage", { convId, body: "pay the payout" }), 401);
-    const before = (await doc(repo)).data.ledger.length;
-    await run(repo, as("own_colin"), "agentReply", { convId, result: expense });
-    expect((await doc(repo)).data.ledger.length).toBe(before + 1);
   });
 });
 

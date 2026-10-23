@@ -1,16 +1,16 @@
 // Every change to a business's data runs here, as a named command on the server (R14). Each command says who may
 // run it, checks its arguments (lib/server/args.ts), and runs the same lib/domain.ts or lib/ops.ts function the
 // browser store used to run, inside repo.mutateOnce: one compare-and-swap save per command, at most once per
-// idempotency key. The agent's turn is applied in lib/server/agent.ts.
+// idempotency key. An inbound message and the agent's turn on it run in lib/server/agent.ts, not here: the model
+// call is too slow for a write (KTD10).
 import { DEFAULT_SETTINGS, SUBURBS } from "@/lib/config";
 import { ACCOUNT_LABEL, cancelBooking, chargeBalance, createHold, ensureDistributions, pay, payDeposit, runJobs } from "@/lib/domain";
 import * as ops from "@/lib/ops";
 import { SCENARIOS, buildSeed } from "@/lib/seed";
-import type { Account, Conversation, Data, Owner, Scenario, Settings, TruckLog } from "@/lib/types";
+import type { Account, Data, Owner, Scenario, Settings, TruckLog } from "@/lib/types";
 import { uid } from "@/lib/util";
-import { bookingByToken, chatView, ownerByContact, ownerSnapshot, snapshot } from "@/lib/views";
-import { agentResult, applyAgentResult } from "./agent";
-import { CHANNELS, CommandError, type Raw, bad, date, flag, id, isObj, match, maybeNum, maybeText, num, obj, oneOf, text } from "./args";
+import { bookingByToken } from "@/lib/views";
+import { CommandError, type Raw, bad, date, flag, id, isObj, match, maybeNum, maybeText, num, obj, oneOf, text } from "./args";
 import type { Repo } from "./db/repo";
 
 export { CommandError };
@@ -25,7 +25,7 @@ export interface Caller {
 }
 
 // Who may run a command:
-// - public: anyone, such as the /book form and the SMS simulator;
+// - public: anyone, such as the /book form;
 // - customer: whoever holds the booking's link token (checked by `linked`);
 // - owner: a signed-in owner of the business; director: one who is a director now.
 type Role = "public" | "customer" | "owner" | "director";
@@ -43,8 +43,6 @@ interface Command<A> {
   args(raw: Raw): A;
   // Runs inside the save, so it must be synchronous (KTD10). A plain Error is a refusal: nothing is saved (409).
   run(d: Data, a: A, ctx: Ctx): unknown;
-  // Extra response fields read from the data after the run. Not stored with the key, so a replay rebuilds them.
-  view?(d: Data, a: A, ctx: Ctx, value: unknown): Record<string, unknown>;
 }
 
 const command = <A>(c: Command<A>) => c as Command<unknown>;
@@ -67,12 +65,6 @@ function linked(d: Data, bookingId: string, token: string) {
   return b;
 }
 
-// A conversation with an owner's own number is the owner agent, so only a signed-in owner drives it. In the demo the
-// SMS widget lets an owner text as any owner; U10 and U11 tie a text to the real handset.
-function mayUse(c: Pick<Conversation, "ownerId">, ctx: Ctx) {
-  if (c.ownerId && !ctx.owner) throw new CommandError(401, "Sign in to text as an owner.");
-}
-
 const me = (ctx: Ctx) => ctx.owner as Owner;
 
 // Due jobs (expired holds, balances, bonds) and the latest quarter's payout record. U13 moves this off the browser.
@@ -84,8 +76,6 @@ function tick(d: Data, now: Date) {
 }
 
 // ---------- the commands ----------
-
-const conversationView = (d: Data, convId: string) => ({ conversation: chatView(conv(d, convId)) });
 
 const COMMANDS: Record<string, Command<unknown>> = {
   tick: command({ role: "public", args: () => ({}), run: (d, _a, ctx) => tick(d, ctx.now) }),
@@ -158,51 +148,6 @@ const COMMANDS: Record<string, Command<unknown>> = {
       linked(d, a.bookingId, a.token);
       return ops.customerCancel(d, a.bookingId, ctx.now) ?? {};
     },
-  }),
-
-  startConversation: command({
-    role: "public",
-    args: (r) => ({ channel: oneOf(r, "channel", CHANNELS), contact: text(r, "contact", 120), name: text(r, "name", 80) }),
-    run(d, a, ctx) {
-      const owner = ownerByContact(d, a.contact);
-      const found = d.conversations.find((x) => x.contact === a.contact && x.channel === a.channel);
-      const c: Conversation = found ?? { ...a, ...(owner && { name: owner.name, ownerId: owner.id }), id: uid("conv"), agentActive: true, unread: !owner, state: {}, messages: [] };
-      mayUse(c, ctx);
-      if (!found) d.conversations.unshift(c);
-      return { convId: c.id };
-    },
-    view: (d, _a, _ctx, v) => conversationView(d, (v as { convId: string }).convId),
-  }),
-
-  // An inbound message. The response carries what the agent needs, built here so the browser never assembles it.
-  customerMessage: command({
-    role: "public",
-    args: (r) => ({ convId: id(r, "convId"), body: text(r, "body", 2000) }),
-    run(d, a, ctx) {
-      const c = conv(d, a.convId);
-      mayUse(c, ctx);
-      c.messages.push({ id: uid("m"), from: "customer", body: a.body, at: ctx.now.toISOString() });
-      c.unread = !c.ownerId;
-      return {};
-    },
-    view(d, a, ctx) {
-      const c = conv(d, a.convId);
-      // An owner who took over answers alone; a hand-over the owners haven't picked up yet still gets general answers.
-      const agent = c.agentActive || !!c.escalated;
-      return { conversation: chatView(c), ...(agent && { snapshot: c.ownerId ? ownerSnapshot(d, ctx.now) : snapshot(d, c.contact) }) };
-    },
-  }),
-
-  agentReply: command({
-    role: "public",
-    args: (r) => ({ convId: id(r, "convId"), result: agentResult(obj(r, "result")) }),
-    run(d, a, ctx) {
-      const c = conv(d, a.convId);
-      mayUse(c, ctx);
-      applyAgentResult(d, c, a.result, ctx.now);
-      return {};
-    },
-    view: (d, a) => conversationView(d, a.convId),
   }),
 
   cancel: command({
@@ -373,7 +318,7 @@ export interface CommandBody {
   key?: unknown;
 }
 
-// Runs one command for a caller. Returns { result } plus any view fields, or throws a CommandError.
+// Runs one command for a caller. Returns { result }, or throws a CommandError.
 export async function runCommand(repo: Repo, caller: Caller, body: CommandBody) {
   const name = typeof body.command === "string" ? body.command : "";
   const def = Object.hasOwn(COMMANDS, name) ? COMMANDS[name] : undefined;
@@ -397,10 +342,11 @@ export async function runCommand(repo: Repo, caller: Caller, body: CommandBody) 
   if (r.replay && r.command !== name) throw new CommandError(422, "That idempotency key was used for another command.");
   // The key stores {} for a command that returns nothing, so a first run answers the same as its replay.
   const result = r.value ?? {};
-  if (!r.replay && !def.view) return { result };
-  const doc = await repo.load(caller.tenant);
-  if (!doc) throw new CommandError(404, "No such business.");
-  // A replay is authorised like a first run, then answered from the stored result.
-  const ctx = ctxFor(doc.data);
-  return { result, ...def.view?.(doc.data, args, ctx, result) };
+  if (r.replay) {
+    // A replay is authorised like a first run, then answered from the stored result.
+    const doc = await repo.load(caller.tenant);
+    if (!doc) throw new CommandError(404, "No such business.");
+    ctxFor(doc.data);
+  }
+  return { result };
 }

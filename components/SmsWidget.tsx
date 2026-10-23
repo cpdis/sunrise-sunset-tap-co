@@ -29,7 +29,6 @@ export function SmsWidget({ as: initialAs = "customer" }: { as?: string }) {
   const pub = usePublic();
   const chat = useApp((s) => s.chat);
   const watchChat = useApp((s) => s.watchChat);
-  const startConversation = useApp((s) => s.startConversation);
   const sendCustomer = useApp((s) => s.sendCustomer);
   const [open, setOpen] = useState(false);
   const [customerPhone, setCustomerPhone] = useState("");
@@ -75,8 +74,7 @@ export function SmsWidget({ as: initialAs = "customer" }: { as?: string }) {
     setText("");
     setBusy(true);
     try {
-      const id = conv?.id ?? (await startConversation({ channel: "sms", contact: phone, name: "New contact" }));
-      if (id) await sendCustomer(id, msg);
+      await sendCustomer(conv ? { convId: conv.id } : { channel: "sms", contact: phone }, msg);
     } finally {
       setBusy(false);
     }

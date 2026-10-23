@@ -5,7 +5,9 @@ import { Loading, Section, useData } from "@/components/ui";
 import { useApp } from "@/lib/store";
 import type { AgentResult, AgentState, Msg } from "@/lib/types";
 import { cls, uid } from "@/lib/util";
-import { snapshot } from "@/lib/views";
+
+// What /api/agent/preview answers: the agent's reply and what it would have done.
+type Preview = Pick<AgentResult, "reply" | "tools" | "engine" | "state"> & { actions: string[]; error?: string };
 
 export default function Knowledge() {
   const data = useData();
@@ -26,23 +28,30 @@ export default function Knowledge() {
 
   if (!data) return <Loading />;
 
-  // Tests against the current (unsaved) draft without touching real conversations.
+  // Tests against the current (unsaved) draft without touching real conversations. The server answers from the
+  // stored data with the draft pages in place, and applies nothing.
   async function ask() {
     if (!data || !test.trim()) return;
     const draft = data.kb.map((p) => (p.slug === slug ? { ...p, title, body } : p));
-    const next: Msg[] = [...msgs, { id: uid("m"), from: "customer", body: test.trim(), at: new Date().toISOString() }];
+    const next: Msg[] = [...msgs, { id: uid("m"), from: "customer", body: test.trim().slice(0, 2000), at: new Date().toISOString() }];
     setMsgs(next);
     setTest("");
     setBusy(true);
-    const res = await fetch("/api/agent", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ snapshot: { ...snapshot(data, "test"), kb: draft }, conversation: { channel: "sms", contact: "test", name: "Test", state, messages: next } }),
-    });
-    const r = (await res.json()) as AgentResult;
-    setState(r.state);
-    setMsgs([...next, { id: uid("m"), from: "agent", body: r.reply + (r.actions.length ? `\n\n[would do: ${r.actions.map((a) => a.type).join(", ")}]` : ""), at: new Date().toISOString(), tools: [...r.tools, r.engine] }]);
-    setBusy(false);
+    try {
+      const res = await fetch("/api/agent/preview", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kb: draft, state, messages: next.slice(-30).map((m) => ({ from: m.from, body: m.body.slice(0, 2000) })) }),
+      });
+      const r = (await res.json()) as Preview;
+      if (!res.ok) throw new Error(r.error ?? `Something went wrong (${res.status}).`);
+      setState(r.state);
+      setMsgs([...next, { id: uid("m"), from: "agent", body: r.reply + (r.actions.length ? `\n\n[would do: ${r.actions.join(", ")}]` : ""), at: new Date().toISOString(), tools: [...r.tools, r.engine] }]);
+    } catch (err) {
+      setMsgs([...next, { id: uid("m"), from: "system", body: (err as Error).message, at: new Date().toISOString() }]);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (

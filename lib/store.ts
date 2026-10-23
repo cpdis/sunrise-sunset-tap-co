@@ -4,10 +4,13 @@
 // named server command (lib/server/commands.ts), and the copy is read again from /api/state after it.
 import { create } from "zustand";
 import type { NewBooking } from "./domain";
-import type { Account, AgentResult, Conversation, Data, KbPage, Scenario, Settings, TruckLog } from "./types";
+import type { Account, Conversation, Data, KbPage, Scenario, Settings, TruckLog } from "./types";
 import type { BookingView, ChatView, PublicView, StateView } from "./views";
 
 type Booked = { id: string; token: string };
+
+// Where an inbound message goes: a conversation by id, or the one for a channel and contact (made if new).
+export type To = { convId: string } | (Pick<Conversation, "channel" | "contact"> & { name?: string });
 
 interface AppState {
   // A signed-in owner's whole business document, and who they are.
@@ -37,8 +40,7 @@ interface AppState {
   payBalance: (bookingId: string, card: string) => Promise<boolean>;
   customerCancel: (bookingId: string) => Promise<{ refund: number } | { needsOwner: string } | null>;
   cancel: (bookingId: string) => Promise<void>;
-  startConversation: (c: Pick<Conversation, "channel" | "contact" | "name">) => Promise<string>;
-  sendCustomer: (convId: string, body: string) => Promise<AgentResult | null>;
+  sendCustomer: (to: To, body: string) => Promise<string>;
   ownerReply: (convId: string, body: string) => Promise<void>;
   setAgentActive: (convId: string, active: boolean) => Promise<void>;
   handBack: (convId: string, force?: boolean) => Promise<void>;
@@ -59,11 +61,11 @@ interface AppState {
   transferShares: (fromId: string, toId: string, shares: number) => Promise<void>;
 }
 
-// What /api/commands answers: the command's result, plus fields some commands add (a conversation, an agent snapshot).
-type CommandOut = { result?: unknown; conversation?: ChatView; snapshot?: unknown };
+// What /api/commands answers.
+type CommandOut = { result?: unknown };
 
-function post(body: string) {
-  return fetch("/api/commands", { method: "POST", headers: { "content-type": "application/json" }, body });
+function post(body: string, url = "/api/commands") {
+  return fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body });
 }
 
 // One command under a fresh idempotency key. A dropped connection may still have reached the server, so it is
@@ -163,22 +165,21 @@ export const useApp = create<AppState>()((set, get) => {
     },
     cancel: (bookingId) => done("cancel", { bookingId }),
 
-    // "" when the server refused (for example an owner's number without an owner signed in).
-    startConversation: async (c) => ((await run("startConversation", c))?.result as { convId?: string } | undefined)?.convId ?? "",
-
-    // The message goes in on the server, which answers with what the agent needs. The agent still runs at
-    // /api/agent on that answer (U9 moves it to the server), and its reply and actions go back as a command.
-    sendCustomer: async (convId, body) => {
-      const m = await run("customerMessage", { convId, body });
-      if (!m?.snapshot) return null;
-      const res = await fetch("/api/agent", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ snapshot: m.snapshot, conversation: m.conversation }),
-      }).catch(() => null);
-      if (!res?.ok) return null;
-      const result = (await res.json()) as AgentResult;
-      return (await run("agentReply", { convId, result })) ? result : null;
+    // The message goes to /api/agent, where the server stores it and runs the agent's turn (lib/server/agent.ts).
+    // Not retried: a second post would be a second message. Returns the conversation id, or "" when refused (for
+    // example an owner's number without an owner signed in).
+    sendCustomer: async (to, body) => {
+      try {
+        const res = await post(JSON.stringify({ ...to, body }), "/api/agent");
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error ?? `Something went wrong (${res.status}).`);
+        return (out.conversation as ChatView | undefined)?.id ?? "";
+      } catch (err) {
+        set({ error: (err as Error).message });
+        return "";
+      } finally {
+        await get().refresh();
+      }
     },
 
     ownerReply: (convId, body) => done("ownerReply", { convId, body }),

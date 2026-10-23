@@ -1,10 +1,10 @@
-// Agent tools. They run on the server against a snapshot (lib/views.ts) and return actions that the server
-// applies through the agentReply command (lib/server/commands.ts): hold, cancel, escalate.
+// Agent tools. They run on the server against a snapshot (lib/views.ts) and return actions that lib/server/agent.ts
+// applies after the turn: hold, cancel, escalate.
 import { BUSINESS, SUBURBS, defaultStart, findSuburb, startProblem } from "../config";
 import { cancelNeedsOwner, cancelPolicy, dayStatus, holdExpired, isBookable, nextFreeDates, quote } from "../domain";
 import type { AgentAction, AgentState, Block, Booking, Channel, Data, KbPage, Settings, Slot } from "../types";
-import { addDays, daysBetween, fmtDate, fmtTime, isISODate, money, randomToken, sameContact, todayISO, uid } from "../util";
-import { parseConfirm } from "./confirm";
+import { addDays, daysBetween, fmtDate, fmtTime, isISODate, money, randomToken, safeEqual, sameContact, todayISO, uid } from "../util";
+import { newCode, parseCoded } from "./confirm";
 
 // Availability for every date (slots), and only the sender's own customer records and bookings (mine).
 export type Snapshot = Pick<Data, "settings" | "customers" | "kb" | "blackouts" | "seq"> & { bookings: Slot[]; mine: Booking[] };
@@ -23,20 +23,38 @@ export interface ToolCtx {
   origin: string;
   // An owner has been asked to take this conversation; don't book or cancel.
   handover?: boolean;
-  // The booking this turn may cancel: the one quoted last turn, answered with a clear yes (cancelAnswer). Both
-  // engines set it, and cancel_booking with confirmed=true only quotes for any other booking.
-  confirmCancel?: string;
-  // The booking cancel_booking quoted this turn. The engine saves it in the state so the next message can confirm it.
-  quotedCancel?: string;
+  // The cancel this turn may make: the booking quoted last turn and the refund quoted, answered with YES and the
+  // quote's code (cancelReply). cancel_booking with confirmed=true only quotes for anything else.
+  confirmCancel?: { id: string; refund: number };
+  // The cancel cancel_booking quoted this turn. The engine saves it in the state so the next message can confirm it.
+  quotedCancel?: { id: string; code: string; refund: number };
 }
 
-// Extra ways to say yes to "Reply YES to cancel".
+// Extra ways to say yes to "Reply YES 4821 to cancel".
 export const CANCEL_YES = ["cancel", "cancel it"];
 
-// The booking a customer may cancel with this message: the one quoted last turn, and only on a clear yes.
-// Anything else ends the pending cancel (R1, R2), whichever engine answers.
-export function cancelAnswer(prev: AgentState, text: string): string | undefined {
-  return prev.awaiting === "confirm_cancel" && parseConfirm(text, CANCEL_YES) === "yes" ? prev.bookingId : undefined;
+// What a reply to last turn's cancel quote does, the same in both engines (R1, R2, KTD11):
+// - yes: YES with the quote's code. ctx.confirmCancel now lets cancel_booking cancel on the quoted terms.
+// - no: a refusal. The quote ends.
+// - ask: a fixed reply. A YES without the code, or the code alone, keeps the quote and asks for both. A YES with
+//   a wrong code ends the quote, so a guess never gets a second try at the same code.
+// - none: no quote is pending, or the message is about something else. The quote ends.
+export type CancelReply = { kind: "yes" | "no" | "none" } | { kind: "ask"; say: string; keep: boolean };
+
+export function cancelReply(ctx: ToolCtx, prev: AgentState, text: string): CancelReply {
+  const { bookingId, code, refund } = prev;
+  if (ctx.handover || prev.awaiting !== "confirm_cancel" || !bookingId || !code || refund === undefined) return { kind: "none" };
+  const r = parseCoded(text, CANCEL_YES);
+  if (r.answer === "no") return { kind: "no" };
+  const right = r.code !== undefined && safeEqual(r.code, code);
+  const ref = ctx.data.mine.find((b) => b.id === bookingId)?.ref ?? "your booking";
+  if (r.answer === "yes" && right) {
+    ctx.confirmCancel = { id: bookingId, refund };
+    return { kind: "yes" };
+  }
+  if (r.answer === "yes" && r.code !== undefined) return { kind: "ask", keep: false, say: `That code doesn't match, so nothing has changed on ${ref}. Text "cancel ${ref}" to start again.` };
+  if (r.answer === "yes" || (right && r.bare)) return { kind: "ask", keep: true, say: `To go ahead with ${ref}, reply YES ${code}. The code shows it's really you.` };
+  return { kind: "none" };
 }
 
 export function fillKb(body: string, s: Settings): string {
@@ -132,7 +150,7 @@ export function holdAndLink(ctx: ToolCtx, date: string, block: Block, suburb: st
   const bookingId = uid("bk");
   const token = randomToken();
   const ref = `SST-${ctx.data.seq + 1 + ctx.actions.filter((a) => a.type === "hold").length}`;
-  ctx.actions.push({ type: "hold", bookingId, ref, date, block, startTime: start, suburb: q.suburb, name, contact: ctx.contact, channel: ctx.channel, token });
+  ctx.actions.push({ type: "hold", bookingId, ref, date, block, startTime: start, suburb: q.suburb, name, token });
   ctx.used.push("hold_and_send_deposit_link");
   return {
     ok: true as const,
@@ -160,29 +178,39 @@ export function lookupBooking(ctx: ToolCtx) {
   }));
 }
 
-// Quotes a cancel, or makes it. It cancels only the booking quoted last turn and confirmed with a clear yes now
-// (ToolCtx.confirmCancel), so neither engine can cancel on a model's say-so or on a refusal. Anything else quotes.
+// Quotes a cancel, or makes it. It cancels only the booking quoted last turn, on the terms quoted, confirmed now with
+// YES and the quote's code (ToolCtx.confirmCancel), so neither engine can cancel on a model's say-so, on a refusal or
+// on a blind yes from a spoofed number. Anything else quotes again with a new code.
 export function cancelBookingTool(ctx: ToolCtx, bookingId: string, confirmed: boolean) {
   if (ctx.handover) return { ok: false as const, reason: "An owner is handling this conversation." };
   const b = customerBookings(ctx).find((x) => x.id === bookingId || x.ref.toUpperCase() === bookingId.toUpperCase());
   if (!b) return { ok: false as const, reason: "No upcoming booking found for this sender." };
   const pol = cancelPolicy(ctx.data.settings, b, ctx.now);
   const needsOwner = cancelNeedsOwner(ctx.data.settings, b, ctx.now);
-  const terms = { ref: b.ref, held: b.state === "held", refund: pol.refund, kept: pol.kept, daysOut: pol.days, fullRefund: pol.fullRefund, needsOwner: !!needsOwner };
-  if (!confirmed || ctx.confirmCancel !== b.id) {
+  const terms = { ref: b.ref, date: b.date, held: b.state === "held", refund: pol.refund, kept: pol.kept, daysOut: pol.days, fullRefund: pol.fullRefund, needsOwner: !!needsOwner };
+  const ok = ctx.confirmCancel;
+  // A balance paid since the quote changes the refund, so the customer confirms the new terms first.
+  const changed = confirmed && ok?.id === b.id && ok.refund !== pol.refund;
+  if (!confirmed || ok?.id !== b.id || changed) {
     ctx.used.push("cancel_quote");
-    ctx.quotedCancel = b.id;
-    return { ok: true as const, done: false, ...terms, ...(confirmed && { note: "Not cancelled. Tell the customer these terms and ask them to reply YES." }) };
+    const code = newCode();
+    ctx.quotedCancel = { id: b.id, code, refund: pol.refund };
+    const note = changed ? "Not cancelled: the terms changed since the last quote. Tell the customer the new terms and the new code." : confirmed ? "Not cancelled. Tell the customer these terms and ask them to reply YES and the code." : undefined;
+    return { ok: true as const, done: false, ...terms, code, changed, ...(note && { note }) };
   }
   ctx.quotedCancel = undefined;
+  ctx.confirmCancel = undefined;
   if (needsOwner) {
     escalate(ctx, needsOwner);
     return { ok: false as const, done: false, ...terms, reason: "Sent to the owners to approve the refund. Nothing is cancelled yet." };
   }
   ctx.used.push("cancel_booking");
-  ctx.actions.push({ type: "cancel", bookingId: b.id });
+  ctx.actions.push({ type: "cancel", bookingId: b.id, refund: pol.refund });
   return { ok: true as const, done: true, ...terms };
 }
+
+// A cancel_booking answer that quotes terms (and the code a YES must echo) rather than cancelling.
+export type CancelQuote = Extract<ReturnType<typeof cancelBookingTool>, { code: string }>;
 
 // Flags the conversation in the owners' inbox. Nobody is texted or called, so replies promise no time or call (R4).
 // draft: a reply the owner can send as-is. Written to the customer, no owner name, no prices the KB doesn't carry.

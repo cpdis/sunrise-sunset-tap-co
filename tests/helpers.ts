@@ -14,10 +14,12 @@ export function seed(): Data {
   return buildSeed(NOW);
 }
 
-// Runs a conversation through the rules engine, carrying state between turns.
+// Runs a conversation through the rules engine, carrying state between turns. "{code}" in a line is the code the
+// last cancel quote asked for (KTD11), as the real handset would see it; "{wrong}" is any other code.
 export function chat(d: Data, contact: string, lines: string[], opts: { handover?: boolean; now?: Date } = {}) {
   let state: AgentState = {};
-  return lines.map((text) => {
+  return lines.map((line) => {
+    const text = line.replace("{code}", state.code ?? "").replace("{wrong}", state.code === "1234" ? "4321" : "1234");
     const ctx: ToolCtx = {
       data: snapshot(d, contact),
       contact,
@@ -34,7 +36,7 @@ export function chat(d: Data, contact: string, lines: string[], opts: { handover
   });
 }
 
-// Runs an owner's texts through the owner rules engine and applies the actions to d, as the agentReply command does.
+// Runs an owner's texts through the owner rules engine and applies the actions to d, as lib/server/agent.ts does.
 export function ownerChat(d: Data, ownerId: string, lines: string[]) {
   let state: AgentState = {};
   return lines.map((text) => {

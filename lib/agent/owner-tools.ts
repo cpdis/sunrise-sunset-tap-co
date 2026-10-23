@@ -298,7 +298,7 @@ export function cancelForCustomer(ctx: OwnerCtx, ref: string, commit = false) {
   if (pol.refund > limit) return { ok: false as const, reason: `That refund is ${money(pol.refund)}, over the ${money(limit)} SMS limit. Cancel ${b.ref} in the admin.` };
   const summary = `cancel ${b.ref} (${customerName(ctx, b.customerId)}, ${fmtDate(b.date, { dow: true })}, ${b.suburb}) with a ${money(pol.refund)} refund and ${money(pol.kept)} kept. The customer isn't texted, so let them know yourself`;
   if (!commit) return stage(ctx, "cancel_booking", { ref }, summary);
-  ctx.actions.push({ type: "cancel", bookingId: b.id });
+  ctx.actions.push({ type: "cancel", bookingId: b.id, refund: pol.refund });
   return { ok: true as const, done: true, summary };
 }
 
