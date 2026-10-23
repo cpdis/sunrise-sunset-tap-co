@@ -132,8 +132,9 @@ export function cancelBookingTool(ctx: ToolCtx, bookingId: string, confirmed: bo
   return { ok: true as const, done: confirmed, ref: b.ref, refund: pol.refund, kept: pol.kept, daysOut: pol.days };
 }
 
-export function escalate(ctx: ToolCtx, reason: string, keepAgent = false) {
+// draft: a reply the owner can send as-is. Written to the customer, no owner name, no prices the KB doesn't carry.
+export function escalate(ctx: ToolCtx, reason: string, keepAgent = false, draft?: string) {
   ctx.used.push("escalate_to_owner");
-  ctx.actions.push({ type: "escalate", reason, keepAgent });
+  ctx.actions.push({ type: "escalate", reason, keepAgent, draft: draft?.trim() || undefined });
   return { ok: true };
 }
