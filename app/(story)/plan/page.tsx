@@ -143,6 +143,17 @@ export default function Plan() {
       </div>
       <p>Our edge: a public price, a booking you can finish in one text conversation, and two more taps than the local competitor.</p>
 
+      <h2>Getting found</h2>
+      <p>More people now ask an AI, not a search box. We tested five Perth questions on 23 October 2026. For weddings, the answers cited Easy Weddings listings and Kombi Keg WA. No Perth operator publishes a price, so for &ldquo;what does it cost&rdquo; the answer fell back to US guides. Our public price is the easiest answer to win.</p>
+      <p>Two questions found no Perth answer at all: self-pour taps for a backyard party, and nitro cold brew for a morning event. Both are ours to take.</p>
+      <p>At launch, in this order:</p>
+      <ol className="plain">
+        <li><strong>Easy Weddings listing</strong> with the price, 8 taps, self-pour and Perth metro in the text. Then Polka Dot Wedding and mobilebars.co.</li>
+        <li><strong>Google Business Profile and Bing Places</strong> as a service-area business, with no street address shown. ChatGPT search leans on Bing.</li>
+        <li><strong>A Perth price page</strong> that answers &ldquo;how much does tap truck hire cost in Perth?&rdquo; with our real numbers. Then one page each for weddings, backyard parties and morning cold brew.</li>
+      </ol>
+      <p className="small">Until the real domain is live, this site tells search engines not to index it.</p>
+
       <h2>Operations without staff</h2>
       <p>The truck lives at Filament Coffee in Osborne Park or at Rhys&apos;s house in North Perth. Owners do the physical work and get paid for it.</p>
       <ul className="plain">
