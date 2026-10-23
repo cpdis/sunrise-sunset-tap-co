@@ -64,6 +64,50 @@ describe("booking flow", () => {
   });
 });
 
+describe("confirmations", () => {
+  // SST-1052 (Sat 5 Dec) is a confirmed booking under this number in the seed.
+  const OWNER_OF_1052 = "0450 926 727";
+  const cancels = (rs: { actions: { type: string }[] }[]) => rs.flatMap(types).includes("cancel");
+
+  test("'No, don't cancel it' after a cancel quote keeps the booking", () => {
+    const rs = chat(seed(), OWNER_OF_1052, ["cancel SST-1052", "No, don't cancel it"]);
+    expect(rs[0].reply).toMatch(/Reply YES to cancel/);
+    expect(cancels(rs)).toBe(false);
+    expect(rs[1].reply).toMatch(/stays as is/);
+  });
+
+  test("a topic change ends the pending cancel", () => {
+    const rs = chat(seed(), OWNER_OF_1052, ["cancel SST-1052", "how many kegs fit?", "yes sounds good"]);
+    expect(rs[1].reply).toMatch(/4 × 50L/);
+    expect(cancels(rs)).toBe(false);
+  });
+
+  test.each(["yes", "Yes please", "yep, cancel it"])("'%s' still cancels", (reply) => {
+    const rs = chat(seed(), OWNER_OF_1052, ["cancel SST-1052", reply]);
+    expect(types(rs[1])).toContain("cancel");
+  });
+
+  test("'Don't book it.' after a quote creates no hold", () => {
+    const rs = chat(seed(), ME, ["Is the second Saturday in December free?", "Cottesloe, 8 hours", "Sam", "Don't book it."]);
+    expect(rs[2].reply).toMatch(/Want the link/);
+    expect(rs.flatMap(types)).not.toContain("hold");
+    expect(rs[3].reply).toMatch(/haven't held anything/);
+  });
+
+  test("a refusal is not taken as a booking name", () => {
+    const rs = chat(seed(), ME, ["Is the second Saturday in December free?", "Cottesloe, 8 hours", "No thanks, too expensive", "yes"]);
+    expect(rs[1].reply).toMatch(/What name/);
+    expect(rs.flatMap(types)).not.toContain("hold");
+    expect(rs[2].reply).toMatch(/haven't held anything/);
+  });
+
+  test("'book' in the first message does not skip the price check", () => {
+    const rs = chat(seed(), ME, ["Can I book the second Saturday in December?", "Cottesloe, 8 hours", "Sam"]);
+    expect(rs.flatMap(types)).not.toContain("hold");
+    expect(rs[2].reply).toMatch(/Want the link/);
+  });
+});
+
 describe("hand-over mode", () => {
   test("answers FAQs but won't hold a date", () => {
     const rs = chat(seed(), ME, ["Do you supply staff?", "Is the second Saturday in December free?", "Cottesloe, 8 hours", "Sam", "yes"], { handover: true });

@@ -131,6 +131,23 @@ describe("money and settings wait for YES", () => {
     expect(cashAt(d)).toBe(cash0);
   });
 
+  // A prefix match used to read "okay, cancel that" and "yeah nah" as YES.
+  test.each(["okay, cancel that", "yeah nah", "ok what's on", "go through the inbox"])("%s posts nothing", (reply) => {
+    const d = seed();
+    const cash0 = cashAt(d);
+    const [, r] = ownerChat(d, COLIN, ["$42 CO2 refill", reply]);
+    expect(r.reply).not.toMatch(/^Done\. I added/);
+    expect(cashAt(d)).toBe(cash0);
+  });
+
+  test.each(["yes", "YES.", "yes please", "y"])("%s still confirms", (reply) => {
+    const d = seed();
+    const cash0 = cashAt(d);
+    const [, r] = ownerChat(d, COLIN, ["$42 CO2 refill", reply]);
+    expect(r.reply).toMatch(/^Done\. I added a \$42 CO2 expense/);
+    expect(cashAt(d) - cash0).toBe(-42);
+  });
+
   test("payout needs two directors, then pays", () => {
     const d = seed();
     const dist = d.distributions.find((x) => x.status === "awaiting")!;

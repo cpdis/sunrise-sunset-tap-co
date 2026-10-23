@@ -8,6 +8,7 @@ import { ACCOUNT_LABEL, cancelPolicy, dayStatus } from "../domain";
 import type { Account, AgentAction, AgentState, Channel, Data, Distribution, Owner, PendingOwnerAction, Settings, TruckLog } from "../types";
 import { handBack as opsHandBack, owesReply, replyRoute } from "../ops";
 import { daysBetween, fmtDate, money, quarterLabel, todayISO } from "../util";
+import { parseConfirm } from "./confirm";
 
 export interface OwnerInboxItem {
   id: string;
@@ -305,18 +306,16 @@ export function sendDraft(ctx: OwnerCtx, who: string, commit = false) {
 
 // ---------- confirmation ----------
 
-const YES = /^(y|yes|yep|yeah|yup|confirm|confirmed|do it|go|go ahead|ok|okay)\b/i;
-const NO = /^(n|no|nope|nah|cancel|stop|don't|dont|leave it)\b/i;
-
 // Runs a staged change on YES. The tool runs again against the fresh snapshot, so a change that stopped being
 // valid since it was staged (someone else approved, the date got booked) is refused rather than forced through.
 export function resolvePending(ctx: OwnerCtx, state: AgentState, text: string): string | undefined {
   const p = state.pending;
   if (!p) return undefined;
   state.pending = undefined;
-  const t = text.trim();
-  if (NO.test(t)) return "No worries, I've left it.";
-  if (!YES.test(t)) return undefined;
+  // Any text but a clear yes drops the change; only a refusal gets its own reply.
+  const c = parseConfirm(text);
+  if (c === "no") return "No worries, I've left it.";
+  if (c === "other") return undefined;
   const a = p.args as never;
   const r =
     p.tool === "add_expense" ? addExpense(ctx, a, true)

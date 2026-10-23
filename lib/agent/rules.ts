@@ -16,6 +16,7 @@ import {
   holdAndLink,
   lookupBooking,
 } from "./tools";
+import { isRefusal, parseConfirm } from "./confirm";
 
 // Opening line of a drafted owner reply. The owner edits the rest before sending.
 const hi = (ctx: ToolCtx) => (ctx.customerName ? `Hi ${ctx.customerName.split(" ")[0]},` : "Hi,");
@@ -121,6 +122,10 @@ const PERSON = /\b(speak|talk|chat)\s+(to|with)\s+(a |an |the |one of the )?(hum
 const OFF_POLICY = /\b(discount|cheaper|mates? rates?|sponsor|sponsorship|multi[- ]day|two days|three days|3 days|2 days|weekend rate|(better|good|any|special) deals?|do (us )?a deal)\b/;
 const PRICE_Q = /\b(how much|price|cost|quote)\b/;
 
+// Extra ways to say yes to "Reply YES to cancel" and to "Want the link?".
+const CANCEL_YES = ["cancel", "cancel it"];
+const HOLD_YES = ["book it", "hold it", "lock it in", "send the link", "send me the link", "send it", "go for it"];
+
 export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentResult {
   const t = text.toLowerCase().trim();
   const s = ctx.data.settings;
@@ -137,19 +142,28 @@ export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentRes
     return out(`An owner has this conversation and will reply here ${when}. I can still answer questions about the truck, kegs or prices.`);
   }
 
-  // 1. Pending confirmations.
+  // 1. Pending confirmations. Anything but a clear yes ends them, so a later "yes" confirms nothing.
   if (state.awaiting === "confirm_cancel" && state.bookingId) {
-    if (has(t, /\b(yes|yep|confirm|cancel it|do it)\b/)) {
+    const c = parseConfirm(t, CANCEL_YES);
+    state.awaiting = undefined;
+    if (c === "yes") {
       const r = cancelBookingTool(ctx, state.bookingId, true);
-      state.awaiting = undefined;
       if (!r.ok) return out(`That one needs an owner to sign off on the refund. I've flagged it and someone will confirm ${when}.`);
       return out(`Done. ${r.ref} is cancelled.${r.refund > 0 ? ` ${money(r.refund)} is on its way back to your card (3–5 business days).` : ""}`);
     }
-    if (has(t, /\b(no|nah|keep|don't)\b/)) {
-      state.awaiting = undefined;
-      return out("All good, your booking stays as is.");
+    if (c === "no") return out("All good, your booking stays as is.");
+  }
+
+  // A no to "Want the link?" or "What name should I put the booking under?" drops the draft booking.
+  // "no, make it 4 hours" carries a new detail, so it carries on with the booking instead.
+  if ((state.awaiting === "confirm_hold" || state.awaiting === "name") && isRefusal(t, HOLD_YES)) {
+    if (!parseBlock(t) && !parseSuburb(t) && !parseDate(text, ctx.now, prev.date ?? prev.refDate)) {
+      Object.assign(state, { awaiting: undefined, date: undefined, block: undefined, suburb: undefined, startTime: undefined, agreed: undefined });
+      return out("No worries, I haven't held anything. Text any time if you want to look at another date.");
     }
   }
+  // Agreement only counts as a clear yes to a quoted price.
+  if (state.awaiting === "confirm_hold" && parseConfirm(t, HOLD_YES) === "yes") state.agreed = true;
 
   // 2. A person, please. Only explicit asks: "someone", "staff" and "owner" also turn up in ordinary questions.
   if (PERSON.test(t)) {
@@ -222,8 +236,7 @@ export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentRes
     state.awaiting = undefined;
   }
 
-  const wantsBook = has(t, /\b(book|hold|lock it in|yes|yep|yeah|go ahead|send (me )?(the )?link|deposit|let's do it|sounds good)\b/);
-  if (wantsBook) state.agreed = true;
+  const wantsBook = !isRefusal(t, HOLD_YES) && has(t, /\b(book|hold|lock it in|yes|yep|yeah|go ahead|send (me )?(the )?link|deposit|let's do it|sounds good)\b/);
   const bookingContext = !!(date || block || suburb || prev.awaiting || wantsBook);
   const faq = matchFaq(t);
 
