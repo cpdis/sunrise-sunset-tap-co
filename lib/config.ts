@@ -129,6 +129,8 @@ export const ADMIN_ONLY_SETTINGS: (keyof Settings)[] = [
   "smsExpenseCap",
 ];
 
+// GST registration is required once annual turnover reaches this.
+export const GST_THRESHOLD = 75000;
 // Settings that bound what one owner can do alone (B5, SS-09). Only a director changes them, and lowering the
 // approvals a payout needs also takes a second director (lib/ops.ts requestChange).
 export const GUARDRAIL_SETTINGS: (keyof Settings)[] = ["approvalsRequired", "refundLimit", "smsExpenseCap"];

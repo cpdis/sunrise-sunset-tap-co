@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import { Big_Shoulders, Instrument_Sans, Josefin_Sans } from "next/font/google";
 import { AppProvider } from "@/components/AppProvider";
+import { INDEXABLE } from "@/lib/indexable";
 import "./tokens.css";
 import "./globals.css";
 
@@ -13,6 +14,7 @@ export const metadata: Metadata = {
   title: "Sunrise Sunset Tap Co. · 8-tap beer truck hire, Perth",
   description: "Hire a tiny vintage tap truck for your wedding, party or event. Eight cold taps, delivered and collected anywhere in the Perth metro area.",
   metadataBase: new URL(process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000"),
+  robots: INDEXABLE ? undefined : { index: false, follow: false },
   openGraph: { type: "website", locale: "en_AU", siteName: "Sunrise Sunset Tap Co.", images: [{ url: "/og.jpg", width: 1200, height: 630, alt: "Sunrise Sunset Tap Co. roundel and wordmark beside a lithograph of friends at the rear taps of the tap truck on a hilltop at dawn" }] },
 };
 

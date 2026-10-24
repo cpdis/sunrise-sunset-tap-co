@@ -459,10 +459,13 @@ export function kmIn(d: Data, start: string, end: string) {
     .reduce((s, b) => s + b.km * 4, 0);
 }
 
+// Cash kept on top of the reserve formula, for the unexpected.
+export const RESERVE_BUFFER = 500;
+
 export function reserveTarget(d: Data, asOf: string) {
   const s = d.settings;
   const yearKm = kmIn(d, addDays(asOf, -365), asOf);
-  return Math.round(s.reserveMonths * s.fixedMonthly + yearKm * s.maintPerKm + 500);
+  return Math.round(s.reserveMonths * s.fixedMonthly + yearKm * s.maintPerKm + RESERVE_BUFFER);
 }
 
 // Cash the company may pay out as of a date: cash less customer money held for hires ahead, the reserve and runner

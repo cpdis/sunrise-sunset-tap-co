@@ -4,13 +4,13 @@ import { useState } from "react";
 import { DateField } from "@/components/DateField";
 import { PaybackChart } from "@/components/PaybackChart";
 import { Loading, Section, Stat, useData } from "@/components/ui";
+import { GST_THRESHOLD } from "@/lib/config";
 import { ACCOUNT_LABEL, balance, cashAt, liveBookings, periodTotals } from "@/lib/domain";
 import { useApp } from "@/lib/store";
 import type { Account } from "@/lib/types";
 import { addDays, addMonths, fmtDate, money, quarterLabel, quarterOf, todayISO } from "@/lib/util";
 
 const EXPENSE_ACCOUNTS: Account[] = ["maintenance", "fuel", "co2", "cleaning", "breakage", "insurance", "rego", "software", "accounting", "marketing", "setup"];
-const GST_THRESHOLD = 75000;
 // the ledger shows a page at a time, newest first
 const LEDGER_PAGE = 15;
 const cum = (xs: number[]) => xs.map((_, i) => xs.slice(0, i + 1).reduce((a, b) => a + b, 0));
