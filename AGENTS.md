@@ -15,7 +15,7 @@ Colin's general rules load from his global setup on his machines and from the pr
 - Run: `npm run dev` (http://localhost:3000). No env vars needed. On another port, set `PUBLIC_BASE_URL` to that origin, for example `PUBLIC_BASE_URL=http://localhost:3100 npx next dev -p 3100`: sign-in links and the Origin check use it.
 - Verify: `npm run typecheck && npm test && npm run build`. Run it before every push.
 - Injection eval: `npm run eval:injection` runs the review payloads on the live model. It needs `ANTHROPIC_API_KEY` and skips without one.
-- Schema change: edit `lib/server/db/schema.ts`, then `npm run db:generate` writes the migration to `drizzle/`. Commit both. PGlite applies migrations on open; hosted Postgres needs `npm run db:migrate` with `DATABASE_URL` (Colin runs it at deploy).
+- Schema change: edit `lib/server/db/schema.ts`, then `npm run db:generate` writes the migration to `drizzle/`. Commit both. PGlite applies migrations on open; on Vercel the `vercel-build` script runs `drizzle-kit migrate` before `next build`, so each deploy migrates its own database (unpooled URL first). `npm run db:migrate` does the same by hand.
 
 ## Env vars
 - Outside production every one is optional: each secret has a dev default named `dev-only-...`. Production, and any run with `DATABASE_URL` set, refuses a secret that is missing, equal to a dev default, or shorter than 32 characters (`lib/server/secrets.ts`).

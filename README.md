@@ -123,9 +123,10 @@ Vercel every request shares one window.
 ## Deploy checklist (Colin)
 
 1. Database: add Neon Postgres from the Vercel Marketplace to the project. It sets `DATABASE_URL`.
-2. Migrations: `DATABASE_URL=<from vercel env pull> npm run db:migrate` (`drizzle-kit migrate`). Run it again before
-   each deploy that adds a file to `drizzle/`. The app never migrates hosted Postgres itself. The demo business seeds
-   itself on the first request.
+2. Migrations run in the build: Vercel runs `vercel-build` (`drizzle-kit migrate && next build`), so every deploy
+   applies any new file in `drizzle/` to its own database first, over Neon's unpooled URL. Neon marks its URLs
+   Sensitive, so they can't be pulled to migrate by hand. A failed migration fails the deploy. The running app never
+   migrates. The demo business seeds itself on the first request.
 3. Env vars (Production): `DATABASE_URL`, `SESSION_SECRET`, `APPROVAL_SECRET`, `PUBLIC_BASE_URL` (the site's https
    origin, no trailing slash; set it per environment, since writes must come from that origin), `TWILIO_AUTH_TOKEN`,
    `EMAIL_WEBHOOK_SECRET`, `CRON_SECRET`. Use random values of at least 32 characters (for example

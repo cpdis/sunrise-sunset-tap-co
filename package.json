@@ -10,7 +10,8 @@
     "test": "vitest run",
     "eval:injection": "vitest run --mode eval tests/injection.eval.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "vercel-build": "drizzle-kit migrate && next build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.1.0",
