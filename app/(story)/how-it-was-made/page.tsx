@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 const SIZES: Record<string, [number, number]> = {
   "v1-home": [1200, 750], "v1-today": [1200, 750], "v1-inbox": [1200, 750], "v2-home": [1200, 750], "v2-today": [1200, 750],
   "white-today": [1200, 750], "pr9-today": [900, 860], "inbox-chat": [1200, 750], "inbox-queue": [1200, 750], "inbox-console": [1200, 750],
-  "home-runners": [900, 720], "home-reartaps": [900, 720], "home-handcut": [1200, 750], "handmade-hero": [1200, 1252], "how-it-works": [1000, 1111],
+  "home-runners": [900, 720], "home-reartaps": [900, 720], "home-handcut": [1200, 750], "handmade-hero": [1200, 1252],
   "dl-a-hero": [1100, 614], "dl-b-hero": [1100, 614], "dl-a-wrap": [1100, 614], "dl-b-wrap": [1100, 614], "dl-a-dusk": [1100, 614],
   "dl-a1-gpt": [700, 1050], "dl-a1-nb": [700, 1043], "photo-wedding": [1200, 675], "photo-wedding-fixed": [1200, 670],
   "photo-runclub": [1200, 675], "photo-runclub-fixed": [1200, 675], "stills-v3": [1400, 281], "upscale-zoom": [1400, 525], "og-a": [1000, 525],
@@ -206,7 +206,6 @@ export default function HowItWasMade() {
             { label: "Hand-cut", say: "\"It feels more AI generated.\" Three hand-made treatments of the same hero: the base, A Ticket, B Hand-cut, C Luggage label. B won.", imgs: [im("handmade-hero", "The hero four ways: base, Ticket, Hand-cut, Luggage label", "Base, A, B, C"), im("home-handcut", "Home page in the Hand-cut style", "B · Hand-cut, as shipped in #6")], cols: 2 },
             { label: "White console", say: "23 Oct. The Hill Repeats admin was \"too playful\". The white console in #17, in Geist with the inks as accents only. Verdict: \"That's 100x better.\"", cmp: { a: im("v2-today", "Hill Repeats admin"), b: im("white-today", "White console admin"), labels: ["Hill Repeats", "White"] } },
             { label: "Inbox", say: "The inbox went from a list of chats to a decision queue with drafted replies (#10, option C), then into the white console.", imgs: [im("inbox-chat", "Inbox as a chat list", "A list of chats"), im("inbox-queue", "Inbox as a decision queue", "#10 · the queue"), im("inbox-console", "Inbox in the white console", "#17 · the console")], cols: 3 },
-            { label: "Explainer", say: "23 and 24 Oct. The explainer and the plan, in the style of Ben's Bites' pipeline post: white paper, Golden Hour inks, hand-drawn diagrams.", imgs: [im("how-it-works", "The How it works page")], cols: 1 },
           ]}
         />
       </div>
