@@ -204,7 +204,7 @@ export default function HowItWorks() {
           <li><b>Code:</b> Next.js 15, React 19, Drizzle on Postgres (PGlite locally), zustand, chrono-node, <a href={REPO}>cpdis/sunrise-sunset-tap-co</a></li>
           <li><b>Agents:</b> Claude through the Anthropic SDK, with a rules engine for no-key demos</li>
           <li><b>Diagrams:</b> hand-drawn SVG, written for this page (no diagram library). Labels in Shantell Sans</li>
-          <li><b>Look:</b> Golden Hour inks on white, after Ben&apos;s Bites&apos; newsletter-pipeline post</li>
+          <li><b>Look:</b> Golden Hour inks on white</li>
           <li><b>Numbers:</b> the demo&apos;s seeded base-case year as of 22 October 2026. Illustrative only</li>
         </ul>
       </section>
