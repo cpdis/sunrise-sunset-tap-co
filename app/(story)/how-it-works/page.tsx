@@ -205,6 +205,7 @@ export default function HowItWorks() {
           <li><b>Agents:</b> Claude through the Anthropic SDK, with a rules engine for no-key demos</li>
           <li><b>Diagrams:</b> hand-drawn SVG, written for this page (no diagram library). Labels in Shantell Sans</li>
           <li><b>Look:</b> Golden Hour inks on white</li>
+          <li><b>The making of:</b> the tools, models, decisions and timeline are on <Link href="/how-it-was-made">How this was made</Link></li>
           <li><b>Numbers:</b> the demo&apos;s seeded base-case year as of 22 October 2026. Illustrative only</li>
         </ul>
       </section>
