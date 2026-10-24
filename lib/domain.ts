@@ -1,4 +1,4 @@
-// Business rules. Every function takes a mutable draft of Data (the store clones first).
+// Business rules. Every function takes a mutable draft of Data (repo.mutate loads a fresh copy for each write).
 import { defaultStart, findSuburb, startProblem } from "./config";
 import type {
   Account,
@@ -11,6 +11,7 @@ import type {
   Payment,
   PaymentType,
   Settings,
+  Slot,
 } from "./types";
 import {
   addDays,
@@ -20,6 +21,7 @@ import {
   money,
   quarterLabel,
   quarterOf,
+  randomToken,
   sameContact,
   stripeFee,
   todayISO,
@@ -51,15 +53,18 @@ export function quote(s: Settings, block: Block, suburb: string) {
 }
 
 // An unpaid hold past its time. The daily job cancels it; until then it no longer counts.
-export const holdExpired = (b: Booking, now = new Date()) => b.state === "held" && !!b.heldUntil && Date.parse(b.heldUntil) < now.getTime();
+export const holdExpired = (b: Slot, now = new Date()) => b.state === "held" && !!b.heldUntil && Date.parse(b.heldUntil) < now.getTime();
 
-export function liveBookings(d: Data, now = new Date()) {
+export function liveBookings<B extends Slot>(d: { bookings: B[] }, now = new Date()): B[] {
   return d.bookings.filter((b) => b.state !== "cancelled" && !holdExpired(b, now));
 }
 
+// What availability is worked out from. The whole Data fits, and so does a public view that carries only slots.
+export type Avail = Pick<Data, "settings" | "blackouts"> & { bookings: Slot[] };
+
 export type DayStatus = "free" | "booked" | "held" | "personal" | "blackout" | "past" | "too_far" | "short_notice" | "invalid";
 
-export function dayStatus(d: Data, date: string, now = new Date()): DayStatus {
+export function dayStatus(d: Avail, date: string, now = new Date()): DayStatus {
   // Every check below compares date strings, so anything but a real YYYY-MM-DD is refused first.
   if (!isISODate(date)) return "invalid";
   const today = todayISO(now);
@@ -77,12 +82,12 @@ export function dayStatus(d: Data, date: string, now = new Date()): DayStatus {
 }
 
 // Personal-use bookings yield to paid ones, so they count as free for customers.
-export function isBookable(d: Data, date: string, now = new Date()): boolean {
+export function isBookable(d: Avail, date: string, now = new Date()): boolean {
   const s = dayStatus(d, date, now);
   return s === "free" || s === "personal";
 }
 
-export function nextFreeDates(d: Data, from: string, count: number, weekendsOnly = false, now = new Date()): string[] {
+export function nextFreeDates(d: Avail, from: string, count: number, weekendsOnly = false, now = new Date()): string[] {
   const out: string[] = [];
   let cur = from;
   for (let i = 0; i < 200 && out.length < count; i++) {
@@ -159,6 +164,8 @@ export interface NewBooking {
   via: Channel;
   id?: string;
   ref?: string;
+  // The link token, when the agent already put it in the link it sent. Otherwise createHold makes one.
+  token?: string;
   agreed?: boolean;
 }
 
@@ -180,10 +187,21 @@ export function upsertCustomer(d: Data, name: string, email?: string, phone?: st
   return fresh;
 }
 
-// Refuses a date that isn't bookable at `now` (R12: one live paid booking or hold per date) and a start time that
-// doesn't fit the block, whichever surface asked. Callers check first; this is the last word.
+// The refusal when a contact asks for a second unpaid date (R13). The booking page shows its own words for it.
+export const ONE_UNPAID_HOLD = "this contact already holds an unpaid date";
+
+// Whether a phone or email already holds an unpaid date that hasn't lapsed.
+function holdsUnpaid(d: Data, contact: string | undefined, now: Date) {
+  if (!contact?.trim()) return false;
+  return d.bookings.some((b) => b.state === "held" && !holdExpired(b, now) && d.customers.some((c) => c.id === b.customerId && (sameContact(c.phone, contact) || sameContact(c.email, contact))));
+}
+
+// Refuses a date that isn't bookable at `now` (R12: one live paid booking or hold per date), a second unpaid date for
+// a phone or email (R13), and a start time that doesn't fit the block, whichever surface asked. Callers check first;
+// this is the last word.
 export function createHold(d: Data, n: NewBooking, now = new Date()): Booking {
   if (!isBookable(d, n.date, now)) throw new Error(`${n.date} can't be booked (${dayStatus(d, n.date, now)})`);
+  if (holdsUnpaid(d, n.phone, now) || holdsUnpaid(d, n.email, now)) throw new Error(ONE_UNPAID_HOLD);
   const startTime = n.startTime ?? defaultStart(n.block);
   const late = startProblem(n.block, startTime);
   if (late) throw new Error(`Start ${startTime}: ${late}`);
@@ -214,6 +232,8 @@ export function createHold(d: Data, n: NewBooking, now = new Date()): Booking {
     guests: n.guests,
     notes: n.notes,
     agreementSigned: !!n.agreed,
+    receiptEmail: n.email?.trim() || undefined,
+    token: n.token ?? randomToken(),
     deliver: { done: false },
     collect: { done: false },
   };
@@ -222,11 +242,16 @@ export function createHold(d: Data, n: NewBooking, now = new Date()): Booking {
 }
 
 // The hire terms must have been accepted, either on the web form or at checkout. The receipt email goes on the
-// booking, never on the customer: whoever holds a checkout link can't change a customer's contacts.
+// booking, never on the customer: whoever holds a checkout link can't change a customer's contacts. A hold that has
+// lapsed is refused, and so is one whose date someone else has since booked or an owner blocked out (F02): the daily
+// job may not have cancelled it yet, and paying it would book the truck twice (R12).
 export function payDeposit(d: Data, bookingId: string, card: string, now = new Date(), agreed = false, receiptEmail?: string) {
   const b = d.bookings.find((x) => x.id === bookingId);
   if (!b) throw new Error("Booking not found");
   if (b.state !== "held") return b;
+  if (holdExpired(b, now)) throw new Error("This hold has expired, so the date isn't held for you any more. Start a new booking to check it again.");
+  const taken = d.blackouts.includes(b.date) || liveBookings(d, now).some((x) => x.id !== b.id && x.kind === "paid" && x.date === b.date);
+  if (taken) throw new Error("Sorry, that date isn't available any more, so nothing was charged. Start a new booking to pick another.");
   if (agreed) b.agreementSigned = true;
   if (!b.agreementSigned) throw new Error("Hire terms not accepted");
   if (receiptEmail?.trim()) b.receiptEmail = receiptEmail.trim();
@@ -367,6 +392,20 @@ export function runJobs(d: Data, now = new Date()): string[] {
     }
   }
   return log;
+}
+
+// Keeps a distribution record for the most recent completed quarter, and recomputes one nobody has approved yet.
+export function ensureDistributions(d: Data, now = new Date()) {
+  const lastEnd = addDays(quarterOf(todayISO(now)).start, -1);
+  const q = quarterOf(lastEnd);
+  if (!d.distributions.some((x) => x.quarter === q.key) && q.start >= d.ledger[0]?.date) {
+    d.distributions.push(computeDistribution(d, q.key));
+  }
+  for (const dist of d.distributions) {
+    if (dist.status === "awaiting" && dist.approvals.length === 0) {
+      Object.assign(dist, computeDistribution(d, dist.quarter), { approvals: [] });
+    }
+  }
 }
 
 // ---------- money ----------

@@ -7,21 +7,30 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "eval:injection": "vitest run --mode eval tests/injection.eval.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "node scripts/migrate.mjs",
+    "vercel-build": "npm run db:migrate && next build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.1.0",
+    "@electric-sql/pglite": "^0.5.11",
     "@vercel/analytics": "^2.0.1",
     "chrono-node": "^2.10.3",
+    "drizzle-orm": "^0.45.4",
     "next": "15.5.28",
+    "pg": "^8.23.1",
     "react": "19.1.1",
     "react-dom": "19.1.1",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@types/node": "^22",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "drizzle-kit": "^0.31.11",
     "typescript": "^5.9",
     "vitest": "^5.0.5"
   }

@@ -1,51 +1,16 @@
-"use client";
+import { LINK_MINUTES, demoFor } from "@/lib/server/auth";
+import { DEMO_TENANT, getRepo } from "@/lib/server/db/repo";
+import { LoginForm } from "./LoginForm";
 
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { Logo } from "@/components/Logo";
-import { Loading, useData } from "@/components/ui";
-import { useApp } from "@/lib/store";
+// Reads the demo's owners at request time, never at build time.
+export const dynamic = "force-dynamic";
 
-// Where the sign-in link lands: ?next= when it names an admin page (the explainer frames the inbox this way), else Today.
-function nextPage() {
-  const next = new URLSearchParams(window.location.search).get("next") ?? "";
-  return /^\/admin(\/[a-z-]*)*$/.test(next) ? next : "/admin";
-}
-
-// Simulated magic-link login. In production: Supabase Auth email OTP, owners only.
-export default function Login() {
-  const data = useData();
-  const login = useApp((s) => s.login);
-  const router = useRouter();
-  const [sent, setSent] = useState<string | null>(null);
-  if (!data) return <Loading />;
-  const owner = data.owners.find((o) => o.id === sent);
-
-  return (
-    <div style={{ minHeight: "100vh", background: "var(--paper)", display: "grid", placeItems: "center", padding: 16 }}>
-      <div className="card stack" style={{ width: "min(440px, 100%)", gap: 20 }}>
-        <div className="row"><Logo size={44} /><h1 className="display" style={{ fontSize: 34, margin: 0 }}>Owners</h1></div>
-        {!owner ? (
-          <>
-            <span className="muted">Pick who you are. We&apos;ll email you a sign-in link.</span>
-            <div className="stack" style={{ gap: 8 }}>
-              {data.owners.map((o) => (
-                <button key={o.id} className="btn ghost" style={{ justifyContent: "space-between" }} onClick={() => setSent(o.id)}>
-                  <span>{o.name}</span><span className="mono muted login-email" style={{ fontSize: 12 }}>{o.email}</span>
-                </button>
-              ))}
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="notice info">
-              Link sent to <strong>{owner.email}</strong>. In this demo the email is simulated, so open it here.
-            </div>
-            <button className="btn gold" onClick={() => { login(owner.id); router.push(nextPage()); }}>Open sign-in link</button>
-            <button className="linkbtn" style={{ alignSelf: "flex-start" }} onClick={() => setSent(null)}>Not {owner.name}?</button>
-          </>
-        )}
-      </div>
-    </div>
-  );
+// Owner sign-in by emailed link (KTD7). The demo lists its owners so a visitor can pick one, and the email lands in
+// the simulated outbox (KTD12). Elsewhere, or once the business isn't the demo (A1), it is an email field only.
+export default async function Login({ searchParams }: { searchParams: Promise<{ link?: string }> }) {
+  const repo = await getRepo();
+  const demo = await demoFor(repo, DEMO_TENANT);
+  const doc = demo ? await repo.load(DEMO_TENANT) : null;
+  const owners = (doc?.data.owners ?? []).map(({ name, email }) => ({ name, email }));
+  return <LoginForm owners={owners} demo={demo} minutes={LINK_MINUTES} expired={(await searchParams).link === "used"} />;
 }

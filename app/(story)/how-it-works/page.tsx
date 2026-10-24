@@ -114,7 +114,7 @@ export default function HowItWorks() {
       <p>A hand-over arrives with a reason and, where the agent can write one, a draft reply. An owner can send the draft as it is, edit it, or write their own. A reply goes back the way the customer came in: a text to a phone number, an email to an email address.</p>
       <p>An owner can&apos;t <Term sketch="inbox" nodes="back" edges="handling>back">hand back</Term> to the agent while the customer is still waiting on the reply they were promised. The admin button and the owner agent use the same guard.</p>
       <div className="wide">
-        <Frame src="/login?next=/admin/inbox" title="The owners' inbox, demo data" height={760} phoneHeight={660} />
+        <Frame src="/admin/inbox" title="The owners' inbox, demo data" height={760} phoneHeight={660} />
       </div>
       <p className="small">The admin needs a sign-in. In the demo the email is simulated: pick any owner, open the link, and the inbox opens in the frame.</p>
 

@@ -9,8 +9,10 @@ import { BUSINESS, DEFAULT_SETTINGS, SUBURBS } from "@/lib/config";
 import { ACCOUNT_LABEL, cancelBooking, cancelNeedsOwner, createHold, heldFor, nextFreeDates, payDeposit, runJobs } from "@/lib/domain";
 import { applyOwnerAction, claimRun, returnedClean } from "@/lib/ops";
 import { CAPITAL_PER_OWNER, buildSeed } from "@/lib/seed";
-import { ownerSnapshot, snapshot } from "@/lib/snapshot";
-import type { AgentState, Data } from "@/lib/types";
+import { ownerSnapshot, snapshot } from "@/lib/views";
+import { approvalCode } from "@/lib/server/approvals";
+import { DEMO_TENANT } from "@/lib/server/db/repo";
+import type { AgentState, Data, StagedApproval } from "@/lib/types";
 import { addDays, daysBetween, fmtDate, money, quarterLabel, todayISO } from "@/lib/util";
 
 // The same moment the test suite uses, so the transcripts match tests/ and stay stable between deploys.
@@ -36,7 +38,9 @@ const DID: Record<string, string> = {
 
 function customerChat(d: Data, contact: string, lines: string[], handover = false): Line[] {
   let state: AgentState = {};
-  return lines.flatMap((text) => {
+  return lines.flatMap((line) => {
+    // "{code}" is the 4-digit code the agent's last quote asked the customer to echo.
+    const text = line.replace("{code}", state.code ?? "");
     const ctx: ToolCtx = { data: snapshot(d, contact), contact, channel: "sms", now: STORY_NOW, actions: [], used: [], origin: "https://sunrisesunsettapco.cpd.dev", handover };
     const r = runRules(ctx, text, state);
     state = r.state;
@@ -44,18 +48,26 @@ function customerChat(d: Data, contact: string, lines: string[], handover = fals
   });
 }
 
+// An owner texting from their own number, as lib/server/agent.ts runs it: the staged approval carries over between
+// texts, as the approvals table keeps it. In a line, "{nonce}" is the code the last confirmation asked for and
+// "{code}" the one-time code the owner's admin page shows. The code comes from the dev secret, so the page never
+// derives anything from a production secret at build time.
 function ownerChat(d: Data, ownerId: string, lines: string[]): Line[] {
-  let state: AgentState = {};
   const owner = d.owners.find((o) => o.id === ownerId)!;
-  return lines.flatMap((text) => {
-    const ctx: OwnerCtx = { data: ownerSnapshot(d, STORY_NOW), owner, now: STORY_NOW, actions: [], used: [] };
-    const r = runOwnerRules(ctx, text, state);
-    state = r.state;
+  let pending: StagedApproval | undefined;
+  return lines.flatMap((line) => {
+    const code = pending ? approvalCode(DEMO_TENANT, pending.id, { NODE_ENV: "development" }) : "";
+    const text = line.replace("{nonce}", pending?.nonce ?? "").replace("{code}", code);
+    const live = pending && { ...pending, code: pending.needsCode ? code : undefined, expired: false, codeMisses: 0 };
+    const ctx: OwnerCtx = { data: ownerSnapshot(d, STORY_NOW), owner, now: STORY_NOW, actions: [], used: [], pending: live };
+    const r = runOwnerRules(ctx, text);
+    if (r.approval?.settled) pending = undefined;
+    if (r.approval?.staged) pending = r.approval.staged;
     for (const a of r.actions) {
       if (a.type === "cancel") cancelBooking(d, a.bookingId, STORY_NOW);
       else applyOwnerAction(d, a, ownerId);
     }
-    const did = r.actions.map((a) => DID[a.type]).filter(Boolean).join("; ") || (state.pending ? "staged the change and waited for YES" : undefined);
+    const did = r.actions.map((a) => DID[a.type]).filter(Boolean).join("; ") || (r.approval?.staged ? "staged the change and waited for YES" : undefined);
     return [{ from: "them" as const, body: text }, { from: "agent" as const, body: r.reply, did }];
   });
 }
@@ -144,7 +156,7 @@ function cancelChat() {
   return {
     ref: b.ref,
     who: c.name.split(" ")[0],
-    lines: customerChat(d, c.phone, [`I need to cancel ${b.ref}`, "No, don't cancel it", "Actually yes, cancel it", "yes"]),
+    lines: customerChat(d, c.phone, [`I need to cancel ${b.ref}`, "No, don't cancel it", "Actually yes, cancel it", "yes", "YES {code}"]),
     // The same reference asked about from a number that isn't on the booking.
     stranger: customerChat(buildSeed(STORY_NOW), "0499 000 111", [`What time is ${b.ref}?`]),
   };
@@ -169,10 +181,11 @@ export function storyData() {
       cancel: cancelChat(),
       handover: customerChat(buildSeed(STORY_NOW), "0412 555 022", ["Can I book the 12th of December?", "Do you supply the beer?"], true),
       owner: {
-        now: ownerChat(buildSeed(STORY_NOW), "own_colin", ["I'll take the Fremantle delivery"]),
-        yes: ownerChat(buildSeed(STORY_NOW), "own_colin", ["approve the payout", "yes"]),
+        read: ownerChat(buildSeed(STORY_NOW), "own_colin", ["what's on this week"]),
+        now: ownerChat(buildSeed(STORY_NOW), "own_colin", ["I'll take the Fremantle delivery", "YES {nonce}"]),
+        yes: ownerChat(buildSeed(STORY_NOW), "own_colin", ["approve the payout", "yes", "YES {nonce} {code}"]),
         setting: ownerChat(buildSeed(STORY_NOW), "own_colin", ["set notice to 10 days", "no"]),
-        draft: ownerChat(buildSeed(STORY_NOW), "own_colin", ["hand back Harbour", "send the draft to Harbour"]),
+        draft: ownerChat(buildSeed(STORY_NOW), "own_colin", ["hand back Harbour", "send the draft to Harbour", "YES {nonce} {code}"]),
         admin: ownerChat(buildSeed(STORY_NOW), "own_colin", ["change the deposit to $300"]),
       },
     },

@@ -5,9 +5,9 @@ import { useEffect, useState } from "react";
 import { DatePicker } from "@/components/DatePicker";
 import { HireTermsText } from "@/components/HireTerms";
 import { SiteShell } from "@/components/SiteChrome";
-import { Loading, useData } from "@/components/ui";
+import { Loading, usePublic } from "@/components/ui";
 import { SUBURBS, startTimesFor } from "@/lib/config";
-import { isBookable, quote } from "@/lib/domain";
+import { ONE_UNPAID_HOLD, isBookable, quote } from "@/lib/domain";
 import { useApp } from "@/lib/store";
 import type { Block } from "@/lib/types";
 import { addDays, daysBetween, fmtDate, fmtTime, money, todayISO } from "@/lib/util";
@@ -16,7 +16,7 @@ const EVENT_TYPES = ["Wedding", "Birthday", "Engagement", "Corporate", "Run club
 const SORTED = [...SUBURBS].sort((a, b) => a.name.localeCompare(b.name));
 
 export default function Book() {
-  const data = useData();
+  const data = usePublic();
   const book = useApp((s) => s.book);
   const router = useRouter();
   const [date, setDate] = useState<string>();
@@ -30,6 +30,9 @@ export default function Book() {
   const [guests, setGuests] = useState("");
   const [notes, setNotes] = useState("");
   const [agree, setAgree] = useState(false);
+  const [busy, setBusy] = useState(false);
+  // This phone or email already holds an unpaid date (R13).
+  const [onHold, setOnHold] = useState(false);
 
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
@@ -53,14 +56,17 @@ export default function Book() {
   const ready = missing.length === 0;
   const dueToday = q && date ? (daysBetween(todayISO(), date) <= s.balanceDaysBefore ? q.total : q.deposit) : 0;
 
-  function submit() {
-    if (!ready || !date || !q) return;
-    const id = book({
+  async function submit() {
+    if (!ready || !date || !q || busy) return;
+    setBusy(true);
+    const held = await book({
       date, block, startTime: start, suburb, name: name.trim(), email: email.trim(), phone: phone.trim(),
-      eventType, guests: Number(guests) || undefined, notes: notes.trim() || undefined, via: "web", agreed: true,
+      eventType, guests: Number(guests) || undefined, notes: notes.trim() || undefined, agreed: true,
     });
-    // An empty id means the hold was refused; the date notice above then shows.
-    if (id) router.push(`/checkout/${id}`);
+    setBusy(false);
+    // A refused date shows the date notice above. The link token opens checkout.
+    setOnHold(!!held && "refused" in held && held.refused === ONE_UNPAID_HOLD);
+    if (held && "token" in held) router.push(`/checkout/${held.id}?t=${held.token}`);
   }
 
   return (
@@ -169,8 +175,9 @@ export default function Book() {
                   <span className="muted">{money(q.total - q.deposit)} charged automatically on {fmtDate(addDays(date, -s.balanceDaysBefore), { dow: true })}.</span>
                 )}
                 {q && date && dueToday >= q.total && <span className="muted">Your event is within {s.balanceDaysBefore} days, so it&apos;s paid up front.</span>}
-                <button className="btn gold" disabled={!ready} onClick={submit} aria-describedby={ready ? undefined : "missing"}>Continue to payment</button>
+                <button className="btn gold" disabled={!ready || busy} onClick={submit} aria-describedby={ready ? undefined : "missing"}>Continue to payment</button>
                 {!ready && <span id="missing" className="muted" style={{ fontSize: 13 }}>Still needed: {missing.join(", ")}.</span>}
+                {onHold && <div className="notice" role="alert">You already have a date on hold. Pay for it from its checkout link, or wait for the hold to lapse, then book this one.</div>}
                 <span className="muted" style={{ fontSize: 13 }}>Your date is held for {s.holdMinutes} minutes while you pay.</span>
               </div>
             </aside>

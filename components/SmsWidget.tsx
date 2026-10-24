@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { nextFreeDates } from "@/lib/domain";
 import { useApp } from "@/lib/store";
 import { fmtDate, todayISO } from "@/lib/util";
+import { ownerHolds } from "@/lib/views";
 import { Roundel } from "./Logo";
-import { Linkify, useData } from "./ui";
+import { Linkify, useData, usePublic } from "./ui";
 
 const DEMO_PHONE_KEY = "sst-demo-phone";
 
@@ -22,16 +23,20 @@ function demoPhone() {
 }
 
 // A phone-shaped simulator for texting the business. Messages go through the same
-// agent and inbox the owners see in /admin/inbox. "Text as" switches to an owner's number,
-// which gets the owner agent instead of the customer one.
+// agent and inbox the owners see in /admin/inbox. A signed-in owner can "Text as" their own number,
+// which gets the owner agent instead of the customer one; another owner's number is that owner's phone (F05).
+// It shows each text as the phone has it: the stored copies mask the codes in a confirmation (B2).
 export function SmsWidget({ as: initialAs = "customer" }: { as?: string }) {
   const data = useData();
-  const startConversation = useApp((s) => s.startConversation);
+  const pub = usePublic();
+  const chat = useApp((s) => s.chat);
+  const watchChat = useApp((s) => s.watchChat);
   const sendCustomer = useApp((s) => s.sendCustomer);
+  const me = useApp((s) => s.ownerId);
+  const handset = useApp((s) => s.handset);
   const [open, setOpen] = useState(false);
   const [customerPhone, setCustomerPhone] = useState("");
   const [as, setAs] = useState(initialAs);
-  const [convId, setConvId] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const body = useRef<HTMLDivElement>(null);
@@ -42,6 +47,10 @@ export function SmsWidget({ as: initialAs = "customer" }: { as?: string }) {
   useEffect(() => setAs(initialAs), [initialAs]);
   const owner = data?.owners.find((o) => o.id === as);
   const phone = owner?.phone ?? customerPhone;
+  // The server sends this number's conversation with each read.
+  useEffect(() => {
+    if (phone) watchChat(phone);
+  }, [phone, watchChat]);
   // Focus the message box on open; Escape closes and returns focus to the button.
   useEffect(() => {
     if (!open) return;
@@ -56,7 +65,7 @@ export function SmsWidget({ as: initialAs = "customer" }: { as?: string }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  const conv = data?.conversations.find((c) => c.id === convId && c.contact === phone) ?? data?.conversations.find((c) => c.channel === "sms" && c.contact === phone);
+  const conv = chat?.contact === phone ? chat : undefined;
   const msgs = conv?.messages ?? [];
 
   useEffect(() => {
@@ -65,19 +74,17 @@ export function SmsWidget({ as: initialAs = "customer" }: { as?: string }) {
 
   async function send(t: string) {
     const msg = t.trim();
-    if (!msg || busy || !data) return;
+    if (!msg || busy || !pub) return;
     setText("");
     setBusy(true);
-    const id = conv?.id ?? startConversation({ channel: "sms", contact: phone, name: "New contact" });
-    setConvId(id);
     try {
-      await sendCustomer(id, msg);
+      await sendCustomer({ channel: "sms", contact: phone }, msg);
     } finally {
       setBusy(false);
     }
   }
 
-  const sat = data ? nextFreeDates(data, todayISO(), 1, true)[0] : undefined;
+  const sat = pub ? nextFreeDates(pub, todayISO(), 1, true)[0] : undefined;
   const chips = owner
     ? ["What's on?", "I'll take the Fremantle delivery", "Log 115,900 km", "$42 CO2 refill", "Approve the payout"]
     : [
@@ -96,9 +103,9 @@ export function SmsWidget({ as: initialAs = "customer" }: { as?: string }) {
               <span className="label" style={{ fontSize: 13 }}>Sunrise Sunset</span>
               <label className="sms-as muted">
                 From
-                <select value={as} onChange={(e) => { setAs(e.target.value); setConvId(null); }} aria-label="Text as">
+                <select value={as} onChange={(e) => setAs(e.target.value)} aria-label="Text as">
                   <option value="customer">{customerPhone} (customer)</option>
-                  {data?.owners.map((o) => <option key={o.id} value={o.id}>{o.name}, owner</option>)}
+                  {data?.owners.filter((o) => o.id === me).map((o) => <option key={o.id} value={o.id}>{o.name}, owner</option>)}
                 </select>
               </label>
             </div>
@@ -115,11 +122,11 @@ export function SmsWidget({ as: initialAs = "customer" }: { as?: string }) {
             {msgs.map((m) => (
               <div key={m.id} className={`bubble ${m.from === "customer" ? "me" : m.from === "owner" ? "owner" : m.from === "system" ? "sys" : "them"}`}>
                 {m.from === "owner" && <span className="label" style={{ fontSize: 10, display: "block" }}>{data?.owners.find((o) => o.id === m.ownerId)?.name ?? "Owner"}</span>}
-                <Linkify text={m.body} />
+                <Linkify text={handset[m.id] ?? m.body} />
               </div>
             ))}
             {busy && <div className="typing">typing…</div>}
-            {conv && !conv.agentActive && !conv.escalated && !busy && (
+            {conv && ownerHolds(conv) && !busy && (
               <div className="bubble sys">An owner is looking at this and will reply here.</div>
             )}
           </div>

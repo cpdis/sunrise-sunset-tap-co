@@ -1,4 +1,4 @@
-// Reads a reply to "Reply YES to ...". Shared by the customer and owner agents, so the two cannot drift.
+// Reads a reply to "Reply YES ...". Shared by the customer and owner agents, so the two cannot drift.
 // A refusal word anywhere wins, and a yes must be the whole message: "yeah nah", "okay, cancel that"
 // and "yes, but what about kegs?" never confirm anything.
 
@@ -49,4 +49,51 @@ export function parseConfirm(text: string, extraYes: string[] = []): Confirm {
   // One or two yes phrases ("ok go ahead"), then any courtesy words.
   const whole = new RegExp(`^(${yes})(\\s(${yes}))?(\\s(${alt(COURTESY)}))*$`);
   return whole.test(t) ? "yes" : "other";
+}
+
+// KTD11: a confirmation sent to the sender's real handset carries a 4-digit code, and only a yes that echoes it
+// ("YES 4821") confirms. A spoofed caller ID never sees the code, so a blind "yes" confirms nothing.
+export function newCode() {
+  return String(1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000));
+}
+
+const CODE = /\b\d{4}\b/g;
+
+// A reply to "Reply YES 4821": its yes or no (the parser above, with the code taken out), the code it quotes (only
+// when it quotes exactly one), and whether the code is all it says.
+export function parseCoded(text: string, extraYes: string[] = []): { answer: Confirm; code?: string; bare: boolean } {
+  const codes = text.match(CODE) ?? [];
+  const rest = text.replace(CODE, " ");
+  return { answer: parseConfirm(rest, extraYes), code: codes.length === 1 ? codes[0] : undefined, bare: codes.length > 0 && normalise(rest) === "" };
+}
+
+// KTD6: an owner's one-time code from the admin page, six digits ("482193" or "482 193"), maybe after "code".
+const ONE_TIME = /\b(?:code\s*:?\s*)?(\d{3})\s?(\d{3})\b/gi;
+
+// A reply to "Reply YES 4821 and the 6-digit code from your admin page": parseCoded on the text without the
+// one-time code, plus that code (only when it quotes exactly one). bare: the message is only codes.
+export function parseApproval(text: string): { answer: Confirm; code?: string; oneTime?: string; bare: boolean } {
+  const oneTimes = [...text.matchAll(ONE_TIME)].map((m) => m[1] + m[2]);
+  const rest = text.replace(ONE_TIME, " ");
+  const r = parseCoded(rest);
+  const quoted = oneTimes.length > 0 || (rest.match(CODE) ?? []).length > 0;
+  return { answer: r.answer, code: r.code, oneTime: oneTimes.length === 1 ? oneTimes[0] : undefined, bare: quoted && normalise(rest.replace(CODE, " ")) === "" };
+}
+
+const dots = (s: string) => s.replace(/\d/g, "•");
+
+// B2: an answer's codes as the stored copy keeps them. A message that answers "Reply YES 4821" ("YES 4821 482193",
+// "4821", the one-time code alone) has its codes masked, so no conversation view holds a live one. Anything else is
+// kept as written: "log 115900 km" is not an answer.
+export function maskAnswer(text: string) {
+  const a = parseApproval(text);
+  return a.answer === "yes" || a.bare ? text.replace(ONE_TIME, dots).replace(CODE, dots) : text;
+}
+
+// B2: a reply as the stored copy keeps it. Every "YES 4821" is masked, and so is each live code it names wherever it
+// stands (`codes`: the turn's nonces and cancel codes), since a model may word the request its own way.
+export function maskReply(text: string, codes: (string | undefined)[]) {
+  let out = text.replace(/\b(YES\s+)(\d{4})\b/gi, (_m, yes: string, n: string) => yes + dots(n));
+  for (const c of new Set(codes.filter((x): x is string => !!x && /^\d{4}$/.test(x)))) out = out.replace(new RegExp(`(?<![\\d-])${c}(?!\\d)`, "g"), dots(c));
+  return out;
 }

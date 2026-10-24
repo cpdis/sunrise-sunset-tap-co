@@ -7,6 +7,8 @@ const nextConfig: NextConfig = {
   async headers() {
     return INDEXABLE ? [] : [{ source: "/:path*", headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] }];
   },
+  // PGlite loads its WASM and data files from its own package folder at runtime, which breaks when bundled.
+  serverExternalPackages: ["@electric-sql/pglite"],
 };
 
 export default nextConfig;

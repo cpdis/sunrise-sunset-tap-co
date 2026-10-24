@@ -7,7 +7,7 @@ import { DEFAULT_SETTINGS, fitStart, settingProblem, startProblem } from "@/lib/
 import { addExpense, addPersonalUse, approveDistribution, customerCancel, payOut, returnedClean, updateSettings } from "@/lib/ops";
 import { buildSeed } from "@/lib/seed";
 import type { Data, Distribution, Settings } from "@/lib/types";
-import { snapshot } from "@/lib/snapshot";
+import { snapshot } from "@/lib/views";
 import { addDays, sameContact, todayISO } from "@/lib/util";
 import { NOW, seed } from "./helpers";
 
@@ -360,6 +360,8 @@ describe("customer identity", () => {
   test("booking on /book with an SMS customer's phone and a new email makes a new customer", () => {
     const d = seed();
     const first = smsCustomer(d);
+    // Paid first: one contact holds one unpaid date at a time (R13).
+    payDeposit(d, first.id, "Visa •• 4242", NOW, true);
     const second = createHold(d, { date: freeDate(d, 90), block: 4, suburb: "Subiaco", name: "Whoever", phone: PHONE, email: "attacker@evil.test", via: "web", agreed: true }, NOW);
     const victim = d.customers.find((c) => c.id === first.customerId)!;
     expect(second.customerId).not.toBe(first.customerId);

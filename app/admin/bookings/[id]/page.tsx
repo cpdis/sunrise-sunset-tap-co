@@ -37,7 +37,8 @@ export default function BookingDetail() {
   const pol = cancelPolicy(s, b);
   const open = b.state !== "cancelled" && b.state !== "completed";
   const net = ledger.reduce((sum, e) => sum + e.amount, 0);
-  const canCapture = b.bondStatus === "held" || (b.state === "completed" && b.bondStatus !== "captured");
+  // A bond is captured from the card hold, so only while it is held, and once (F06).
+  const canCapture = b.bondStatus === "held";
 
   const bond = b.bondStatus === "none" ? `Not yet held (${money(b.bond)})` : b.bondStatus === "captured" ? `Captured ${money(b.bondCaptured ?? 0)}` : b.bondStatus === "held" ? "Held" : "Released";
 

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { LoopVideo } from "@/components/LoopVideo";
 import { SiteShell } from "@/components/SiteChrome";
-import { useData } from "@/components/ui";
+import { usePublic } from "@/components/ui";
 import { DEFAULT_SETTINGS, SUBURBS } from "@/lib/config";
 import { nextFreeDates } from "@/lib/domain";
 import { fillKb } from "@/lib/agent/tools";
@@ -13,10 +13,10 @@ import { fmtDate, money, todayISO } from "@/lib/util";
 const FAQ_SLUGS = ["how-it-works", "keg-guide", "rsa-licensing", "booking-policy", "service-area", "truck-spec"];
 
 export default function Home() {
-  const data = useData();
-  const s = data?.settings ?? DEFAULT_SETTINGS;
-  const kb = data?.kb ?? DEFAULT_KB;
-  const free = data ? nextFreeDates(data, todayISO(), 3) : [];
+  const pub = usePublic();
+  const s = pub?.settings ?? DEFAULT_SETTINGS;
+  const kb = pub?.kb ?? DEFAULT_KB;
+  const free = pub ? nextFreeDates(pub, todayISO(), 3) : [];
   const far = SUBURBS.filter((x) => x.minutes > s.travelThresholdMin).map((x) => x.name);
 
   return (
