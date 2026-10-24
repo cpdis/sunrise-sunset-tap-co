@@ -17,6 +17,8 @@ export interface SketchNode {
   w?: number;
   // Steps (by index) in which this card is struck out, e.g. the tools the agent can't use after a hand-over.
   off?: number[];
+  // The step this card first appears in. Before it the card is hidden; in it, the card is lit as new.
+  from?: number;
 }
 
 export interface SketchEdge {
@@ -25,6 +27,7 @@ export interface SketchEdge {
   l?: string;
   dash?: boolean;
   off?: number[];
+  from?: number;
 }
 
 export interface FlowStep {
@@ -174,6 +177,8 @@ export function Sketch({ cfg }: { cfg: SketchConfig }) {
   }, [pos, size]);
 
   const isOff = (o: { off?: number[] }) => step >= 0 && !!o.off?.includes(step);
+  const gone = (o: { from?: number }) => step >= 0 && o.from !== undefined && step < o.from;
+  const fresh = (o: { from?: number }) => step >= 0 && o.from === step;
   const hot: Hot = term ?? cfg.focus ?? { nodes: [], edges: [] };
   // While something is pointed at, everything else in a focused diagram stays dimmed.
   const dimmed = (id: string) => !!cfg.focus && !term && !cfg.focus.nodes.includes(id) && !running;
@@ -281,12 +286,13 @@ export function Sketch({ cfg }: { cfg: SketchConfig }) {
   if (ready) {
     for (const e of cfg.edges) {
       const nf = cfg.nodes.find((n) => n.id === e.f)!, nt = cfg.nodes.find((n) => n.id === e.t)!;
+      if (gone(e) || gone(nf) || gone(nt)) continue;
       const off = isOff(e) || isOff(nf) || isOff(nt);
       const k = arrow(box(e.f), box(e.t), e.f + e.t);
       const isLit = !!lit && (e.f === lit || e.t === lit);
       const dim = off || ((dimmed(e.f) || dimmed(e.t)) && !hot.edges.includes(key(e)));
-      const c = [e.dash ? "dash" : "", isLit ? "lit" : "", dim ? "dim" : ""].join(" ").trim();
-      lines.push(<path key={key(e)} className={c} d={k.d} />, <path key={key(e) + "h"} className={c.replace("dash", "")} d={k.head} />);
+      const c = [e.dash ? "dash" : "", isLit || (fresh(e) && !off) ? "lit" : "", fresh(e) && !off ? "new" : "", dim ? "dim" : ""].join(" ").trim();
+      lines.push(<path key={key(e) + step} className={c} d={k.d} pathLength={fresh(e) ? 1 : undefined} />, <path key={key(e) + "h"} className={c.replace("dash", "")} d={k.head} />);
       if (hot.edges.includes(key(e)) && !off) {
         traces.push(
           <path key={`${key(e)}t${anim}`} className="trace" d={k.d} pathLength={1} />,
@@ -317,7 +323,7 @@ export function Sketch({ cfg }: { cfg: SketchConfig }) {
 
   return (
     <div className="sk-holder">
-      <figure className="sk" aria-label={`Diagram: ${cfg.nodes.map((n) => n.t).join(", ")}`}>
+      <figure className="sk" aria-label={`Diagram: ${cfg.nodes.filter((n) => !gone(n)).map((n) => n.t).join(", ")}`}>
         <div ref={table} className="sk-table" style={{ height: H }}>
           <svg ref={svg} className="sk-edges" aria-hidden="true">
             {lines}
@@ -327,11 +333,13 @@ export function Sketch({ cfg }: { cfg: SketchConfig }) {
           {cfg.nodes.map((n) => {
             const p = pos[n.id], z = size(n.id);
             const off = isOff(n);
+            const hidden = gone(n);
             const c = [
               "sk-card",
               n.hub ? "hub" : "",
               lit === n.id ? "lit" : "",
-              hot.nodes.includes(n.id) && !off ? "hot" : "",
+              (hot.nodes.includes(n.id) || fresh(n)) && !off ? "hot" : "",
+              hidden ? "gone" : "",
               off ? "off" : dimmed(n.id) ? "dim" : "",
               moved[n.id] ? "moved" : "",
               ready ? "" : "pending",
@@ -342,7 +350,8 @@ export function Sketch({ cfg }: { cfg: SketchConfig }) {
                 ref={(el) => { cardEls.current[n.id] = el; }}
                 className={c}
                 role="button"
-                tabIndex={0}
+                tabIndex={hidden ? -1 : 0}
+                aria-hidden={hidden || undefined}
                 aria-expanded={lit === n.id}
                 aria-label={`${n.t}${n.s ? `, ${n.s}` : ""}${off ? ", not available in this step" : ""}`}
                 style={{ width: cardW(n), transform: ready ? `translate(${p.x - z.w / 2}px, ${p.y - z.h / 2}px)` : undefined }}

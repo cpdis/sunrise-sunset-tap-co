@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist_Mono, Shantell_Sans } from "next/font/google";
 import Link from "next/link";
-import { Wordmark } from "@/components/Logo";
+import { Roundel, Wordmark } from "@/components/Logo";
 import { StoryNav } from "@/components/story/StoryNav";
 import "./story.css";
 
@@ -17,7 +17,8 @@ export default function StoryLayout({ children }: { children: React.ReactNode })
   return (
     <div className={`story ${hand.variable} ${mono.variable}`}>
       <Link href="/" className="story-mark" aria-label="Sunrise Sunset Tap Co., home">
-        <Wordmark height={30} />
+        <span className="mark-full"><Wordmark height={30} /></span>
+        <span className="mark-small"><Roundel size={30} /></span>
       </Link>
       <StoryNav />
       <main>{children}</main>

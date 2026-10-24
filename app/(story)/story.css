@@ -39,6 +39,9 @@ html:has(.story) body { background: #fff; }
 /* ---------- chrome: wordmark top left, pages and the one ink button top right ---------- */
 .story-mark { position: fixed; top: 16px; left: 20px; z-index: 50; line-height: 0; border-radius: 4px; }
 .story-mark svg { display: block; }
+/* three pages and Book don't fit beside the full wordmark on a small phone, so it shrinks to the roundel */
+.story-mark .mark-small { display: none; }
+@media (max-width: 419px) { .story-mark .mark-full { display: none; } .story-mark .mark-small { display: block; } }
 .story-nav { position: fixed; top: 16px; right: 16px; z-index: 50; display: flex; align-items: center; gap: 4px; padding: 3px; border-radius: 9999px; background: color-mix(in srgb, white 88%, transparent); backdrop-filter: blur(8px); }
 .story-nav a { height: 30px; display: inline-flex; align-items: center; padding: 0 12px; border-radius: 9999px; font-size: 14px; font-weight: 500; color: var(--s-body); text-decoration: none; transition: color 150ms var(--ease), background-color 150ms var(--ease); }
 .story-nav a[aria-current="page"] { color: var(--s-ink); background: var(--s-sunken); }
@@ -310,3 +313,79 @@ html:has(.story) body { background: #fff; }
   .story .sk-edges path.trace { stroke-dashoffset: 0; }
   .story .sk-edges path.trace.head { opacity: 1; }
 }
+
+/* ---------- the making-of page ---------- */
+/* a diagram card that appears in this step: drawn in, in the accent */
+.story .sk-card.gone { visibility: hidden; pointer-events: none; }
+.story .sk-card.hot:not(.lit) { animation: sk-ping 520ms var(--ease); }
+.story .sk-edges path.new:not(.dash) { stroke: var(--s-accent); stroke-width: 1.8; opacity: 1; stroke-dasharray: 1; stroke-dashoffset: 1; animation: sk-ink 760ms var(--ease) forwards; }
+.story .sk-edges path.new.dash { stroke: var(--s-accent); opacity: 1; }
+
+/* before/after wipe */
+.story .cmp { position: relative; overflow: hidden; border-radius: 12px; box-shadow: var(--s-ring); background: var(--s-soft); user-select: none; -webkit-user-select: none; }
+.story .cmp img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.story .cmp input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; touch-action: pan-y; }
+.story .cmp-bar { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #fff; box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 25%, transparent); pointer-events: none; }
+.story .cmp-bar b { position: absolute; top: 50%; left: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; background: var(--s-ink); box-shadow: 0 0 0 3px #fff; }
+.story .cmp-bar b::before, .story .cmp-bar b::after { content: ""; position: absolute; top: 11px; width: 7px; height: 7px; border: solid var(--gold); border-width: 0 0 1.75px 1.75px; }
+.story .cmp-bar b::before { left: 7px; transform: rotate(45deg); }
+.story .cmp-bar b::after { right: 7px; transform: rotate(-135deg); }
+.story .cmp input:focus-visible ~ .cmp-bar b, .story .cmp:has(input:focus-visible) .cmp-bar b { box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--gold); }
+.story .cmp-l { position: absolute; top: 10px; padding: 2px 8px; border-radius: 6px; background: var(--s-ink); color: #fff; font: 400 11px/16px var(--mono); pointer-events: none; }
+.story .cmp-l.l { left: 10px; }
+.story .cmp-l.r { right: 10px; }
+
+/* a stepper through images */
+.story .m-views .pills { margin: 0 0 14px; }
+.story .m-grid { display: grid; gap: 12px; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); align-items: start; }
+@media (max-width: 639px) { .story .m-grid { grid-template-columns: minmax(0, 1fr); } }
+.story .m-pic img { display: block; width: 100%; height: auto; border-radius: 10px; box-shadow: var(--s-ring); }
+.story .m-pic figcaption { font-size: 13px; color: var(--s-muted); margin-top: 6px; }
+.story .m-say { margin: 12px 0 0; font: 400 15px/1.35 var(--hand); color: var(--s-body); min-height: 2.7em; }
+
+/* the timeline strip */
+.story .tl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 12px; }
+.story .tl-strip { position: relative; min-width: 760px; height: 216px; border-radius: 12px; box-shadow: var(--s-ring); background: #fff; overflow: hidden; }
+.story .tl-night { position: absolute; top: 0; bottom: 0; background: var(--s-sunken); }
+.story .tl-day { position: absolute; bottom: 8px; margin-left: 10px; font: 400 12px/16px var(--mono); color: var(--s-muted); white-space: nowrap; }
+.story .tl-line { position: absolute; left: 0; right: 0; top: 92px; width: 100%; height: 8px; overflow: visible; }
+.story .tl-line path { fill: none; stroke: var(--s-ink); stroke-width: 1.6; vector-effect: non-scaling-stroke; stroke-linecap: round; }
+.story .tl-tick { position: absolute; top: 96px; width: 20px; margin-left: -10px; display: flex; justify-content: center; }
+.story .tl-tick::before { content: ""; position: absolute; left: 50%; width: 1px; margin-left: -.5px; background: color-mix(in srgb, var(--ink) 35%, transparent); }
+.story .tl-tick::after { content: ""; position: absolute; left: 50%; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--s-ink); background: #fff; transition: scale 150ms var(--ease); }
+.story .tl-tick.up { height: calc(16px + var(--lv) * 18px); transform: translateY(-100%); }
+.story .tl-tick.up::before { top: 5px; bottom: 0; }
+.story .tl-tick.up::after { top: 0; background: var(--gold); }
+.story .tl-tick.down { height: calc(16px + var(--lv) * 14px); }
+.story .tl-tick.down::before { top: 0; bottom: 5px; }
+.story .tl-tick.down::after { bottom: 0; }
+.story .tl-tick.pick::after { background: var(--azure); box-shadow: 0 0 0 1.5px #fff; }
+.story .tl-tick.start::after { background: var(--s-ink); }
+.story .tl-tick span { position: absolute; top: -3px; left: 19px; font: 400 11px/14px var(--mono); color: var(--s-ink); white-space: nowrap; }
+.story .tl-tick.on::after { scale: 1.5; }
+.story .tl-tick.on span { font-weight: 600; }
+@media (hover: hover) and (pointer: fine) { .story .tl-tick:hover::after { scale: 1.35; } }
+.story .tl-say { margin: 12px 0 0; font: 400 15px/1.35 var(--hand); color: var(--s-body); min-height: 2.7em; }
+.story .tl-say time { font: 400 12px/1 var(--mono); color: var(--s-muted); margin-right: 6px; }
+.story .tl-key { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--s-muted); }
+.story .tl-key span { display: inline-flex; align-items: center; gap: 6px; }
+.story .tl-key i { width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--s-ink); background: #fff; }
+.story .tl-key i.pr { background: var(--gold); }
+.story .tl-key i.pick { background: var(--azure); box-shadow: none; }
+.story .tl-key i.night { border-radius: 2px; background: var(--s-sunken); box-shadow: none; width: 14px; }
+.story .tl .pills { margin-top: 20px; }
+.story .day li.pick time { color: var(--azure); }
+.story .day li.pr time { color: var(--warn-ink); }
+.story .day li.on { background: var(--s-soft); box-shadow: -8px 0 0 var(--s-soft), 8px 0 0 var(--s-soft); }
+
+/* the picks table: a pick that went against the recommendation is marked */
+.story .tbl .yours { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 9999px; font-size: 11px; line-height: 18px; background: var(--s-mark); color: var(--warn-ink); white-space: nowrap; }
+.story .tbl .rec { display: block; font-size: 12px; color: var(--s-muted); }
+.story .tbl td.when { font: 400 12px/19px var(--mono); color: var(--s-muted); white-space: nowrap; }
+.story .vgrid { display: grid; grid-template-columns: 72px repeat(3, minmax(0, 1fr)); gap: 8px 10px; align-items: start; font-size: 13px; }
+.story .vgrid .h { font-weight: 600; color: var(--s-ink); font-size: 12px; }
+.story .vgrid .shot { color: var(--s-ink); font-weight: 600; padding-top: 4px; }
+.story .vgrid figure img { display: block; width: 100%; height: auto; border-radius: 8px; box-shadow: var(--s-ring); }
+.story .vgrid figcaption { margin-top: 4px; font: 400 13px/1.25 var(--hand); color: var(--s-muted); }
+.story .vgrid figcaption.bad { color: var(--bad); }
+@media (max-width: 639px) { .story .vgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .story .vgrid .shot { grid-column: 1 / -1; } .story .vgrid .corner { display: none; } }
