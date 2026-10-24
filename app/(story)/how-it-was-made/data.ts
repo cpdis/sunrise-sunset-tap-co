@@ -20,7 +20,7 @@ export const START = "2026-10-22 08:55";
 export const ASKED = "2026-10-24 20:10";
 
 export const moments: Moment[] = [
-  { at: "2026-10-22 08:55", kind: "start", say: "Colin starts the project: a co-owned tap truck for Perth, hired out dry. Three rounds of questions set the business rules." },
+  { at: "2026-10-22 08:55", kind: "start", say: "The project starts: a co-owned tap truck for Perth, hired out dry. Three rounds of questions set the business rules." },
   { at: "2026-10-22 09:52", kind: "pick", say: "The name: Sunrise Sunset Tap Co., after the hill the run club runs over on Wednesdays. Cold brew in the morning, beer at night." },
   { at: "2026-10-22 10:12", kind: "pick", say: "Buy nothing and set up nothing yet. The domain waits, and every payment, text and bank transfer is simulated." },
   { at: "2026-10-22 10:37", say: "The first build: the site, booking, the agent, a simulated checkout and the owners' admin. 45 files, 5,830 lines." },
@@ -34,7 +34,7 @@ export const moments: Moment[] = [
   { at: "2026-10-22 12:55", kind: "pick", say: "11 judgement calls from the reviews. All owners are directors, the promised texts are cut, the rest take the default." },
   { at: "2026-10-22 13:56", kind: "pr", pr: 1, say: "#1 merges the review fixes: money held until the hire, runner fees, the agent's routing. 28 tests." },
   { at: "2026-10-22 13:57", kind: "pr", pr: 2, say: "#2 adds the repo's agent rules (AGENTS.md)." },
-  { at: "2026-10-22 14:02", kind: "pr", pr: 5, say: "#4 and #5: Colin's copy edits, and delivery measured from the Perth CBD." },
+  { at: "2026-10-22 14:02", kind: "pr", pr: 5, say: "#4 and #5: the copy edits, and delivery measured from the Perth CBD." },
   { at: "2026-10-22 14:46", kind: "pick", say: "Stills only for now: no runners in the hero, and all 8 taps on the truck's rear." },
   { at: "2026-10-22 15:20", kind: "pick", say: "Hero A2 and truck B1 from the third round of stills." },
   { at: "2026-10-22 15:55", say: "The new stills become Seedance loops." },
@@ -42,7 +42,7 @@ export const moments: Moment[] = [
   { at: "2026-10-22 16:43", say: "\"It feels more AI generated.\" Three hand-made options: Ticket, Hand-cut and Luggage label." },
   { at: "2026-10-22 17:20", kind: "pick", say: "Hand-cut." },
   { at: "2026-10-22 21:11", say: "Polish round 3. \"Text us\" becomes \"Chat\". An article on agent-native apps leads to an agent for the owners." },
-  { at: "2026-10-22 21:42", kind: "pick", say: "The play and pause button comes off the loops. Colin accepts the WCAG 2.2.2 miss." },
+  { at: "2026-10-22 21:42", kind: "pick", say: "The play and pause button comes off the loops, accepting the WCAG 2.2.2 miss." },
   { at: "2026-10-22 21:46", kind: "pr", pr: 6, say: "#6 merges the polish pass and the rear-tap loops, with #7 Hand-cut inside it." },
   { at: "2026-10-22 22:34", kind: "pr", pr: 8, say: "#8: the owner SMS agent, with everything the admin can do. 40 tests." },
   { at: "2026-10-22 22:36", kind: "pr", pr: 9, say: "#9: the admin's type scale and sections." },
@@ -62,7 +62,7 @@ export const moments: Moment[] = [
   { at: "2026-10-23 16:19", kind: "pick", say: "Claude Managed Agents: more than this needs. Keep the Messages API loop and Vercel Cron." },
   { at: "2026-10-23 16:38", kind: "pick", say: "Answer engine research. Keep the demo out of search until there is a real domain." },
   { at: "2026-10-23 17:09", kind: "pick", say: "The new goal: production grade and bulletproof, built so it could serve other businesses later." },
-  { at: "2026-10-23 17:36", say: "The red team, run on Colin's Mac by three models: 3 critical and 12 high findings." },
+  { at: "2026-10-23 17:36", say: "The red team, run on a local Mac by three models: 3 critical and 12 high findings." },
   { at: "2026-10-23 18:03", say: "The fix plan: 5 reviewers, 33 findings, 13 corrections to the first plan." },
   { at: "2026-10-23 18:22", kind: "pick", say: "A demo for other businesses is out of scope. DEMO_MODE turns the demo parts on and off." },
   { at: "2026-10-23 20:42", kind: "pr", pr: 19, say: "#19, phase 1: the quick fixes. 173 tests. The 6 attacks it covers now fail." },
@@ -72,7 +72,7 @@ export const moments: Moment[] = [
   { at: "2026-10-24 14:24", say: "Each deploy runs its own database migrations first." },
   { at: "2026-10-24 14:45", kind: "pr", pr: 20, say: "#20, phase 2: data on the server, signed texts, owner sign-in and approvals. 360 tests." },
   { at: "2026-10-24 15:07", kind: "pr", pr: 18, say: "#18: the explainer and the business plan pages." },
-  { at: "2026-10-24 20:10", kind: "start", say: "Colin asks for this page." },
+  { at: "2026-10-24 20:10", kind: "start", say: "This page is asked for." },
 ].sort((a, b) => a.at.localeCompare(b.at)) as Moment[];
 
 // Every pull request, as GitHub records it (UTC).
@@ -187,3 +187,88 @@ export const bakeoff = {
     { shot: "Run club", imgs: ["v-runclub-kling", "v-runclub-gemini-omni", "v-runclub-seedance"], say: ["Strongest overall", "The truck's box vanishes mid-clip", "Solid"] },
   ],
 };
+
+// Every project thread, from when it started to its last activity (UTC, from the project).
+export type Kind = "build" | "review" | "media" | "plan";
+export interface Thread {
+  t: string;
+  kind: Kind;
+  from: string;
+  to: string;
+  prs?: number[];
+  made: string;
+}
+
+export const threads: Thread[] = [
+  { t: "Tap truck business plan", kind: "plan", from: "2026-10-22T00:55:54Z", to: "2026-10-22T03:34:44Z", made: "The interviews, the name, the business rules and the first build of the demo." },
+  { t: "Brand imagery and video", kind: "media", from: "2026-10-22T01:58:01Z", to: "2026-10-22T02:44:28Z", made: "Photoreal stills, fixed with GPT Image 2 and Nano Banana 2.1, and the three-model video bake-off." },
+  { t: "Brand video", kind: "media", from: "2026-10-22T02:44:29Z", to: "2026-10-22T03:41:37Z", made: "Golden Hour loops and an 18 s spot. Seedance beat Kling for flat motion. Then video went on hold." },
+  { t: "Design language", kind: "build", from: "2026-10-22T02:55:37Z", to: "2026-10-22T03:22:29Z", made: "Two directions, Golden Hour and Hill Repeats, and the restyle." },
+  { t: "Design and build review (Fable)", kind: "review", from: "2026-10-22T03:41:36Z", to: "2026-10-22T04:02:57Z", made: "20 findings, 6 of them high." },
+  { t: "Design and build review (Opus)", kind: "review", from: "2026-10-22T03:41:41Z", to: "2026-10-22T03:59:49Z", made: "28 findings, 3 of them critical." },
+  { t: "Site copy editor", kind: "build", from: "2026-10-22T04:02:57Z", to: "2026-10-22T08:40:17Z", prs: [3, 4, 5], made: "The copy deck: 428 strings, 117 flagged. Six edits came back and landed." },
+  { t: "Review fixes", kind: "build", from: "2026-10-22T04:53:27Z", to: "2026-10-22T05:56:42Z", prs: [1], made: "Both reviews merged into one list, 11 judgement calls, 28 tests." },
+  { t: "Agent setup adoption", kind: "build", from: "2026-10-22T05:44:14Z", to: "2026-10-22T05:57:23Z", prs: [2], made: "The repo's agent rules, AGENTS.md." },
+  { t: "Site polish pass", kind: "build", from: "2026-10-22T06:18:26Z", to: "2026-10-22T13:46:51Z", prs: [6], made: "Three polish rounds, Emil Kowalski's motion guidance and the rear-tap loops." },
+  { t: "Hand-made feel", kind: "build", from: "2026-10-22T08:44:09Z", to: "2026-10-22T13:17:40Z", prs: [7], made: "Ticket, Hand-cut and Luggage label. Hand-cut shipped." },
+  { t: "Owner SMS agent", kind: "build", from: "2026-10-22T13:37:10Z", to: "2026-10-23T07:06:44Z", prs: [8, 11], made: "The owner agent, with everything the admin can do, then the queue by text." },
+  { t: "Brief business plan", kind: "plan", from: "2026-10-22T13:51:14Z", to: "2026-10-22T14:08:10Z", made: "The business plan artifact, with wrapped photos of the real truck." },
+  { t: "Owner admin", kind: "build", from: "2026-10-22T14:03:59Z", to: "2026-10-22T14:36:14Z", prs: [9], made: "Seven points of admin feedback: the type scale and sections." },
+  { t: "Inbox page review", kind: "review", from: "2026-10-22T14:16:20Z", to: "2026-10-23T06:53:40Z", prs: [10], made: "A Fable review with 19 findings, then option C: the decision queue." },
+  { t: "Hero and chat button width", kind: "build", from: "2026-10-22T14:54:02Z", to: "2026-10-22T15:20:12Z", prs: [12], made: "The hero and Chat line up with the page. Every CTA says Book." },
+  { t: "Hero video upscale", kind: "media", from: "2026-10-22T15:06:25Z", to: "2026-10-22T15:21:42Z", prs: [13], made: "Topaz Starlight Precise 2.6 restores the soft loops, about $1.70." },
+  { t: "Domain availability", kind: "plan", from: "2026-10-23T04:21:52Z", to: "2026-10-23T04:24:33Z", made: "What the domains would cost. None bought." },
+  { t: "Vercel and Cloudflare access", kind: "plan", from: "2026-10-23T04:25:26Z", to: "2026-10-23T04:54:39Z", made: "The cpd.dev subdomain, set up by hand." },
+  { t: "OG image logo", kind: "build", from: "2026-10-23T04:55:46Z", to: "2026-10-23T05:01:54Z", prs: [14], made: "Four share images, option A shipped." },
+  { t: "Vercel Web Analytics", kind: "build", from: "2026-10-23T05:07:39Z", to: "2026-10-23T05:24:08Z", prs: [15], made: "Analytics on." },
+  { t: "Payback chart styling", kind: "build", from: "2026-10-23T05:32:19Z", to: "2026-10-23T07:22:56Z", prs: [16], made: "Closed: the white console replaced it." },
+  { t: "Owner admin restyle", kind: "build", from: "2026-10-23T06:01:48Z", to: "2026-10-23T07:23:25Z", prs: [17], made: "The white console, in Geist." },
+  { t: "Admin restyle review (Fable)", kind: "review", from: "2026-10-23T06:28:05Z", to: "2026-10-23T06:42:38Z", made: "26 findings, all accepted." },
+  { t: "Inbox queue and SMS review", kind: "review", from: "2026-10-23T06:38:14Z", to: "2026-10-23T06:44:52Z", made: "A review of the queue and the owner texts before merge." },
+  { t: "How it works site", kind: "build", from: "2026-10-23T07:23:14Z", to: "2026-10-24T07:07:31Z", prs: [18], made: "The explainer and the plan pages, and the hand-drawn diagram engine." },
+  { t: "Claude Managed Agents fit", kind: "plan", from: "2026-10-23T08:19:25Z", to: "2026-10-23T08:21:04Z", made: "More than this needs. Keep the Messages API loop." },
+  { t: "Answer engine optimisation", kind: "plan", from: "2026-10-23T08:38:56Z", to: "2026-10-23T08:55:27Z", made: "Research on how AI answers find tap hire. Noindex until a real domain." },
+  { t: "Agent adversarial review", kind: "review", from: "2026-10-23T08:58:36Z", to: "2026-10-24T06:59:20Z", prs: [19, 20], made: "The red team, the fix plan and both hardening PRs. 360 tests." },
+  { t: "Show how the project was made", kind: "build", from: "2026-10-24T12:10:44Z", to: "2026-10-24T13:40:00Z", prs: [21], made: "This page." },
+];
+
+// When each PR merged, for the marks on the bars (UTC).
+export const mergedAt = (n: number) => prs.find((p) => p.n === n)?.merged;
+
+// Token use per session, from each session's usage record on 24 Oct. Cost is at API list prices.
+export interface Spend { t: string; model: "opus" | "fable"; coord?: boolean; cacheRead: number; cacheWrite: number; input: number; output: number; cost: number }
+export const spend: Spend[] = [
+  { t: "Coordinator (1)", model: "opus", coord: true, cacheRead: 29737727, cacheWrite: 262933, input: 6106, output: 50574, cost: 9.48 },
+  { t: "Tap truck business plan", model: "opus", cacheRead: 55542481, cacheWrite: 739444, input: 82636, output: 286479, cost: 28.68 },
+  { t: "Brand imagery and video", model: "opus", cacheRead: 1231717, cacheWrite: 63894, input: 28, output: 5129, cost: 1.11 },
+  { t: "Brand video", model: "opus", cacheRead: 14505375, cacheWrite: 241629, input: 1822, output: 47832, cost: 6.93 },
+  { t: "Design language", model: "opus", cacheRead: 8935103, cacheWrite: 243355, input: 22082, output: 73716, cost: 6.33 },
+  { t: "Design and build review (Fable)", model: "fable", cacheRead: 6865247, cacheWrite: 368432, input: 773, output: 70106, cost: 13.2 },
+  { t: "Design and build review (Opus)", model: "opus", cacheRead: 11737657, cacheWrite: 412133, input: 2283, output: 89148, cost: 7.93 },
+  { t: "Site copy editor", model: "opus", cacheRead: 27097955, cacheWrite: 894706, input: 4005, output: 119842, cost: 18.09 },
+  { t: "Review fixes", model: "opus", cacheRead: 29695551, cacheWrite: 456362, input: 5786, output: 138111, cost: 14.49 },
+  { t: "Agent setup adoption", model: "opus", cacheRead: 5318279, cacheWrite: 153185, input: 1740, output: 32261, cost: 3.53 },
+  { t: "Site polish pass", model: "opus", cacheRead: 56651814, cacheWrite: 653750, input: 22270, output: 124494, cost: 23.02 },
+  { t: "Hand-made feel", model: "fable", cacheRead: 13685663, cacheWrite: 481338, input: 3532, output: 57547, cost: 17.47 },
+  { t: "Owner SMS agent", model: "opus", cacheRead: 44114570, cacheWrite: 812828, input: 2891, output: 131692, cost: 21.27 },
+  { t: "Brief business plan", model: "opus", cacheRead: 13628731, cacheWrite: 222230, input: 1841, output: 53091, cost: 6.79 },
+  { t: "Owner admin", model: "opus", cacheRead: 17899380, cacheWrite: 255715, input: 1833, output: 50829, cost: 7.53 },
+  { t: "Inbox page review", model: "fable", cacheRead: 21632200, cacheWrite: 568198, input: 2246, output: 88681, cost: 23.05 },
+  { t: "Coordinator (2)", model: "opus", coord: true, cacheRead: 12325229, cacheWrite: 296987, input: 2156, output: 28153, cost: 5.53 },
+  { t: "Hero and chat button width", model: "opus", cacheRead: 7104192, cacheWrite: 135592, input: 1800, output: 18581, cost: 3.36 },
+  { t: "Hero video upscale", model: "opus", cacheRead: 8954763, cacheWrite: 147579, input: 17143, output: 29691, cost: 4.26 },
+  { t: "Domain availability", model: "opus", cacheRead: 926898, cacheWrite: 70671, input: 1723, output: 5507, cost: 1.19 },
+  { t: "Vercel and Cloudflare access", model: "opus", cacheRead: 2249454, cacheWrite: 77778, input: 1705, output: 8994, cost: 2.04 },
+  { t: "OG image logo", model: "opus", cacheRead: 4101467, cacheWrite: 124084, input: 1735, output: 16734, cost: 2.54 },
+  { t: "Vercel Web Analytics", model: "opus", cacheRead: 6304686, cacheWrite: 112256, input: 1782, output: 14718, cost: 3.13 },
+  { t: "Payback chart styling", model: "opus", cacheRead: 5283918, cacheWrite: 263570, input: 1797, output: 18017, cost: 3.94 },
+  { t: "Coordinator (3)", model: "opus", coord: true, cacheRead: 16012112, cacheWrite: 179787, input: 1656, output: 46577, cost: 5.74 },
+  { t: "Owner admin restyle", model: "opus", cacheRead: 49515760, cacheWrite: 511152, input: 17686, output: 152100, cost: 20.6 },
+  { t: "Admin restyle review (Fable)", model: "fable", cacheRead: 8017491, cacheWrite: 261205, input: 1257, output: 50325, cost: 10.37 },
+  { t: "Inbox queue and SMS review", model: "fable", cacheRead: 3773252, cacheWrite: 191046, input: 2400, output: 24163, cost: 6.37 },
+  { t: "How it works site", model: "opus", cacheRead: 63677911, cacheWrite: 1288142, input: 9250, output: 198842, cost: 31.09 },
+  { t: "Claude Managed Agents fit", model: "opus", cacheRead: 1504287, cacheWrite: 133262, input: 1707, output: 5380, cost: 1.7 },
+  { t: "Answer engine optimisation", model: "opus", cacheRead: 3979567, cacheWrite: 159973, input: 317021, output: 54527, cost: 3.88 },
+  { t: "Show how the project was made", model: "opus", cacheRead: 24242664, cacheWrite: 549367, input: 4775, output: 102703, cost: 12.6 },
+  { t: "Coordinator (4)", model: "opus", coord: true, cacheRead: 5067929, cacheWrite: 167404, input: 2791, output: 10931, cost: 2.63 },
+];

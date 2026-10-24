@@ -7,8 +7,8 @@ export const setup: SketchConfig = {
   mh: 760,
   mw: 100,
   nodes: [
-    { id: "colin", t: "Colin", s: "Claude app, phone or Mac", at: [0.14, 60], note: "Asks in plain words, answers decision cards, merges PRs. Never writes code." },
-    { id: "coord", t: "Coordinator", s: "the project chat", hub: true, at: [0.5, 60], note: "A Claude that talks with Colin, starts a thread for each job and keeps project memory." },
+    { id: "colin", t: "Owner", s: "Claude app, phone or Mac", at: [0.14, 60], note: "Asks in plain words, answers decision cards, merges PRs. Never writes code." },
+    { id: "coord", t: "Coordinator", s: "the project chat", hub: true, at: [0.5, 60], note: "A Claude in the project chat. It starts a thread for each job and keeps project memory." },
     { id: "cards", t: "Decision cards", s: "options and a default", at: [0.14, 195], note: "One question, two to four options, one recommended. The thread keeps working on the default while it waits." },
     { id: "threads", t: "Threads", s: "one per job", hub: true, at: [0.5, 195], note: "Each thread is a Claude Code session in its own cloud container, with the repo cloned. 29 of them before this page." },
     { id: "memory", t: "Memory and files", s: "shared by every thread", at: [0.86, 195], note: "Project memory holds the decisions. /mnt/project-files holds the reviews, imagery and screenshots." },
@@ -16,8 +16,8 @@ export const setup: SketchConfig = {
     { id: "pr", t: "Pull request", s: "GitHub", at: [0.5, 330], note: "Every change is a branch and a PR. Typecheck, tests and a build run before each push. Screenshots at 375, 768 and 1440 px for UI." },
     { id: "fal", t: "Fal", s: "images and video", at: [0.86, 330], note: "Connected as an MCP server. Rule after the -$36 overrun: a cost estimate before every batch." },
     { id: "preview", t: "Vercel preview", s: "every push", at: [0.14, 465], note: "Each PR gets its own preview URL to click through before merging." },
-    { id: "live", t: "Live demo", s: "main deploys itself", at: [0.5, 465], note: "Colin merges. Vercel deploys main and runs the database migrations first." },
-    { id: "mac", t: "Colin's Mac", s: "Remote Control", at: [0.86, 465], note: "Some work runs on Colin's own machine, with his tools and CLIs." },
+    { id: "live", t: "Live demo", s: "main deploys itself", at: [0.5, 465], note: "An owner merges. Vercel deploys main and runs the database migrations first." },
+    { id: "mac", t: "A local Mac", s: "Remote Control", at: [0.86, 465], note: "Some work runs on a real machine, with its own tools and CLIs." },
     { id: "counsel", t: "/counselors", s: "Fable, Codex, Gemini", at: [0.86, 595], note: "One prompt to three models from three labs. Used for the red team and the auth review." },
   ],
   edges: [
@@ -38,28 +38,28 @@ export const setup: SketchConfig = {
     {
       label: "A change",
       steps: [
-        { say: "Colin asks the coordinator for a change.", go: ["colin", "coord"], tag: "make a page" },
+        { say: "An owner asks the coordinator for a change.", go: ["colin", "coord"], tag: "make a page" },
         { say: "The coordinator starts a thread for it.", go: ["coord", "threads"] },
         { say: "The thread builds it, runs the checks and opens a PR.", go: ["threads", "pr"], tag: "PR" },
         { say: "Vercel builds a preview of the PR.", go: ["pr", "preview"] },
-        { say: "Colin looks, then merges. Main deploys itself.", go: ["pr", "live"], tag: "merged" },
+        { say: "The owner looks, then merges. Main deploys itself.", go: ["pr", "live"], tag: "merged" },
       ],
     },
     {
       label: "A choice",
       steps: [
-        { say: "A choice changes the goal, so it is Colin's. The thread posts a card with a default.", go: ["threads", "cards"], tag: "A or B?" },
-        { say: "Colin picks.", go: ["cards", "colin"], tag: "B" },
+        { say: "A choice changes the goal, so a person makes it. The thread posts a card with a default.", go: ["threads", "cards"], tag: "A or B?" },
+        { say: "The owner picks.", go: ["cards", "colin"], tag: "B" },
         { say: "The pick goes to project memory, so the next thread knows it.", go: ["colin", "coord", "threads", "memory"], tag: "saved" },
       ],
     },
     {
       label: "A review",
       steps: [
-        { say: "A thread starts Remote Control on Colin's Mac.", go: ["threads", "mac"] },
+        { say: "A thread starts Remote Control on the Mac.", go: ["threads", "mac"] },
         { say: "Three models read the code on their own and attack it.", go: ["mac", "counsel"], tag: "3 models" },
         { say: "Their findings come back, are checked and become a plan.", go: ["counsel", "mac", "threads"], tag: "findings" },
-        { say: "The plan is an artifact Colin reads.", go: ["threads", "art"] },
+        { say: "The plan comes back as an artifact.", go: ["threads", "art"] },
       ],
     },
   ],

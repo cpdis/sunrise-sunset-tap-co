@@ -1,7 +1,7 @@
 "use client";
 
-// Widgets for the making-of page: a before/after slider, a stepper through images, and the timeline strip.
-import { useMemo, useState } from "react";
+// Widgets for the making-of page: a before/after slider, a stepper through images, and the threads as a Gantt chart.
+import { useState } from "react";
 
 export interface Img {
   src: string;
@@ -68,102 +68,103 @@ export function Views({ views }: { views: View[] }) {
   );
 }
 
-// ---------- the timeline ----------
+// ---------- the threads, as a Gantt chart ----------
 
-export interface Mark {
-  at: string;
-  say: string;
-  kind?: "pr" | "pick" | "start";
-  pr?: number;
-  href?: string;
+export interface Row {
+  t: string;
+  kind: "build" | "review" | "media" | "plan";
+  from: string;
+  to: string;
+  made: string;
+  prs: { n: number; title: string; at?: string; href: string; note?: string }[];
 }
 
-const t = (at: string) => new Date(at.replace(" ", "T") + ":00+08:00").getTime();
-const DAY = 864e5;
+const HOUR = 36e5;
+const perthHour = (ms: number) => new Date(ms + 8 * HOUR).getUTCHours();
+const when = (ms: number, withDay = true) =>
+  new Date(ms).toLocaleString("en-AU", { ...(withDay ? { weekday: "short", day: "numeric", month: "short" } : {}), hour: "numeric", minute: "2-digit", timeZone: "Australia/Perth" });
+function span(ms: number) {
+  const m = Math.max(1, Math.round(ms / 6e4));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60), r = m % 60;
+  return r && h < 10 ? `${h} h ${r} min` : `${Math.round(m / 60)} h`;
+}
 
-export function Timeline({ marks, from, to }: { marks: Mark[]; from: string; to: string }) {
-  const t0 = t(from), t1 = t(to);
-  const pct = (at: string) => ((t(at) - t0) / (t1 - t0)) * 100;
-  const days = useMemo(() => [...new Set(marks.map((m) => m.at.slice(0, 10)))], [marks]);
+export function Gantt({ rows, from, to }: { rows: Row[]; from: string; to: string }) {
+  const t0 = Date.parse(from), t1 = Date.parse(to);
+  const x = (ms: number) => ((ms - t0) / (t1 - t0)) * 100;
   const [sel, setSel] = useState(0);
-  const [day, setDay] = useState(days[0]);
-  const m = marks[sel];
+  const r = rows[sel];
 
-  // Ticks that would touch climb a level, so each one can still be pressed.
-  const last: Record<string, number[]> = {};
-  const levels = marks.map((k) => {
-    const side = k.kind === "pr" ? "up" : "down";
-    const p = pct(k.at);
-    const used = (last[side] ??= []);
-    let lv = 0;
-    while (used[lv] !== undefined && p - used[lv] < 1.6) lv++;
-    used[lv] = p;
-    return lv;
-  });
-
-  // Night, 22:00 to 07:00, drawn as a soft band.
-  const nights: number[][] = [];
-  for (let d = new Date(from.slice(0, 10) + "T22:00:00+08:00").getTime(); d < t1; d += DAY) {
-    const l = Math.max(0, ((d - t0) / (t1 - t0)) * 100), r = Math.min(100, ((d + 9 * 36e5 - t0) / (t1 - t0)) * 100);
-    if (r > l) nights.push([l, r]);
-  }
-  const fmt = (at: string) => new Date(t(at)).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", timeZone: "Australia/Perth" });
-
-  function pick(k: number) {
-    setSel(k);
-    setDay(marks[k].at.slice(0, 10));
+  // Night in Perth, 22:00 to 07:00, and a tick every six hours of Perth time.
+  const nights: [number, number][] = [];
+  const ticks: { at: number; label: string; day: boolean }[] = [];
+  for (let ms = Math.ceil(t0 / HOUR) * HOUR; ms <= t1; ms += HOUR) {
+    const h = perthHour(ms);
+    if (h === 22) nights.push([x(ms), Math.min(100, x(ms + 9 * HOUR))]);
+    if (h % 6 === 0) ticks.push({ at: x(ms), day: h === 0, label: h === 0 ? new Date(ms).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", timeZone: "Australia/Perth" }) : `${h}:00` });
   }
 
   return (
-    <div className="tl">
-      <div className="tl-scroll">
-        <div className="tl-strip">
-          {nights.map(([l, r], k) => <i key={k} className="tl-night" style={{ left: `${l}%`, width: `${r - l}%` }} />)}
-          {days.map((d) => (
-            <span key={d} className="tl-day" style={{ left: `${Math.max(0, pct(d + " 00:00"))}%` }}>{fmt(d + " 12:00")}</span>
-          ))}
-          <svg className="tl-line" viewBox="0 0 1000 8" preserveAspectRatio="none" aria-hidden="true">
-            <path d="M2 4 C 120 2.6, 260 5.4, 400 3.8 S 700 2.8, 840 4.6 S 960 3.4, 998 4" />
-          </svg>
-          {marks.map((k, i) => (
-            <button
-              key={k.at + i}
-              type="button"
-              className={`tl-tick ${k.kind ?? "say"} ${k.kind === "pr" ? "up" : "down"}${i === sel ? " on" : ""}`}
-              style={{ left: `${pct(k.at)}%`, ["--lv" as string]: levels[i] }}
-              aria-label={`${k.at.slice(11)}, ${k.say}`}
-              aria-pressed={i === sel}
-              onClick={() => pick(i)}
-            >
-              {k.kind === "pr" && <span>#{k.pr}</span>}
-            </button>
-          ))}
+    <div className="gt">
+      <div className="gt-scroll">
+        <div className="gt-chart" role="list" aria-label="Project threads, start to finish">
+          <div className="gt-axis" aria-hidden="true">
+            <span className="gt-name" />
+            <span className="gt-track">
+              {ticks.map((k) => <i key={k.at} className={k.day ? "day" : ""} style={{ left: `${k.at}%` }}>{k.label !== "6:00" && <b>{k.label}</b>}</i>)}
+            </span>
+          </div>
+          <div className="gt-body">
+            <span className="gt-bg" aria-hidden="true">
+              {nights.map(([l, rr]) => <i key={l} className="night" style={{ left: `${l}%`, width: `${rr - l}%` }} />)}
+              {ticks.filter((k) => k.day).map((k) => <i key={k.at} className="rule" style={{ left: `${k.at}%` }} />)}
+            </span>
+            {rows.map((row, i) => {
+              const a = Date.parse(row.from), b = Date.parse(row.to);
+              const late = x(b) > 82;
+              const nums = row.prs.map((p) => `#${p.n}`).join(" ");
+              return (
+                <button
+                  key={row.t}
+                  type="button"
+                  role="listitem"
+                  className={`gt-row${i === sel ? " on" : ""}`}
+                  aria-pressed={i === sel}
+                  aria-label={`${row.t}, ${when(a)} for ${span(b - a)}${nums ? `, ${nums}` : ""}`}
+                  onClick={() => setSel(i)}
+                >
+                  <span className="gt-name">{row.t}</span>
+                  <span className="gt-track">
+                    <i className={`gt-bar ${row.kind}`} style={{ left: `${x(a)}%`, width: `max(4px, ${x(b) - x(a)}%)` }} />
+                    {row.prs.filter((p) => p.at).map((p) => <i key={p.n} className="gt-pr" style={{ left: `${x(Date.parse(p.at!))}%` }} />)}
+                    {nums && (
+                      <b className={`gt-nums${late ? " before" : ""}`} style={late ? { right: `calc(${100 - x(a)}% + 8px)` } : { left: `calc(${x(b)}% + 10px)` }}>{nums}</b>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
-      <p className="tl-say" aria-live="polite"><time>{fmt(m.at)}, {m.at.slice(11)}</time> {m.say}</p>
-      <div className="tl-key" aria-hidden="true">
-        <span><i className="pr" /> merged PR</span>
-        <span><i className="pick" /> Colin&apos;s pick</span>
-        <span><i className="say" /> what happened</span>
-        <span><i className="night" /> night</span>
+      <div className="gt-key" aria-hidden="true">
+        <span><i className="build" /> build</span>
+        <span><i className="review" /> review</span>
+        <span><i className="media" /> pictures and video</span>
+        <span><i className="plan" /> plan and research</span>
+        <span><i className="pr" /> PR merged</span>
+        <span><i className="night" /> night in Perth</span>
       </div>
-      <div className="pills" role="group" aria-label="Pick a day">
-        <div className="track">
-          {days.map((d) => (
-            <button key={d} type="button" aria-pressed={d === day} onClick={() => setDay(d)}>{fmt(d + " 12:00")}</button>
-          ))}
-        </div>
-      </div>
-      <ul className="day">
-        {marks.map((k, i) =>
-          k.at.startsWith(day) ? (
-            <li key={k.at + i} className={`${k.kind ?? ""}${i === sel ? " on" : ""}`}>
-              <time>{k.at.slice(11)}</time>
-              <span>{k.href ? <a href={k.href}>{k.say}</a> : k.say}</span>
-            </li>
-          ) : null,
+      <div className="gt-say" aria-live="polite">
+        <p className="gt-h"><b>{r.t}</b> <time>{when(Date.parse(r.from))} to {when(Date.parse(r.to), new Date(Date.parse(r.from) + 8 * HOUR).getUTCDate() !== new Date(Date.parse(r.to) + 8 * HOUR).getUTCDate())}, {span(Date.parse(r.to) - Date.parse(r.from))}</time></p>
+        <p>{r.made}</p>
+        {r.prs.length > 0 && (
+          <ul>
+            {r.prs.map((p) => <li key={p.n}><a href={p.href}>#{p.n}</a> {p.title}{p.note ? ` (${p.note})` : ""}</li>)}
+          </ul>
         )}
-      </ul>
+      </div>
     </div>
   );
 }

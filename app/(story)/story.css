@@ -343,37 +343,50 @@ html:has(.story) body { background: #fff; }
 .story .m-pic figcaption { font-size: 13px; color: var(--s-muted); margin-top: 6px; }
 .story .m-say { margin: 12px 0 0; font: 400 15px/1.35 var(--hand); color: var(--s-body); min-height: 2.7em; }
 
-/* the timeline strip */
-.story .tl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 12px; }
-.story .tl-strip { position: relative; min-width: 760px; height: 216px; border-radius: 12px; box-shadow: var(--s-ring); background: #fff; overflow: hidden; }
-.story .tl-night { position: absolute; top: 0; bottom: 0; background: var(--s-sunken); }
-.story .tl-day { position: absolute; bottom: 8px; margin-left: 10px; font: 400 12px/16px var(--mono); color: var(--s-muted); white-space: nowrap; }
-.story .tl-line { position: absolute; left: 0; right: 0; top: 92px; width: 100%; height: 8px; overflow: visible; }
-.story .tl-line path { fill: none; stroke: var(--s-ink); stroke-width: 1.6; vector-effect: non-scaling-stroke; stroke-linecap: round; }
-.story .tl-tick { position: absolute; top: 96px; width: 20px; margin-left: -10px; display: flex; justify-content: center; }
-.story .tl-tick::before { content: ""; position: absolute; left: 50%; width: 1px; margin-left: -.5px; background: color-mix(in srgb, var(--ink) 35%, transparent); }
-.story .tl-tick::after { content: ""; position: absolute; left: 50%; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--s-ink); background: #fff; transition: scale 150ms var(--ease); }
-.story .tl-tick.up { height: calc(16px + var(--lv) * 18px); transform: translateY(-100%); }
-.story .tl-tick.up::before { top: 5px; bottom: 0; }
-.story .tl-tick.up::after { top: 0; background: var(--gold); }
-.story .tl-tick.down { height: calc(16px + var(--lv) * 14px); }
-.story .tl-tick.down::before { top: 0; bottom: 5px; }
-.story .tl-tick.down::after { bottom: 0; }
-.story .tl-tick.pick::after { background: var(--azure); box-shadow: 0 0 0 1.5px #fff; }
-.story .tl-tick.start::after { background: var(--s-ink); }
-.story .tl-tick span { position: absolute; top: -3px; left: 19px; font: 400 11px/14px var(--mono); color: var(--s-ink); white-space: nowrap; }
-.story .tl-tick.on::after { scale: 1.5; }
-.story .tl-tick.on span { font-weight: 600; }
-@media (hover: hover) and (pointer: fine) { .story .tl-tick:hover::after { scale: 1.35; } }
-.story .tl-say { margin: 12px 0 0; font: 400 15px/1.35 var(--hand); color: var(--s-body); min-height: 2.7em; }
-.story .tl-say time { font: 400 12px/1 var(--mono); color: var(--s-muted); margin-right: 6px; }
-.story .tl-key { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--s-muted); }
-.story .tl-key span { display: inline-flex; align-items: center; gap: 6px; }
-.story .tl-key i { width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--s-ink); background: #fff; }
-.story .tl-key i.pr { background: var(--gold); }
-.story .tl-key i.pick { background: var(--azure); box-shadow: none; }
-.story .tl-key i.night { border-radius: 2px; background: var(--s-sunken); box-shadow: none; width: 14px; }
-.story .tl .pills { margin-top: 20px; }
+/* the threads as a Gantt chart: a row per thread, start to last activity, in Perth time */
+.story .gt-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 12px; box-shadow: var(--s-ring); background: #fff; }
+.story .gt-chart { --name: 216px; position: relative; min-width: 920px; padding: 0 16px 10px 0; }
+.story .gt-axis, .story .gt-row { display: grid; grid-template-columns: var(--name) minmax(0, 1fr); align-items: center; }
+.story .gt-axis { height: 40px; position: sticky; top: 0; }
+.story .gt-name { position: sticky; left: 0; z-index: 2; align-self: stretch; display: flex; align-items: center; padding: 0 12px 0 16px; background: #fff; font-size: 13px; color: var(--s-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.story .gt-track { position: relative; height: 100%; }
+.story .gt-axis .gt-track i { position: absolute; bottom: 6px; height: 6px; border-left: 1px solid var(--s-hair); }
+.story .gt-axis .gt-track i b { position: absolute; bottom: 8px; left: 0; transform: translateX(-50%); font: 400 11px/14px var(--mono); color: var(--s-muted); white-space: nowrap; }
+.story .gt-axis .gt-track i.day { height: 12px; border-color: var(--s-ink); }
+.story .gt-axis .gt-track i.day b { transform: none; left: 4px; bottom: 2px; color: var(--s-ink); font-weight: 600; }
+.story .gt-body { position: relative; }
+.story .gt-bg { position: absolute; top: 0; bottom: 0; left: var(--name); right: 0; pointer-events: none; }
+.story .gt-bg .night { position: absolute; top: 0; bottom: 0; background: var(--s-sunken); }
+.story .gt-bg .rule { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--s-hair); }
+.story .gt-row { position: relative; width: 100%; height: 26px; border-radius: 0 6px 6px 0; transition: background-color 150ms var(--ease); }
+.story .gt-row.on, .story .gt-row.on .gt-name { background: color-mix(in srgb, var(--azure) 7%, white); }
+.story .gt-row.on .gt-name { color: var(--s-ink); font-weight: 600; }
+@media (hover: hover) and (pointer: fine) { .story .gt-row:not(.on):hover, .story .gt-row:not(.on):hover .gt-name { background: var(--s-soft); } }
+.story .gt-row:focus-visible { outline-offset: -2px; }
+.story .gt-bar { position: absolute; top: 8px; height: 10px; border-radius: 3px; background: var(--s-ink); }
+.story .gt-bar.review { background: var(--azure); }
+.story .gt-bar.media { background: var(--gold); }
+.story .gt-bar.plan { background: #fff; box-shadow: inset 0 0 0 1.5px var(--s-muted); }
+.story .gt-pr { position: absolute; top: 7px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 0 1.5px var(--s-ink), 0 0 0 3px #fff; }
+.story .gt-nums { position: absolute; top: 5px; font: 400 11px/16px var(--mono); color: var(--s-ink); white-space: nowrap; }
+.story .gt-key { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 12px; font-size: 12px; color: var(--s-muted); }
+.story .gt-key span { display: inline-flex; align-items: center; gap: 6px; }
+.story .gt-key i { width: 14px; height: 8px; border-radius: 2px; background: var(--s-ink); }
+.story .gt-key i.review { background: var(--azure); }
+.story .gt-key i.media { background: var(--gold); }
+.story .gt-key i.plan { background: #fff; box-shadow: inset 0 0 0 1.5px var(--s-muted); }
+.story .gt-key i.pr { width: 9px; height: 9px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 0 1.5px var(--s-ink); }
+.story .gt-key i.night { background: var(--s-sunken); }
+.story .gt-say { margin-top: 14px; padding: 14px 16px; border-radius: 12px; background: var(--s-soft); font-size: 14px; min-height: 104px; }
+.story .gt-say p { margin: 0; }
+.story .gt-say .gt-h { margin-bottom: 4px; display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; }
+.story .gt-say .gt-h b { color: var(--s-ink); font-weight: 600; }
+.story .gt-say time { font: 400 12px/1.4 var(--mono); color: var(--s-muted); }
+.story .gt-say ul { list-style: none; margin: 8px 0 0; padding: 0; }
+.story .gt-say li { margin: 2px 0; }
+.story .gt-say li a { font-family: var(--mono); font-size: 12.5px; color: var(--s-ink); margin-right: 4px; }
+@media (max-width: 639px) { .story .gt-chart { --name: 132px; } .story .gt-name { font-size: 12px; padding-left: 10px; } }
+.story .log h4 { margin: 18px 0 0; font-size: 13px; color: var(--s-ink); }
 .story .day li.pick time { color: var(--azure); }
 .story .day li.pr time { color: var(--warn-ink); }
 .story .day li.on { background: var(--s-soft); box-shadow: -8px 0 0 var(--s-soft), 8px 0 0 var(--s-soft); }
@@ -389,3 +402,10 @@ html:has(.story) body { background: #fff; }
 .story .vgrid figcaption { margin-top: 4px; font: 400 13px/1.25 var(--hand); color: var(--s-muted); }
 .story .vgrid figcaption.bad { color: var(--bad); }
 @media (max-width: 639px) { .story .vgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .story .vgrid .shot { grid-column: 1 / -1; } .story .vgrid .corner { display: none; } }
+
+/* ---------- token spend ---------- */
+.story .spend { margin: 8px 0 4px; }
+.story .spend .wf-row.fable .wf-bar i, .story .spend-key i.fable { background: var(--sunset); }
+.story .spend-key i.opus { background: var(--s-ink); }
+.story .spend-key i.all { background: var(--azure); }
+.story .spend + .spend-key { margin: 6px 0 14px; }
