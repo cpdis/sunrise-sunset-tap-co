@@ -45,7 +45,7 @@ export default function Owners() {
             <div className="row">
               <button className="btn small primary" disabled={!from || !to || from === to}>Record transfer</button>
               <button type="button" className="btn small" onClick={() => setTransferring(false)}>Cancel</button>
-              <span className="note">Future payouts split on the new holdings. ASIC needs a Form 484 within 28 days.</span>
+              <span className="note">A second director approves it before it counts. Future payouts then split on the new holdings. ASIC needs a Form 484 within 28 days.</span>
             </div>
           </form>
         )}

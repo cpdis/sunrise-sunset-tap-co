@@ -6,23 +6,21 @@ import { nextFreeDates } from "../domain";
 import type { AgentResult, AgentState, Block } from "../types";
 import { fmtDate, fmtTime, money, todayISO } from "../util";
 import {
-  CANCEL_YES,
+  type CancelQuote,
   type ToolCtx,
-  cancelAnswer,
   cancelBookingTool,
+  cancelReply,
   checkAvailability,
   customerBookings,
   escalate,
   getQuote,
+  greeting,
   holdAndLink,
   kbLines,
   lookupBooking,
   myBookingByRef,
 } from "./tools";
 import { isRefusal, parseConfirm } from "./confirm";
-
-// Opening line of a drafted owner reply. The owner edits the rest before sending.
-const hi = (ctx: ToolCtx) => (ctx.customerName ? `Hi ${ctx.customerName.split(" ")[0]},` : "Hi,");
 
 const has = (t: string, ...words: (string | RegExp)[]) =>
   words.some((w) => (typeof w === "string" ? t.includes(w) : w.test(t)));
@@ -130,7 +128,8 @@ export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentRes
   const out = (reply: string): AgentResult => ({ reply, actions: ctx.actions, tools: ctx.used, state, engine: "rules" });
   const refM = t.match(/\bsst-?\s?(\d{3,})\b/);
   const ref = refM ? `SST-${refM[1]}` : undefined;
-  // Escalating only flags the conversation in the owners' inbox, so these replies promise no time, text or call (R4).
+  // Escalating flags the conversation in the owners' inbox and emails the owners one notice (lib/server/outbox.ts).
+  // Nobody contacts the customer from it, so these replies may say the owners know but promise no time, text or call (R4).
   const unsure = () => {
     // No draft here: the agent has nothing to say, and a bare greeting would get sent as the whole reply.
     escalate(ctx, `Agent couldn't answer: "${text.slice(0, 160)}"`);
@@ -141,6 +140,19 @@ export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentRes
     const lines = kbLines(ctx, f.page, f.lines);
     return lines.length ? out([...lines, f.then].filter(Boolean).join(" ")) : unsure();
   };
+  // The terms of a cancel and the code a YES must echo (KTD11), kept in the state for the next message.
+  // The terms follow the real policy for this booking: a full refund outside the window, the deposit kept inside it.
+  const quoteCancel = (r: CancelQuote, lead = "") => {
+    const q = ctx.quotedCancel;
+    if (q) Object.assign(state, { awaiting: "confirm_cancel", bookingId: q.id, code: q.code, refund: q.refund });
+    const yes = `Reply YES ${r.code}`;
+    if (r.held) return out(`${lead}${r.ref} is only held, not paid, so there's nothing to refund. ${yes} and I'll release the date.`);
+    const on = `${r.ref} on ${fmtDate(r.date, { dow: true })} is ${r.daysOut} days away`;
+    const terms = r.fullRefund
+      ? `${on}, so you'd get a full refund of ${money(r.refund)}.`
+      : `${on}, inside the ${s.cancelDays}-day window, so the ${money(r.kept)} deposit is kept${r.refund > 0 ? ` and ${money(r.refund)} would be refunded` : ""}.`;
+    return out(`${lead}${r.needsOwner ? `${terms} A refund that size needs an owner's OK. ${yes} and I'll send it to the owners now.` : `${terms} ${yes} to cancel.`}`);
+  };
 
   // After a hand-over the agent still answers general questions, but bookings and cancellations wait for an owner.
   if (ctx.handover) {
@@ -149,17 +161,23 @@ export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentRes
     return out("An owner has this conversation now. I can still answer questions about the truck, kegs or prices.");
   }
 
-  // 1. Pending confirmations. Anything but a clear yes ends them, so a later "yes" confirms nothing.
-  ctx.confirmCancel = cancelAnswer(prev, t);
-  if (state.awaiting === "confirm_cancel" && state.bookingId) {
-    state.awaiting = undefined;
-    if (ctx.confirmCancel) {
+  // 1. Pending confirmations. Anything but a clear yes ends them, so a later "yes" confirms nothing. A cancel also
+  // needs the quote's code (cancelReply).
+  const pending = cancelReply(ctx, prev, text);
+  if (state.awaiting === "confirm_cancel") {
+    Object.assign(state, { awaiting: undefined, code: undefined, refund: undefined });
+    if (pending.kind === "ask") {
+      if (pending.keep) Object.assign(state, { awaiting: prev.awaiting, code: prev.code, refund: prev.refund });
+      return out(pending.say);
+    }
+    if (pending.kind === "yes" && state.bookingId) {
       const r = cancelBookingTool(ctx, state.bookingId, true);
       if (r.ok && r.done) return out(`Done, ${r.ref} is cancelled.${r.refund > 0 ? ` I've requested a ${money(r.refund)} refund to your card.` : ""}`);
+      if (r.ok && "code" in r) return quoteCancel(r, "The terms have changed since my last message. ");
       if (!r.ok && "needsOwner" in r) return out("I've sent your cancellation to the owners, as a refund that size needs their OK. Nothing is cancelled until an owner approves it.");
       return out("I couldn't cancel that one. Send the SST- reference and I'll check it again.");
     }
-    if (parseConfirm(t, CANCEL_YES) === "no") return out("All good, your booking stays as is.");
+    if (pending.kind === "no") return out("All good, your booking stays as is.");
   }
 
   // A no to "Want the link?" or "What name should I put the booking under?" drops the draft booking.
@@ -175,14 +193,14 @@ export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentRes
 
   // 2. A person, please. Only explicit asks: "someone", "staff" and "owner" also turn up in ordinary questions.
   if (PERSON.test(t)) {
-    escalate(ctx, `Customer asked for a person: "${text.slice(0, 120)}"`, false, `${hi(ctx)} one of the owners here. What can I help with?`);
-    return out("No worries, I've passed your message to the owners. Anything I can sort in the meantime?");
+    escalate(ctx, `Customer asked for a person: "${text.slice(0, 120)}"`, false, `${greeting(ctx)} one of the owners here. What can I help with?`);
+    return out("No worries, an owner has been notified. Anything I can sort in the meantime?");
   }
 
   // Discounts, multi-day and sponsorship are owner decisions.
   if (OFF_POLICY.test(t)) {
-    escalate(ctx, `Wants something outside standard pricing: "${text.slice(0, 140)}"`, false, `${hi(ctx)} one of the owners here. Thanks for the message. Tell me a bit more about the event and the dates and I'll let you know what we can do.`);
-    return out("That one's up to the owners, so I've passed your message on to them.");
+    escalate(ctx, `Wants something outside standard pricing: "${text.slice(0, 140)}"`, false, `${greeting(ctx)} one of the owners here. Thanks for the message. Tell me a bit more about the event and the dates and I'll let you know what we can do.`);
+    return out("That one's up to the owners, so I've passed your message on and an owner has been notified.");
   }
 
   // A reference counts only if it is one of the sender's own bookings. One that doesn't exist and someone else's get
@@ -201,7 +219,7 @@ export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentRes
   // start a new booking (review A12). Mid-booking, "change the date" is about the draft, so it carries on below.
   const drafting = !!prev.awaiting && prev.awaiting !== "confirm_cancel";
   if (RESCHEDULE.test(t) && (!drafting || mine || has(t, /\b(my|our) booking\b/))) {
-    escalate(ctx, `Wants to move ${mine?.ref ?? customerBookings(ctx)[0]?.ref ?? "a booking"} to another date: "${text.slice(0, 120)}"`, false, `${hi(ctx)} one of the owners here about moving your booking.`);
+    escalate(ctx, `Wants to move ${mine?.ref ?? customerBookings(ctx)[0]?.ref ?? "a booking"} to another date: "${text.slice(0, 120)}"`, false, `${greeting(ctx)} one of the owners here about moving your booking.`);
     const rule = kbLines(ctx, "booking-policy", /date change/i, 1);
     return out(["An owner makes date changes, so I've passed your request on to them.", ...rule].join(" "));
   }
@@ -213,16 +231,8 @@ export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentRes
     if (!bs.length) return out(`${policy} If you've already booked, text from the number you booked with or send the SST- reference.`);
     if (has(t, /\b(policy|what if|what happens|how does)\b/) && !ref) return out(`${policy} Want to cancel ${bs[0].ref}? Just say so.`);
     const r = cancelBookingTool(ctx, bs[0].id, false);
-    if (!r.ok) return out("I couldn't find that booking. Send the SST- reference and I'll check it again.");
-    state.bookingId = bs[0].id;
-    state.awaiting = "confirm_cancel";
-    if (r.held) return out(`${r.ref} is only held, not paid, so there's nothing to refund. Reply YES and I'll release the date.`);
-    // The terms follow the real policy for this booking: a full refund outside the window, the deposit kept inside it.
-    const on = `${r.ref} on ${fmtDate(bs[0].date, { dow: true })} is ${r.daysOut} days away`;
-    const terms = r.fullRefund
-      ? `${on}, so you'd get a full refund of ${money(r.refund)}.`
-      : `${on}, inside the ${s.cancelDays}-day window, so the ${money(r.kept)} deposit is kept${r.refund > 0 ? ` and ${money(r.refund)} would be refunded` : ""}.`;
-    return out(r.needsOwner ? `${terms} A refund that size needs an owner's OK. Reply YES and I'll send it to the owners now.` : `${terms} Reply YES to cancel.`);
+    if (!r.ok || !("code" in r)) return out("I couldn't find that booking. Send the SST- reference and I'll check it again.");
+    return quoteCancel(r);
   }
 
   // 4. Existing booking status / balance.
@@ -275,7 +285,7 @@ export function runRules(ctx: ToolCtx, text: string, prev: AgentState): AgentRes
           Object.assign(state, { awaiting: undefined, misses: 0 });
           return out("Sorry, I'm not getting it, so I've passed this to the owners.");
         }
-        const free = nextFreeDates(ctx.data as never, todayISO(ctx.now), 3, true, ctx.now).map((x) => fmtDate(x, { dow: true }));
+        const free = nextFreeDates(ctx.data, todayISO(ctx.now), 3, true, ctx.now).map((x) => fmtDate(x, { dow: true }));
         return out(`I didn't catch a date.${free.length ? ` The next free weekend days are ${free.join(", ")}.` : ""} Which suits? Something like "Sat 14 March" works.`);
       }
       return out("Which date are you thinking? You can just say something like \"Sat 14 March\".");

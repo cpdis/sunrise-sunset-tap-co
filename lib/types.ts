@@ -42,6 +42,9 @@ export interface Owner {
   isDirector: boolean;
   payoutAccount: string;
   joined: string;
+  // Counts this owner's sign-outs (lib/server/auth.ts): a session cookie is good only while it carries the current
+  // value, so signing out ends the owner's sessions on every device. Absent is 0.
+  sessionVersion?: number;
 }
 
 export interface Customer {
@@ -83,8 +86,12 @@ export interface Booking {
   guests?: number;
   notes?: string;
   agreementSigned: boolean;
-  // Where checkout sent the receipt. Kept on the booking: checkout never changes the customer's own contacts.
+  // Where the receipt goes: the email given with this booking, or the one checkout took. Kept on the booking, never
+  // read from the customer record, so a booking made with someone else's phone never shows their email (AUTH-06).
   receiptEmail?: string;
+  // The secret in the customer's checkout and booking links. Random and separate from the id, so a booking id
+  // alone (in a log, a screenshot, an owner's view) opens nothing. Paid bookings always have one.
+  token?: string;
   // Simulated card trouble: the saved card declines off-session charges until the customer updates it.
   cardDeclines?: boolean;
   balanceAttempts?: number;
@@ -94,6 +101,10 @@ export interface Booking {
   condition?: string;
   cancelledAt?: string;
 }
+
+// What availability needs from a booking: the day it takes and whether it still counts. Public views carry only
+// this, so nobody learns who booked or for how much.
+export type Slot = Pick<Booking, "date" | "kind" | "state" | "heldUntil">;
 
 export type PaymentType =
   | "deposit"
@@ -176,15 +187,69 @@ export interface AgentState {
   refMisses?: number;
   awaiting?: "date" | "name" | "suburb" | "confirm_hold" | "confirm_cancel";
   bookingId?: string;
+  // A cancel quote: the code the customer's YES must echo (KTD11) and the refund the quote stated.
+  code?: string;
+  refund?: number;
   refDate?: string;
-  // Owner agent: a staged change that runs only if the owner's next text is YES.
-  pending?: PendingOwnerAction;
 }
 
-export interface PendingOwnerAction {
+// An owner change waiting for YES (KTD4, KTD11). The server keeps it in the approvals table, bound to its business,
+// owner and conversation, and it expires after APPROVAL_MINUTES (lib/agent/owner-tools.ts).
+export interface StagedApproval {
+  id: string;
+  // The owner tool that runs on YES, and its input with the conversation it names resolved to an id. A
+  // "pick_conversation" is a numbered list of conversations instead: a number answers it, it changes nothing by
+  // itself, and it has no nonce.
   tool: string;
   args: Record<string, unknown>;
+  // What the owner is asked to confirm (KTD5).
   summary: string;
+  // The actions and summary YES applies, as canonical JSON. A YES whose re-run gives anything else asks again.
+  binding: string;
+  // The 4-digit code the YES must echo, sent only to the owner's handset (KTD11).
+  nonce: string;
+  // Money, settings, knowledge and draft sends also need the one-time code on the owner's admin page (KTD6).
+  needsCode: boolean;
+  policyVersion: number;
+  expiresAt: string;
+}
+
+// The approval waiting when an owner's message comes in, as the server hands it to the owner agent: with its
+// one-time code when it needs one, whether its time ran out, and how many wrong codes it has had (B1).
+export interface PendingApproval extends StagedApproval {
+  code?: string;
+  expired: boolean;
+  codeMisses: number;
+}
+
+export type ApprovalStatus = "consumed" | "cancelled" | "invalidated" | "expired";
+
+// A one-time code the signed-in owner's admin page shows, next to the change it is for (lib/server/approvals.ts).
+export interface ApprovalCode {
+  id: string;
+  summary: string;
+  code: string;
+  expiresAt: string;
+}
+
+// What an owner's turn does to approvals. lib/server/agent.ts writes it in the same transaction as the actions.
+export interface ApprovalChange {
+  // The approval the message answered and what becomes of it. Left out, it stays staged (asked again for its code).
+  settled?: { id: string; status: ApprovalStatus };
+  staged?: StagedApproval;
+  // The message quoted a wrong nonce or one-time code for this approval (B1). The server counts it against the
+  // sender's day, and a wrong one-time code against the approval's tries.
+  miss?: { id: string; kind: "nonce" | "code" };
+}
+
+// A change one director asked for in the admin that a second, different director must approve before it happens (B5):
+// lowering the approvals a payout needs, or moving shares between owners. Approving applies it; declining drops it.
+export interface DirectorRequest {
+  id: string;
+  change: { type: "approvals"; to: number } | { type: "shares"; fromId: string; toId: string; shares: number };
+  // The director who asked, and when.
+  by: string;
+  at: string;
 }
 
 export interface Conversation {
@@ -274,11 +339,19 @@ export interface Data {
   jobs: JobLog[];
   seq: number;
   scenario: Scenario;
+  // Changes waiting for a second director (B5). Absent is none.
+  requests?: DirectorRequest[];
+  // What a change sends (lib/ops.ts send). Never stored: the repo turns these into outbox rows in the same
+  // transaction as the save, and drops them from the document (lib/server/outbox.ts).
+  outgoing?: Outgoing[];
 }
+
+// A message a change sends: an owner's reply to a customer, or the owners' notice that a conversation needs them.
+export type Outgoing = { kind: "reply"; channel: "sms" | "email"; to: string; body: string } | { kind: "escalation"; convId: string; reason: string };
 
 export type Scenario = "bear" | "base" | "bull";
 
-// Commands the agent (server) returns for the client store to apply.
+// Actions the agent returns. lib/server/agent.ts applies them after the turn, for the conversation's own sender.
 export type AgentAction =
   | {
       type: "hold";
@@ -289,10 +362,11 @@ export type AgentAction =
       startTime?: string;
       suburb: string;
       name: string;
-      contact: string;
-      channel: Channel;
+      // The booking's link token, made with the hold so the link in the reply opens it.
+      token: string;
     }
-  | { type: "cancel"; bookingId: string }
+  // refund: what the confirmed terms refund. The cancel applies only while the policy still gives exactly that.
+  | { type: "cancel"; bookingId: string; refund: number }
   // keepAgent: flag it for an owner but let the agent carry on (short notice, date changes, unknown suburbs).
   // draft: a reply the owner can send as-is (shown in the inbox queue, cleared by ownerReply).
   | { type: "escalate"; reason: string; keepAgent?: boolean; draft?: string }
@@ -318,4 +392,8 @@ export interface AgentResult {
   tools: string[];
   state: AgentState;
   engine: "claude" | "rules";
+  // Model tokens the turn spent, for the daily budget (lib/server/limits.ts). The rules engine spends none.
+  tokens?: number;
+  // Owner agent only.
+  approval?: ApprovalChange;
 }

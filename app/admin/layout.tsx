@@ -7,9 +7,71 @@ import { useEffect, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { SmsWidget } from "@/components/SmsWidget";
 import { Loading, useData } from "@/components/ui";
+import { describeChange } from "@/lib/ops";
 import { SCENARIOS } from "@/lib/seed";
 import { useApp } from "@/lib/store";
+import { TZ } from "@/lib/util";
 import "./admin.css";
+
+const clock = new Intl.DateTimeFormat("en-AU", { timeZone: TZ, hour: "numeric", minute: "2-digit" });
+
+// KTD6: the one-time code for each change this owner texted, with the change it is for. It stands in for an
+// authenticator app: a text from the owner's number proves only its caller ID, so the risky changes also need this
+// code, which only the signed-in owner sees.
+function Codes() {
+  const codes = useApp((s) => s.codes);
+  if (!codes.length) return null;
+  return (
+    <div className="codes" role="status">
+      {codes.map((a) => (
+        <div key={a.id} className="code-row">
+          <p className="code-for">
+            <span className="k">Your code to</span> {a.summary}
+          </p>
+          <div className="code-value">
+            <span className="code mono" aria-label={`Code ${a.code.split("").join(" ")}`}>
+              <span>{a.code.slice(0, 3)}</span>
+              <span>{a.code.slice(3)}</span>
+            </span>
+            <span className="meta">Text it with the YES, until {clock.format(new Date(a.expiresAt))}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// B5: changes one director asked for that wait for a second (a share transfer, fewer payout approvals). Every owner
+// sees them; another director approves or declines, and the one who asked can withdraw.
+function Requests() {
+  const data = useData();
+  const ownerId = useApp((s) => s.ownerId);
+  const approve = useApp((s) => s.approveRequest);
+  const decline = useApp((s) => s.declineRequest);
+  if (!data?.requests?.length) return null;
+  const director = !!data.owners.find((o) => o.id === ownerId)?.isDirector;
+  return (
+    <div className="requests" role="region" aria-label="Waiting for a second director">
+      {data.requests.map((r) => {
+        const mine = r.by === ownerId;
+        const by = mine ? "You" : (data.owners.find((o) => o.id === r.by)?.name ?? "A director");
+        return (
+          <div key={r.id} className="notice request-row">
+            <span>
+              <strong>{by}</strong> asked to {describeChange(data, r.change)}. It waits for {mine ? "another" : "a second"} director.
+            </span>
+            {director && (
+              <div className="row">
+                {!mine && <button type="button" className="btn small primary" onClick={() => approve(r.id)}>Approve</button>}
+                <button type="button" className="btn small" onClick={() => decline(r.id)}>{mine ? "Withdraw" : "Decline"}</button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 // The owners' admin reads like a finance console: Geist on white, Golden Hour inks as accents only.
 const sans = Geist({ subsets: ["latin"], variable: "--font-admin", display: "swap" });
@@ -20,6 +82,7 @@ const NAV = [
   { href: "/admin/calendar", label: "Calendar" },
   { href: "/admin/bookings", label: "Bookings" },
   { href: "/admin/inbox", label: "Inbox" },
+  { href: "/admin/outbox", label: "Outbox" },
   { href: "/admin/money", label: "Money" },
   { href: "/admin/payouts", label: "Payouts" },
   { href: "/admin/owners", label: "Owners" },
@@ -31,7 +94,10 @@ const NAV = [
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const data = useData();
   const ownerId = useApp((s) => s.ownerId);
+  const hydrated = useApp((s) => s.hydrated);
   const logout = useApp((s) => s.logout);
+  const error = useApp((s) => s.error);
+  const dismissError = useApp((s) => s.dismissError);
   const path = usePathname();
   const router = useRouter();
   // phones: every page lives in a menu sheet under the top bar
@@ -44,9 +110,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return () => window.removeEventListener("keydown", esc);
   }, [menu]);
 
+  // The admin needs an owner's session; the server sends the business's data only with one.
   useEffect(() => {
-    if (data && !ownerId) router.replace("/login");
-  }, [data, ownerId, router]);
+    if (hydrated && !ownerId) router.replace("/login");
+  }, [hydrated, ownerId, router]);
 
   if (!data || !ownerId) return <Loading />;
   const me = data.owners.find((o) => o.id === ownerId);
@@ -58,7 +125,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className={`admin ${sans.variable} ${mono.variable}`}>
       <div className="demo-bar">
-        Demo · {SCENARIOS[data.scenario].label.toLowerCase()} case<span className="long">. Figures are illustrative; data lives in your browser and payments are simulated.</span>
+        Demo · {SCENARIOS[data.scenario].label.toLowerCase()} case<span className="long">. Figures are illustrative, everyone using the demo shares its data, and payments are simulated.</span>
       </div>
       <div className="admin-shell">
         <nav className={`admin-nav${menu ? " open" : ""}`} aria-label="Admin">
@@ -86,11 +153,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <div className="nav-foot">
               <span className="avatar sm owner" aria-hidden="true">{me?.name.slice(0, 1)}</span>
               <span className="who">{me?.name}</span>
-              <button type="button" className="btn small" onClick={() => { logout(); router.push("/login"); }}>Switch owner</button>
+              <button type="button" className="btn small" onClick={async () => { await logout(); router.push("/login"); }}>Switch owner</button>
             </div>
           </div>
         </nav>
-        <main className="admin-main">{children}</main>
+        <main className="admin-main">
+          <Codes />
+          <Requests />
+          {error && (
+            <div className="notice admin-error" role="alert">
+              <span>{error}</span>
+              <button type="button" className="btn small" onClick={dismissError}>Dismiss</button>
+            </div>
+          )}
+          {children}
+        </main>
       </div>
       <SmsWidget as={ownerId} />
     </div>

@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { HireTermsText } from "@/components/HireTerms";
 import { Logo } from "@/components/Logo";
-import { Loading, useData } from "@/components/ui";
+import { Loading, useBooking, usePublic } from "@/components/ui";
 import { useApp } from "@/lib/store";
 import { daysBetween, fmtDate, fmtTime, money, todayISO } from "@/lib/util";
 
@@ -23,7 +23,8 @@ const S = {
 
 export default function Checkout() {
   const { id } = useParams<{ id: string }>();
-  const data = useData();
+  const { view, token, loading } = useBooking(id);
+  const pub = usePublic();
   const payDeposit = useApp((s) => s.payDeposit);
   const payBalance = useApp((s) => s.payBalance);
   const router = useRouter();
@@ -43,23 +44,37 @@ export default function Checkout() {
     return () => clearInterval(t);
   }, []);
 
-  if (!data) return <Loading />;
-  const b = data.bookings.find((x) => x.id === id);
-  if (!b) return <main className="wrap section"><h1 className="display">Booking not found</h1><Link href="/book">Start again</Link></main>;
+  if (loading || !pub) return <Loading />;
+  const b = view?.booking;
+  // A booking id without its link token opens nothing, the same as an id that doesn't exist.
+  if (!b) {
+    return (
+      <main className="section">
+        <div className="wrap stack">
+          <h1 className="display">Booking not found</h1>
+          <span className="muted">Open the payment link from your booking text or email.</span>
+          <Link href="/book">Start again</Link>
+        </div>
+      </main>
+    );
+  }
   // A balance that kept declining is paid here with a new card.
   const balanceMode = b.state === "confirmed" && !!b.balanceFailedAt;
   if (b.state !== "held" && !balanceMode) {
     return (
-      <main className="wrap section stack">
-        <h1 className="display">{b.state === "cancelled" ? "This hold has expired" : "Already paid"}</h1>
-        <Link className="btn" style={{ alignSelf: "flex-start" }} href={b.state === "cancelled" ? "/book" : `/booking/${b.id}`}>
-          {b.state === "cancelled" ? "Pick a date again" : "View booking"}
-        </Link>
+      <main className="section">
+        <div className="wrap stack">
+          <h1 className="display">{b.state === "cancelled" ? "This hold has expired" : "Already paid"}</h1>
+          <Link className="btn" style={{ alignSelf: "flex-start" }} href={b.state === "cancelled" ? "/book" : `/booking/${b.id}?t=${token}`}>
+            {b.state === "cancelled" ? "Pick a date again" : "View booking"}
+          </Link>
+        </div>
       </main>
     );
   }
 
-  const full = daysBetween(todayISO(), b.date) <= data.settings.balanceDaysBefore;
+  const s = pub.settings;
+  const full = daysBetween(todayISO(), b.date) <= s.balanceDaysBefore;
   const due = balanceMode ? b.total - b.deposit : full ? b.total : b.deposit;
   const left = balanceMode ? Infinity : Math.max(0, Date.parse(b.heldUntil ?? "") - now);
   const mm = Math.floor(left / 60000);
@@ -75,10 +90,13 @@ export default function Checkout() {
     if (digits.length < 15) return setErr("Your card number is incomplete.");
     if (digits === "4000000000000002") return setErr("Your card was declined. Try another card.");
     setBusy(true);
-    setTimeout(() => {
-      if (balanceMode) payBalance(b!.id, `Visa •• ${digits.slice(-4)}`);
-      else payDeposit(b!.id, `Visa •• ${digits.slice(-4)}`, { email: email.trim(), agreed: needsTerms ? agree : undefined });
-      router.push(`/booking/${b!.id}?paid=1`);
+    // A pause standing in for the card network, then the payment runs on the server.
+    setTimeout(async () => {
+      const card = `Visa •• ${digits.slice(-4)}`;
+      const ok = balanceMode ? await payBalance(b!.id, card) : await payDeposit(b!.id, card, { email: email.trim(), agreed: needsTerms ? agree : undefined });
+      if (ok) return router.push(`/booking/${b!.id}?t=${token}&paid=1`);
+      setBusy(false);
+      setErr(useApp.getState().error ?? "That didn't go through. Try again.");
     }, 900);
   }
 
@@ -102,7 +120,7 @@ export default function Checkout() {
           </div>
           {b.travelFee > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Travel fee</span><span>{money(b.travelFee, true)}</span></div>}
           <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #e0e6eb", paddingTop: 10 }}><span>Total</span><span>{money(b.total, true)}</span></div>
-          {!full && !balanceMode && <div style={{ display: "flex", justifyContent: "space-between", color: "#697386" }}><span>Balance, charged automatically {data.settings.balanceDaysBefore} days before</span><span>{money(b.total - b.deposit, true)}</span></div>}
+          {!full && !balanceMode && <div style={{ display: "flex", justifyContent: "space-between", color: "#697386" }}><span>Balance, charged automatically {s.balanceDaysBefore} days before</span><span>{money(b.total - b.deposit, true)}</span></div>}
           <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 600 }}><span>Due today</span><span>{money(due, true)}</span></div>
         </div>
         <div style={{ fontSize: 13, color: left < 5 * 60000 ? "#cd3d64" : "#697386" }}>
@@ -131,7 +149,7 @@ export default function Checkout() {
         {needsTerms && (
           <label style={{ display: "flex", gap: 8, fontSize: 13, color: "#1a1f36", lineHeight: 1.5 }}>
             <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} style={{ marginTop: 3 }} />
-            <span><HireTermsText s={data.settings} /></span>
+            <span><HireTermsText s={s} /></span>
           </label>
         )}
         <label style={{ display: "flex", gap: 8, fontSize: 13, color: "#697386" }}>

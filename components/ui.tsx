@@ -1,12 +1,31 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment } from "react";
+import { Fragment, useEffect } from "react";
 import { useApp } from "@/lib/store";
 import type { Booking, BookingState, Channel, Data } from "@/lib/types";
+import type { BookingView, PublicView } from "@/lib/views";
 
+// The whole business, for a signed-in owner. Null for everyone else, and until the first read lands.
 export function useData(): Data | null {
   return useApp((s) => (s.hydrated ? s.data : null));
+}
+
+// What anyone may see: availability, settings and the knowledge base.
+export function usePublic(): PublicView | null {
+  return useApp((s) => s.pub);
+}
+
+// The booking a customer's link opens. The token comes from the link's ?t=, and without it nothing opens.
+export function useBooking(id: string): { view: BookingView | null; token: string; loading: boolean } {
+  const openLink = useApp((s) => s.openLink);
+  const loading = useApp((s) => s.bookingFor !== id);
+  const view = useApp((s) => (s.bookingFor === id ? s.booking : null));
+  const token = useApp((s) => (s.link?.id === id ? s.link.token : ""));
+  useEffect(() => {
+    openLink(id, new URLSearchParams(window.location.search).get("t") ?? "");
+  }, [id, openLink]);
+  return { view, token, loading };
 }
 
 export function Loading() {
@@ -55,7 +74,8 @@ export function toolWords(tools: string[] | undefined): string {
     .join(", ");
 }
 
-// Turns URLs in agent messages into links; links to this site stay in the tab.
+// Turns URLs in agent messages into links; links to this site stay in the tab, with their link token (?t=) or
+// fragment (a sign-in link's #token=). They are never prefetched, so a link is opened only by a click (A5).
 export function Linkify({ text }: { text: string }) {
   const parts = text.split(/(https?:\/\/[^\s]+)/g);
   return (
@@ -67,11 +87,11 @@ export function Linkify({ text }: { text: string }) {
         let path: string | null = null;
         try {
           const u = new URL(url);
-          if (typeof window !== "undefined" && u.origin === window.location.origin) path = u.pathname;
+          if (typeof window !== "undefined" && u.origin === window.location.origin) path = u.pathname + u.search + u.hash;
         } catch {}
         return (
           <Fragment key={i}>
-            {path ? <Link href={path}>{url}</Link> : <a href={url} target="_blank" rel="noreferrer">{url}</a>}
+            {path ? <Link href={path} prefetch={false}>{url}</Link> : <a href={url} target="_blank" rel="noreferrer">{url}</a>}
             {tail}
           </Fragment>
         );

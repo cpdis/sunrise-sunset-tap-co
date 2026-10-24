@@ -1,25 +1,27 @@
 // Owner agent without an API key: deterministic intent matching over the same owner tools the Claude path uses.
-import type { Account, AgentResult, AgentState, Settings } from "../types";
+// Every change stages, and the reply is then the confirmation rendered from the staged change (finish).
+import type { Account, AgentResult, Settings } from "../types";
 import { fmtDate, fmtTime, money } from "../util";
 import {
   type OwnerCtx,
   addExpense,
   addKnowledge,
+  approvalOf,
   calendar,
   cancelForCustomer,
   changeSetting,
   claimRun,
-  confirmText,
   findBookings,
+  finish,
   handBack,
-  handBackText,
-  sendDraft,
   inboxList,
+  list,
   logTruck,
   payout,
   replyToCustomer,
   resolvePending,
-  sentText,
+  runWord,
+  sendDraft,
   whatsOn,
 } from "./owner-tools";
 import { parseDate, parseSuburb } from "./rules";
@@ -77,77 +79,52 @@ function amount(t: string): number | undefined {
   return m ? Number(m[1]) : undefined;
 }
 
-const list = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
-const runWord = (w: string) => (w === "deliver" ? "delivery" : "collection");
-
-export function runOwnerRules(ctx: OwnerCtx, text: string, prev: AgentState): AgentResult {
+export function runOwnerRules(ctx: OwnerCtx, text: string): AgentResult {
   const t = text.toLowerCase().trim();
-  const state: AgentState = { ...prev };
-  const out = (reply: string): AgentResult => {
-    state.pending = ctx.staged ?? state.pending;
-    return { reply, actions: ctx.actions, tools: ctx.used, state, engine: "rules" };
-  };
-  const yes = (r: { summary: string }) => out(confirmText(r.summary));
+  const result = (reply: string): AgentResult => ({ reply, actions: ctx.actions, tools: ctx.used, state: {}, engine: "rules", approval: approvalOf(ctx) });
+  const out = (reply: string) => result(finish(ctx, reply));
+  // A staged tool's reply is its confirmation (finish), so only a refusal needs saying here.
+  const staged = (r: { ok: true } | { ok: false; reason: string }) => out(r.ok ? "" : r.reason);
   const date = parseDate(text, ctx.now);
   const ref = refOf(t);
 
-  const confirmed = resolvePending(ctx, state, text);
-  if (confirmed) return out(confirmed);
+  const answered = resolvePending(ctx, text);
+  if (answered) return result(answered);
 
   if (/^(hi|hey|hello|g'?day|help|menu|\?)\b/.test(t)) return out(`G'day ${ctx.owner.name}. ${OWNER_HELP}`);
 
   // Replies, hand-backs and knowledge lines carry free text, so they come before anything that reads keywords.
   const reply = text.match(/^\s*(?:reply to|tell|text|message)\s+(.+?)\s*[:\-–]\s*(.+)$/i);
-  if (reply) {
-    const r = replyToCustomer(ctx, reply[1], reply[2]);
-    return out(r.ok ? sentText(r) : r.reason);
-  }
+  if (reply) return staged(replyToCustomer(ctx, reply[1], reply[2]));
   // "send the draft for Harbour", "send Harbour the draft".
   const draft = text.match(/^\s*send\s+(?:the\s+draft\s+(?:for|to)\s+(.+?)|(.+?)\s+the\s+draft)\s*$/i);
-  if (draft) {
-    const r = sendDraft(ctx, (draft[1] ?? draft[2]).trim());
-    return r.ok ? yes(r) : out(r.reason);
-  }
+  if (draft) return staged(sendDraft(ctx, (draft[1] ?? draft[2]).trim()));
   // "anyway" or "without replying" hands back although the customer is still owed a reply. It can sit anywhere:
   // "hand back Harbour anyway", "hand Harbour back anyway", "hand Harbour back to the agent without replying".
   const FORCE = /\s*\b(anyway|without (a )?repl(y|ying))\b/i;
   const force = FORCE.test(text);
   const back = text.replace(FORCE, "").match(/^\s*hand\s+(?:back\s+(?:to\s+the\s+agent\s+)?(.+)|(.+?)\s+back(?:\s+to\s+the\s+agent)?)\s*$/i);
-  if (back) {
-    const raw = (back[1] ?? back[2]).trim();
-    const r = handBack(ctx, raw, force);
-    return out(r.ok ? handBackText(r) : r.reason);
-  }
+  if (back) return staged(handBack(ctx, (back[1] ?? back[2]).trim(), force));
 
   // Knowledge: "add to keg guide: we now carry G-type couplers".
   const kb = text.match(/^\s*(?:add|note)(?:\s+this)?\s+to\s+(?:the\s+)?(.+?)(?:\s+page)?\s*:\s*(.+)$/i);
   if (kb) {
     const r = addKnowledge(ctx, { page: kb[1], line: kb[2] });
-    return r.ok ? yes(r) : out(`I can't find that page. ${r.reason}`);
+    return out(r.ok ? "" : `I can't find that page. ${r.reason}`);
   }
 
   // Payouts: approve, then pay once enough directors have approved.
-  if (/\bapprove\b/.test(t)) {
-    const r = payout(ctx, { action: "approve" });
-    return r.ok ? yes(r) : out(r.reason);
-  }
-  if (/\bpay (out )?(the )?(payout|dividends?|distribution)\b|\bpay it( out)?\b/.test(t)) {
-    const r = payout(ctx, { action: "pay" });
-    return r.ok ? yes(r) : out(r.reason);
-  }
+  if (/\bapprove\b/.test(t)) return staged(payout(ctx, { action: "approve" }));
+  if (/\bpay (out )?(the )?(payout|dividends?|distribution)\b|\bpay it( out)?\b/.test(t)) return staged(payout(ctx, { action: "pay" }));
 
-  if (/\bcancel\b/.test(t) && ref) {
-    const r = cancelForCustomer(ctx, ref);
-    return r.ok ? yes(r) : out(r.reason);
-  }
+  if (/\bcancel\b/.test(t) && ref) return staged(cancelForCustomer(ctx, ref));
 
   // Settings before expenses: "set the deposit to $300" has a dollar amount too (and is refused as admin only).
   const set = t.match(/\b(?:set|change|make|raise|lower|update|put)\b(.+?)\bto\s*\$?\s*(\d+(?:\.\d+)?)/);
   if (set) {
     const key = SETTING_WORDS.find(([re]) => re.test(set[1]))?.[1];
     if (!key) return out("Which setting? For example: \"set notice to 10 days\" or \"set holds to 45 minutes\".");
-    const r = changeSetting(ctx, { key, value: Number(set[2]) });
-    return r.ok ? yes(r) : out(r.reason);
+    return staged(changeSetting(ctx, { key, value: Number(set[2]) }));
   }
 
   // Runs: "I'll take the Fremantle delivery", "put me down for both runs on SST-1049".
@@ -156,19 +133,14 @@ export function runOwnerRules(ctx: OwnerCtx, text: string, prev: AgentState): Ag
     const d = /\b(deliver|drop)/.test(t);
     const c = /\b(collect|pick)/.test(t);
     const which = d && !c ? "deliver" : c && !d ? "collect" : "both";
-    const r = claimRun(ctx, { ref, suburb: ref ? undefined : parseSuburb(t), date: ref ? undefined : date, which });
-    if (!r.ok) return out(r.reason);
-    const taken = r.takenFrom.length ? ` (taken over from ${list(r.takenFrom)})` : "";
-    return out(`Done, you've got the ${list(r.runs.map(runWord))} for ${r.ref}: ${r.date}, ${r.suburb}, taps open ${fmtTime(r.start)}${taken}. ${money(r.runnerFee)} in runner fees, paid with the next payout.`);
+    return staged(claimRun(ctx, { ref, suburb: ref ? undefined : parseSuburb(t), date: ref ? undefined : date, which }));
   }
 
   // Truck log.
   const km = odometer(t);
   const truckType = /\b(clean(ed)? (the )?lines|line clean|caustic)\b/.test(t) ? "clean" : /\bservice(d)?\b/.test(t) && !amount(t) ? "service" : /\b(incident|dent|scratch|ding)\b/.test(t) ? "incident" : undefined;
   if (truckType || (km !== undefined && /\b(odo|odometer|km|kms|kilometres|log)\b/.test(t) && !amount(t))) {
-    const r = logTruck(ctx, { type: truckType ?? "odometer", odometer: km, notes: truckType ? text.trim() : undefined });
-    if (!r.ok) return out(r.reason);
-    return out(`Logged${r.type === "odometer" ? "" : ` a ${r.type}`}${r.odometer ? ` at ${r.odometer.toLocaleString()} km` : ""}${r.sinceLast ? ` (${r.sinceLast.toLocaleString()} km since the last reading)` : ""}.`);
+    return staged(logTruck(ctx, { type: truckType ?? "odometer", odometer: km, notes: truckType ? text.trim() : undefined }));
   }
 
   // Expenses: "$42 CO2 refill", "spent 60 bucks on fuel".
@@ -177,16 +149,14 @@ export function runOwnerRules(ctx: OwnerCtx, text: string, prev: AgentState): Ag
     const account = ACCOUNTS.find(([re]) => re.test(t))?.[1];
     if (!account) return out(`What was the ${money(amt)} for? Say fuel, CO2, cleaning, maintenance, glasses, insurance, rego, software, accountant or marketing.`);
     const memo = text.replace(/\$\s*\d+(\.\d{1,2})?|\b\d+(\.\d{1,2})?\s*(dollars|bucks)\b/i, "").replace(/^\s*(spent|paid|bought|expense:?)\s*/i, "").replace(/\s+/g, " ").trim();
-    const r = addExpense(ctx, { account, amount: amt, memo });
-    return r.ok ? yes(r) : out(r.reason);
+    return staged(addExpense(ctx, { account, amount: amt, memo }));
   }
 
   // Calendar.
   if (/\b(unblock|block|own use|personal use|borrow|for (me|myself|us)|i want the truck)\b/.test(t)) {
     if (!date) return out("Which date?");
     const action = /\bunblock\b/.test(t) ? "unblock" : /\bblock\b/.test(t) ? "block" : "own_use";
-    const r = calendar(ctx, { action, date, note: action === "own_use" ? text.trim() : undefined });
-    return out(r.ok ? `${r.label} is ${r.done}.${"note" in r ? ` ${r.note}` : ""}` : r.reason);
+    return staged(calendar(ctx, { action, date, note: action === "own_use" ? text.trim() : undefined }));
   }
 
   if (/\b(inbox|who needs|handovers?|escalat\w*|messages?)\b/.test(t)) {

@@ -83,7 +83,8 @@ describe("inbox hand-overs", () => {
   });
 });
 
-// Escalating only flags a conversation in this inbox. Nobody is texted, so no hand-over may promise when (R4).
+// Escalating flags a conversation in this inbox and notifies the owners. Nobody contacts the customer, so no
+// hand-over may promise when (R4).
 describe("hand-over text promises no time", () => {
   const TIME_PROMISE = /\b(today|tomorrow|tonight|this (morning|arvo|afternoon|evening)|hours?|soon|by \w+day)\b/i;
   const NEW = "0499 120 554";
@@ -128,7 +129,7 @@ describe("tool badges follow what happened", () => {
     const d = seed();
     const b = d.bookings.find((x) => x.ref === "SST-1052")!;
     const phone = d.customers.find((c) => c.id === b.customerId)!.phone;
-    const [quote, done] = chat(d, phone, ["cancel SST-1052", "yes"]);
+    const [quote, done] = chat(d, phone, ["cancel SST-1052", "yes {code}"]);
     expect(toolWords(quote.tools)).toMatch(/quoted the cancellation/);
     expect(toolWords(quote.tools)).not.toMatch(/cancelled the booking/);
     expect(toolWords(done.tools)).toMatch(/cancelled the booking/);

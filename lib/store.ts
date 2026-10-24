@@ -1,403 +1,240 @@
 "use client";
 
+// The browser's copy of what the server lets this visitor see (R14). It never changes data itself: each action is a
+// named server command (lib/server/commands.ts), and the copy is read again from /api/state after it.
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
-import {
-  balance,
-  cancelBooking,
-  cashAt,
-  chargeBalance,
-  computeDistribution,
-  createHold,
-  freeCash,
-  type NewBooking,
-  pay,
-  payDeposit,
-  periodTotals,
-  reserveTarget,
-  runJobs,
-} from "./domain";
-import * as ops from "./ops";
-import { DATA_VERSION, buildSeed } from "./seed";
-import type { OwnerSnapshot } from "./agent/owner-tools";
-import type { Snapshot } from "./agent/tools";
-import type {
-  Account,
-  AgentResult,
-  Conversation,
-  Data,
-  KbPage,
-  Msg,
-  Scenario,
-  Settings,
-  TruckLog,
-} from "./types";
-import { addDays, quarterOf, sameContact, todayISO, uid } from "./util";
+import type { NewBooking } from "./domain";
+import type { Account, ApprovalCode, Conversation, Data, KbPage, Scenario, Settings, TruckLog } from "./types";
+import type { BookingView, ChatView, PublicView, StateView } from "./views";
 
-export const STORAGE_KEY = "sunrise-sunset-demo";
+type Booked = { id: string; token: string };
+// A web booking the server refused, and why (lib/domain.ts createHold).
+type Refused = { refused: string };
+
+// Where a simulated inbound message comes from: the sender's conversation on that channel (made if new).
+export type To = Pick<Conversation, "channel" | "contact"> & { name?: string };
 
 interface AppState {
+  // A signed-in owner's whole business document, and who they are.
   data: Data | null;
   ownerId: string | null;
+  // The one-time codes for changes this owner texted, for the admin header (KTD6).
+  codes: ApprovalCode[];
+  // What anyone may see: availability, settings and the knowledge base.
+  pub: PublicView | null;
+  // A customer's booking link, and the booking it opened (bookingFor says which link that answer was for).
+  link: Booked | null;
+  booking: BookingView | null;
+  bookingFor: string | null;
+  // The SMS widget's number, and its conversation.
+  chatWith: string | null;
+  chat: ChatView | null;
+  // What this browser's simulated phone shows for the messages it sent and got, by message id, where the stored copy
+  // masks a code (B2): the confirmation's nonce, the code it was answered with.
+  handset: Record<string, string>;
   hydrated: boolean;
-  ensure: () => void;
-  reset: (scenario?: Scenario) => void;
-  login: (ownerId: string) => void;
-  logout: () => void;
-  mutate: (fn: (d: Data) => void) => void;
-  book: (n: NewBooking) => string;
-  payDeposit: (bookingId: string, card: string, checkout?: { email?: string; agreed?: boolean }) => void;
-  cancel: (bookingId: string) => void;
-  customerCancel: (bookingId: string) => ReturnType<typeof ops.customerCancel>;
-  startConversation: (c: Pick<Conversation, "channel" | "contact" | "name">) => string;
-  sendCustomer: (convId: string, body: string) => Promise<AgentResult | null>;
-  ownerReply: (convId: string, body: string) => void;
-  setAgentActive: (convId: string, active: boolean) => void;
-  handBack: (convId: string, force?: boolean) => void;
-  setDraft: (convId: string, draft: string) => void;
-  markRead: (convId: string) => void;
-  claimRun: (bookingId: string, which: "deliver" | "collect") => void;
-  captureBond: (bookingId: string, amount: number, note: string) => void;
-  returnedClean: (bookingId: string) => void;
-  chargeBalanceNow: (bookingId: string) => void;
-  payBalance: (bookingId: string, card: string) => void;
-  addExpense: (date: string, account: Account, amount: number, memo: string) => void;
-  approveDistribution: (distId: string) => void;
-  payDistribution: (distId: string) => void;
-  updateSettings: (s: Partial<Settings>) => void;
-  saveKb: (page: KbPage) => void;
-  toggleBlackout: (date: string) => void;
-  addPersonalUse: (date: string, note: string) => void;
-  addTruckLog: (log: Omit<TruckLog, "id">) => void;
-  transferShares: (fromId: string, toId: string, shares: number) => void;
+  // Why the last command failed, for the page to show.
+  error: string | null;
+  refresh: () => Promise<void>;
+  openLink: (id: string, token: string) => Promise<void>;
+  watchChat: (contact: string) => Promise<void>;
+  logout: () => Promise<void>;
+  dismissError: () => void;
+  reset: (scenario?: Scenario) => Promise<void>;
+  // The demo's "Run daily jobs now". What ran, or null when it failed.
+  runJobs: () => Promise<string[] | null>;
+  book: (n: Omit<NewBooking, "via" | "id" | "ref" | "token">) => Promise<Booked | Refused | null>;
+  payDeposit: (bookingId: string, card: string, checkout?: { email?: string; agreed?: boolean }) => Promise<boolean>;
+  payBalance: (bookingId: string, card: string) => Promise<boolean>;
+  customerCancel: (bookingId: string) => Promise<{ refund: number } | { needsOwner: string } | null>;
+  cancel: (bookingId: string) => Promise<void>;
+  sendCustomer: (to: To, body: string) => Promise<string>;
+  ownerReply: (convId: string, body: string) => Promise<void>;
+  setAgentActive: (convId: string, active: boolean) => Promise<void>;
+  handBack: (convId: string, force?: boolean) => Promise<void>;
+  setDraft: (convId: string, draft: string) => Promise<void>;
+  markRead: (convId: string) => Promise<void>;
+  claimRun: (bookingId: string, which: "deliver" | "collect") => Promise<void>;
+  captureBond: (bookingId: string, amount: number, note: string) => Promise<void>;
+  returnedClean: (bookingId: string) => Promise<void>;
+  chargeBalanceNow: (bookingId: string) => Promise<void>;
+  addExpense: (date: string, account: Account, amount: number, memo: string) => Promise<void>;
+  approveDistribution: (distId: string) => Promise<void>;
+  payDistribution: (distId: string) => Promise<void>;
+  updateSettings: (s: Partial<Settings>) => Promise<void>;
+  saveKb: (page: KbPage) => Promise<void>;
+  toggleBlackout: (date: string) => Promise<void>;
+  addPersonalUse: (date: string, note: string) => Promise<void>;
+  addTruckLog: (log: Omit<TruckLog, "id">) => Promise<void>;
+  // Share transfers and lowering the payout approvals wait for a second director (B5).
+  transferShares: (fromId: string, toId: string, shares: number) => Promise<void>;
+  approveRequest: (id: string) => Promise<void>;
+  declineRequest: (id: string) => Promise<void>;
 }
 
-function clone<T>(x: T): T {
-  return structuredClone(x);
+// What /api/commands answers.
+type CommandOut = { result?: unknown };
+
+function post(body: string, url = "/api/commands") {
+  return fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body });
 }
 
-const log = ops.log;
+// One command under a fresh idempotency key. A dropped connection may still have reached the server, so it is
+// retried once with the same key: the server runs it at most once.
+async function call(command: string, args: object): Promise<CommandOut> {
+  const body = JSON.stringify({ command, args, key: crypto.randomUUID() });
+  const res = await post(body).catch(() => post(body));
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(out.error ?? `Something went wrong (${res.status}).`);
+  return out;
+}
 
-// Keeps a distribution record for the most recent completed quarter.
-function ensureDistributions(d: Data) {
-  const lastEnd = addDays(quarterOf(todayISO()).start, -1);
-  const q = quarterOf(lastEnd);
-  if (!d.distributions.some((x) => x.quarter === q.key) && q.start >= d.ledger[0]?.date) {
-    d.distributions.push(computeDistribution(d, q.key));
+// Only the newest read lands, so a slow one never overwrites a newer answer.
+let reads = 0;
+
+// The simulated phone's texts last for the browser tab, like texts on a phone outlast a page reload. Storage can be
+// missing or full; the phone then forgets on reload.
+const HANDSET_KEY = "sst-handset";
+const HANDSET_MAX = 200;
+
+function savedHandset(): Record<string, string> {
+  try {
+    return JSON.parse(sessionStorage.getItem(HANDSET_KEY) ?? "{}");
+  } catch {
+    return {};
   }
-  for (const dist of d.distributions) {
-    if (dist.status === "awaiting" && dist.approvals.length === 0) {
-      Object.assign(dist, computeDistribution(d, dist.quarter), { approvals: [] });
+}
+
+function saveHandset(h: Record<string, string>) {
+  try {
+    sessionStorage.setItem(HANDSET_KEY, JSON.stringify(h));
+  } catch {
+    // Kept in memory only.
+  }
+}
+
+export const useApp = create<AppState>()((set, get) => {
+  // Runs a command and reads the state again. A failure is kept in `error`; the caller gets undefined.
+  async function run(command: string, args: object = {}): Promise<CommandOut | undefined> {
+    try {
+      return await call(command, args);
+    } catch (err) {
+      set({ error: (err as Error).message });
+    } finally {
+      await get().refresh();
     }
   }
-}
+  // The token for a booking this visitor opened by its link.
+  const tokenFor = (bookingId: string) => (get().link?.id === bookingId ? get().link!.token : "");
+  const done = async (command: string, args: object) => void (await run(command, args));
 
-// What the agent endpoint sees: availability for every date, but only the sender's own contact details.
-export function snapshot(d: Data, contact?: string): Snapshot {
-  const customers = d.customers.filter((c) => sameContact(c.phone, contact) || sameContact(c.email, contact));
-  const bookings = d.bookings.map(({ notes, condition, guests, eventType, ...b }) => b) as Data["bookings"];
-  return { settings: d.settings, bookings, customers, kb: d.kb, blackouts: d.blackouts, seq: d.seq };
-}
-
-// An owner texting (or emailing) the business line from their own number gets the owner agent.
-export function ownerByContact(d: Data, contact: string) {
-  return d.owners.find((o) => sameContact(o.phone, contact) || sameContact(o.email, contact));
-}
-
-// What the owner agent sees: everything an owner sees in the admin, with ledger totals in place of the ledger.
-export function ownerSnapshot(d: Data, now = new Date()): OwnerSnapshot {
-  const today = todayISO(now);
-  const t30 = periodTotals(d, addDays(today, -30), today);
   return {
-    settings: d.settings,
-    owners: d.owners,
-    bookings: d.bookings,
-    customers: d.customers,
-    distributions: d.distributions,
-    truck: d.truck,
-    kb: d.kb,
-    blackouts: d.blackouts,
-    seq: d.seq,
-    inbox: d.conversations
-      .filter((c) => !c.ownerId)
-      .map((c) => ({ id: c.id, name: c.name, channel: c.channel, contact: c.contact, escalated: c.escalated, agentActive: c.agentActive, last: c.messages.at(-1)?.body.slice(0, 140), draft: c.draft })),
-    money: {
-      cash: Math.round(cashAt(d)),
-      reserve: reserveTarget(d, today),
-      revenue30: Math.round(t30.revenue),
-      profit30: Math.round(t30.profit),
-      held: Math.round(balance(d, "deposits")),
-      owedRunners: Object.fromEntries(d.owners.map((o) => [o.id, Math.round(balance(d, "owed_runners", undefined, o.id))])),
-      free: freeCash(d, today),
+    data: null,
+    ownerId: null,
+    codes: [],
+    pub: null,
+    link: null,
+    booking: null,
+    bookingFor: null,
+    chatWith: null,
+    chat: null,
+    handset: savedHandset(),
+    hydrated: false,
+    error: null,
+
+    refresh: async () => {
+      const mine = ++reads;
+      const { link, chatWith } = get();
+      const q = new URLSearchParams();
+      if (link) {
+        q.set("booking", link.id);
+        q.set("t", link.token);
+      }
+      if (chatWith) q.set("chat", chatWith);
+      const res = await fetch(`/api/state?${q}`, { cache: "no-store" }).catch(() => null);
+      if (!res?.ok || mine !== reads) return;
+      const s = (await res.json()) as StateView;
+      if (mine !== reads) return;
+      set({ pub: s.pub, data: s.owner?.data ?? null, ownerId: s.owner?.id ?? null, codes: s.owner?.codes ?? [], booking: s.booking ?? null, bookingFor: link?.id ?? null, chat: s.chat ?? null, hydrated: true });
     },
+
+    openLink: async (id, token) => {
+      set({ link: { id, token } });
+      await get().refresh();
+    },
+
+    watchChat: async (contact) => {
+      if (get().chatWith === contact) return;
+      set({ chatWith: contact, chat: null });
+      await get().refresh();
+    },
+
+    logout: async () => {
+      await fetch("/api/session", { method: "DELETE" }).catch(() => undefined);
+      set({ data: null, ownerId: null, codes: [] });
+      await get().refresh();
+    },
+
+    dismissError: () => set({ error: null }),
+
+    reset: (scenario) => done("reset", { scenario }),
+    runJobs: async () => ((await run("runJobs"))?.result as { ran?: string[] } | undefined)?.ran ?? null,
+
+    // Refused when the date was taken since the page checked it, or this contact already holds an unpaid date. null
+    // when the command failed.
+    book: async (n) => {
+      const r = (await run("book", n))?.result as Partial<Booked & Refused> | undefined;
+      return r?.id && r.token ? { id: r.id, token: r.token } : r?.refused ? { refused: r.refused } : null;
+    },
+
+    payDeposit: async (bookingId, card, checkout = {}) => !!(await run("payDeposit", { bookingId, token: tokenFor(bookingId), card, ...checkout })),
+    payBalance: async (bookingId, card) => !!(await run("payBalance", { bookingId, token: tokenFor(bookingId), card })),
+    customerCancel: async (bookingId) => {
+      const r = (await run("customerCancel", { bookingId, token: tokenFor(bookingId) }))?.result;
+      return r && ("refund" in (r as object) || "needsOwner" in (r as object)) ? (r as { refund: number } | { needsOwner: string }) : null;
+    },
+    cancel: (bookingId) => done("cancel", { bookingId }),
+
+    // The message goes to /api/dev/simulate, which signs it and posts it through the inbound webhook, where the server
+    // stores it and runs the agent's turn (lib/server/inbound.ts). Not retried: a second post would be a second
+    // message. Returns the conversation id, or "" when refused (for example another owner's number, or too many
+    // messages a minute). The answer's `handset` is what the phone shows for this turn.
+    sendCustomer: async (to, body) => {
+      try {
+        const res = await post(JSON.stringify({ ...to, body }), "/api/dev/simulate");
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error ?? `Something went wrong (${res.status}).`);
+        const handset = Object.fromEntries(Object.entries({ ...get().handset, ...(out.handset as Record<string, string> | undefined) }).slice(-HANDSET_MAX));
+        set({ handset });
+        saveHandset(handset);
+        return (out.conversation as ChatView | undefined)?.id ?? "";
+      } catch (err) {
+        set({ error: (err as Error).message });
+        return "";
+      } finally {
+        await get().refresh();
+      }
+    },
+
+    ownerReply: (convId, body) => done("ownerReply", { convId, body }),
+    setAgentActive: (convId, active) => done("setAgentActive", { convId, active }),
+    handBack: (convId, force) => done("handBack", { convId, force }),
+    setDraft: (convId, draft) => done("setDraft", { convId, draft }),
+    markRead: (convId) => done("markRead", { convId }),
+    claimRun: (bookingId, which) => done("claimRun", { bookingId, which }),
+    captureBond: (bookingId, amount, note) => done("captureBond", { bookingId, amount, note }),
+    returnedClean: (bookingId) => done("returnedClean", { bookingId }),
+    chargeBalanceNow: (bookingId) => done("chargeBalanceNow", { bookingId }),
+    addExpense: (date, account, amount, memo) => done("addExpense", { date, account, amount, memo }),
+    approveDistribution: (distId) => done("approveDistribution", { distId }),
+    payDistribution: (distId) => done("payDistribution", { distId }),
+    updateSettings: (patch) => done("updateSettings", { patch }),
+    saveKb: (page) => done("saveKb", { page }),
+    toggleBlackout: (date) => done("toggleBlackout", { date }),
+    addPersonalUse: (date, note) => done("addPersonalUse", { date, note }),
+    addTruckLog: (log) => done("addTruckLog", { log }),
+    transferShares: (fromId, toId, shares) => done("transferShares", { fromId, toId, shares }),
+    approveRequest: (id) => done("approveRequest", { id }),
+    declineRequest: (id) => done("declineRequest", { id }),
   };
-}
-
-export const useApp = create<AppState>()(
-  persist(
-    (set, get) => ({
-      data: null,
-      ownerId: null,
-      hydrated: false,
-
-      // Writes only when a job changed something, so an idle tab never overwrites another tab's bookings.
-      ensure: () => {
-        const cur = get().data;
-        const fresh = !cur || cur.version !== DATA_VERSION;
-        const d = fresh ? buildSeed() : clone(cur);
-        const ran = runJobs(d);
-        ran.forEach((t) => log(d, t));
-        const before = fresh ? "" : JSON.stringify(cur.distributions);
-        ensureDistributions(d);
-        if (fresh || ran.length > 0 || JSON.stringify(d.distributions) !== before) set({ data: d, hydrated: true });
-        else if (!get().hydrated) set({ hydrated: true });
-      },
-
-      reset: (scenario) => {
-        const d = buildSeed(new Date(), scenario ?? get().data?.scenario ?? "base");
-        set({ data: d });
-      },
-
-      login: (ownerId) => set({ ownerId }),
-      logout: () => set({ ownerId: null }),
-
-      mutate: (fn) => {
-        const cur = get().data;
-        if (!cur) return;
-        const d = clone(cur);
-        fn(d);
-        set({ data: d });
-      },
-
-      // "" when createHold refuses (the date was taken since the page checked it).
-      book: (n) => {
-        let id = "";
-        get().mutate((d) => {
-          try {
-            const b = createHold(d, n);
-            id = b.id;
-            log(d, `New hold ${b.ref} via ${n.via} (${n.name})`);
-          } catch (err) {
-            log(d, `Hold refused for ${n.date} via ${n.via}: ${(err as Error).message}`);
-          }
-        });
-        return id;
-      },
-
-      payDeposit: (bookingId, card, checkout = {}) =>
-        get().mutate((d) => {
-          const b = payDeposit(d, bookingId, card, new Date(), checkout.agreed, checkout.email);
-          log(d, `Deposit paid for ${b.ref}`);
-          for (const c of d.conversations) {
-            if (c.customerId === b.customerId && c.agentActive) {
-              c.messages.push({
-                id: uid("m"),
-                from: "agent",
-                body: `Payment received, thanks! ${b.ref} is confirmed.`,
-                at: new Date().toISOString(),
-                tools: ["stripe:webhook"],
-              });
-            }
-          }
-        }),
-
-      cancel: (bookingId) =>
-        get().mutate((d) => {
-          const pol = cancelBooking(d, bookingId);
-          const b = d.bookings.find((x) => x.id === bookingId);
-          if (pol && b) log(d, `Cancelled ${b.ref}; refunded $${pol.refund}`);
-        }),
-
-      customerCancel: (bookingId) => {
-        let r: ReturnType<typeof ops.customerCancel> = null;
-        get().mutate((d) => {
-          r = ops.customerCancel(d, bookingId);
-        });
-        return r;
-      },
-
-      startConversation: (c) => {
-        const existing = get().data?.conversations.find((x) => x.contact === c.contact && x.channel === c.channel);
-        if (existing) return existing.id;
-        const id = uid("conv");
-        get().mutate((d) => {
-          const owner = ownerByContact(d, c.contact);
-          d.conversations.unshift({ ...c, ...(owner && { name: owner.name, ownerId: owner.id }), id, agentActive: true, unread: !owner, state: {}, messages: [] });
-        });
-        return id;
-      },
-
-      sendCustomer: async (convId, body) => {
-        const msg: Msg = { id: uid("m"), from: "customer", body, at: new Date().toISOString() };
-        get().mutate((d) => {
-          const c = d.conversations.find((x) => x.id === convId);
-          if (c) {
-            c.messages.push(msg);
-            c.unread = !c.ownerId;
-          }
-        });
-        const d0 = get().data;
-        const conv = d0?.conversations.find((x) => x.id === convId);
-        // An owner who took over answers alone; a hand-over the owners haven't picked up yet still gets general answers.
-        if (!d0 || !conv || (!conv.agentActive && !conv.escalated)) return null;
-        const res = await fetch("/api/agent", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ snapshot: conv.ownerId ? ownerSnapshot(d0) : snapshot(d0, conv.contact), conversation: conv }),
-        });
-        if (!res.ok) return null;
-        const result = (await res.json()) as AgentResult;
-        get().mutate((d) => {
-          const c = d.conversations.find((x) => x.id === convId);
-          if (!c) return;
-          // The reply goes in first so a hand-over row reads after what the agent told the customer.
-          c.messages.push({ id: uid("m"), from: "agent", body: result.reply, at: new Date().toISOString(), tools: result.tools });
-          for (const a of result.actions) {
-            if (a.type === "hold") {
-              const isEmail = a.contact.includes("@");
-              let b;
-              try {
-                b = createHold(d, {
-                  id: a.bookingId,
-                  ref: a.ref,
-                  date: a.date,
-                  block: a.block,
-                  startTime: a.startTime,
-                  suburb: a.suburb,
-                  name: a.name,
-                  phone: isEmail ? undefined : a.contact,
-                  email: isEmail ? a.contact : undefined,
-                  via: a.channel,
-                });
-              } catch (err) {
-                // The date went between the agent's check and now. The link it sent won't open, so the owners take it.
-                c.escalated = `Hold ${a.ref} for ${a.name} refused: ${(err as Error).message}`;
-                c.messages.push({ id: uid("m"), from: "system", body: `Hold refused: ${(err as Error).message}`, at: new Date().toISOString() });
-                log(d, `Agent hold ${a.ref} refused: ${(err as Error).message}`);
-                continue;
-              }
-              d.seq = Math.max(d.seq, Number(a.ref.replace("SST-", "")));
-              c.customerId = b.customerId;
-              if (c.name.startsWith("Caller") || c.name === "New contact") c.name = a.name;
-              log(d, `Agent held ${b.ref} for ${a.name} via ${a.channel}`);
-            } else if (a.type === "cancel") {
-              const b = d.bookings.find((x) => x.id === a.bookingId);
-              const pol = cancelBooking(d, a.bookingId);
-              if (b && pol) log(d, `${c.ownerId ? `${c.name} cancelled ${b.ref} by SMS` : `Agent cancelled ${b.ref}`}; refunded $${pol.refund}`);
-            } else if (a.type === "escalate") {
-              if (c.escalated && !c.agentActive) continue;
-              const repeat = c.escalated === a.reason;
-              c.escalated = a.reason;
-              if (!a.keepAgent) c.agentActive = false;
-              if (a.draft) c.draft = a.draft;
-              // The reason stays in the thread after an owner replies and the flag clears. Written once per reason.
-              if (!repeat) c.messages.push({ id: uid("m"), from: "system", body: `Agent handed over: ${a.reason}`, at: new Date().toISOString() });
-              log(d, `Escalated to owners: ${a.reason}`);
-            } else if (c.ownerId) {
-              ops.applyOwnerAction(d, a, c.ownerId);
-            }
-          }
-          c.state = result.state;
-        });
-        return result;
-      },
-
-      ownerReply: (convId, body) => {
-        const me = get().ownerId;
-        if (me) get().mutate((d) => ops.ownerReply(d, convId, body, me));
-      },
-
-      setAgentActive: (convId, active) => get().mutate((d) => ops.setAgentActive(d, convId, active, get().ownerId ?? undefined)),
-
-      handBack: (convId, force) => get().mutate((d) => ops.handBack(d, convId, get().ownerId ?? undefined, force)),
-
-      setDraft: (convId, draft) => get().mutate((d) => ops.setDraft(d, convId, draft)),
-
-      markRead: (convId) =>
-        get().mutate((d) => {
-          const c = d.conversations.find((x) => x.id === convId);
-          if (c) c.unread = false;
-        }),
-
-      claimRun: (bookingId, which) => {
-        const me = get().ownerId;
-        if (me) get().mutate((d) => ops.claimRun(d, bookingId, which, me));
-      },
-
-      captureBond: (bookingId, amount, note) =>
-        get().mutate((d) => {
-          const b = d.bookings.find((x) => x.id === bookingId);
-          if (!b) return;
-          pay(d, b, "bond_capture", amount, new Date().toISOString());
-          b.bondStatus = "captured";
-          b.bondCaptured = amount;
-          b.condition = note;
-          log(d, `Captured $${amount} of the bond on ${b.ref}`);
-        }),
-
-      returnedClean: (bookingId) => {
-        const me = get().ownerId;
-        if (me) get().mutate((d) => ops.returnedClean(d, bookingId, me));
-      },
-
-      chargeBalanceNow: (bookingId) =>
-        get().mutate((d) => {
-          const b = d.bookings.find((x) => x.id === bookingId);
-          if (!b) return;
-          const r = chargeBalance(d, b);
-          if (r === "paid") log(d, `Charged balance for ${b.ref}`);
-          else if (r === "declined") log(d, `Balance for ${b.ref} declined again`);
-        }),
-
-      // The customer put in a new card for a balance that kept declining.
-      payBalance: (bookingId, card) =>
-        get().mutate((d) => {
-          const b = d.bookings.find((x) => x.id === bookingId);
-          if (!b || b.state !== "confirmed") return;
-          b.cardDeclines = false;
-          pay(d, b, "balance", b.total - b.deposit, new Date().toISOString(), card);
-          b.state = "balance_paid";
-          b.balanceFailedAt = undefined;
-          log(d, `${b.ref} balance paid with a new card`);
-        }),
-
-      addExpense: (date, account, amount, memo) => get().mutate((d) => ops.addExpense(d, date, account, amount, memo)),
-
-      approveDistribution: (distId) => {
-        const me = get().ownerId;
-        if (me) get().mutate((d) => ops.approveDistribution(d, distId, me));
-      },
-
-      payDistribution: (distId) => {
-        const me = get().ownerId;
-        if (me) get().mutate((d) => ops.payOut(d, distId, me));
-      },
-
-      updateSettings: (s) => get().mutate((d) => ops.updateSettings(d, s)),
-
-      saveKb: (page) => get().mutate((d) => ops.saveKb(d, page)),
-
-      toggleBlackout: (date) => get().mutate((d) => ops.toggleBlackout(d, date)),
-
-      addPersonalUse: (date, note) => get().mutate((d) => ops.addPersonalUse(d, date, note, get().ownerId ?? d.owners[0].id)),
-
-      addTruckLog: (l) => get().mutate((d) => ops.addTruckLog(d, l)),
-
-      transferShares: (fromId, toId, shares) =>
-        get().mutate((d) => {
-          const a = d.owners.find((o) => o.id === fromId);
-          const b = d.owners.find((o) => o.id === toId);
-          if (!a || !b || a.shares < shares) return;
-          a.shares -= shares;
-          b.shares += shares;
-          log(d, `Transferred ${shares} share(s) from ${a.name} to ${b.name}`);
-        }),
-    }),
-    {
-      name: STORAGE_KEY,
-      storage: createJSONStorage(() => localStorage),
-      partialize: (s) => ({ data: s.data, ownerId: s.ownerId }),
-      skipHydration: true,
-    },
-  ),
-);
+});

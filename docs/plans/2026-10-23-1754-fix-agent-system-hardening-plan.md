@@ -190,6 +190,7 @@ stateDiagram-v2
 | U12 | Prompt-injection boundary | `lib/agent/owner-claude.ts`, `lib/agent/claude.ts`, `tests/injection.eval.ts` | U11 |
 | U13 | Server jobs and notifications | `app/api/jobs/route.ts`, `lib/server/outbox.ts` | U8 |
 | U14 | Business-id check and docs | `lib/server/db/repo.ts`, `AGENTS.md`, `README.md` | U7 to U13 |
+| U15 | Auth hardening (U15a platform, U15b approvals and data) | `lib/server/auth.ts`, `lib/server/secrets.ts`, `lib/server/limits.ts`, `app/login/confirm/` | U8 to U14 |
 
 ### Phase 1: logic fixes on the current architecture
 
@@ -595,6 +596,71 @@ stateDiagram-v2
 - A repo read with the wrong business id returns no data.
 
 **Verification:** The business-id tests pass. Colin reads the updated `AGENTS.md`.
+
+### U15. Auth hardening
+
+**Goal:** Close the findings of the second adversarial review, on sign-in, sessions, approvals and the demo surfaces (U8 to U14 at `59cca56`), so a real business can run with the demo code in the same deployment.
+
+**Requirements:** R3, R5, R7, R14, R15, R16, R17
+
+**Dependencies:** U8 to U14
+
+**Sources:** Fable (`SS-xx`), Codex (`AUTH-xx`) and Argon (`Fxx`) reports in `agents/counselors/` (untracked, Colin's machine). Not fixed: AUTH-09 (concurrent model-budget overspend; the daily budget is a soft cap), real email delivery of sign-in links, a real authenticator app.
+
+**Files:**
+- Create: `lib/server/secrets.ts`, `app/login/confirm/`, `app/api/session/confirm/route.ts`, `drizzle/0002_tenant_demo.sql`, `drizzle/0003_approval_misses_request_digest.sql`
+- Modify: `lib/server/auth.ts`, `lib/server/limits.ts`, `lib/server/signature.ts`, `lib/server/inbound.ts`, `lib/server/commands.ts`, `lib/server/db/repo.ts`, `lib/server/db/schema.ts`, `lib/server/jobs.ts`, `lib/server/approvals.ts`, `lib/server/agent.ts`, `lib/agent/owner-tools.ts`, `lib/agent/confirm.ts`, `lib/domain.ts`, `lib/ops.ts`, `lib/views.ts`, `lib/store.ts`, `components/SmsWidget.tsx`, `app/admin/layout.tsx`, the session, state, outbox, commands and simulate routes
+- Test: `tests/server/auth.test.ts` (U15a), `tests/server/auth-approvals.test.ts` and `tests/server/auth-data.test.ts` (U15b; split to keep each file near 500 lines), one test per finding, each failing before its fix; `tests/server/tenancy.test.ts`
+
+**Approach, U15a (platform):**
+1. A1. Demo features need two keys: `DEMO_MODE` and a `demo` flag on the tenant row, which only `seedDemo` sets. They gate `/outbox`, `/api/dev/simulate`, the `?chat=` read, the login owner picker and the `reset` and `runJobs` commands. `reset` refuses any non-demo tenant whatever the caller says. A session cookie records the demo state it was signed in, and stops working when that state changes (SS-01, AUTH-01, F12).
+2. A2. One form parser for the signature check and the message. A repeated field name gets 400 before the signature is checked (AUTH-02).
+3. A3. Production, or any run with `DATABASE_URL`, refuses a secret that is missing, equal to a dev default, or shorter than 32 characters. Secret compares hash both sides, so a wrong length takes the same path (SS-08, AUTH-03, F13).
+4. A4. Sign-in links use `PUBLIC_BASE_URL`. With it set (always in production), the Origin check compares against it, not against Host (SS-04, F01).
+5. A5. The link opens `/login/confirm` with the token in the fragment. Its button posts the token to `/api/session/confirm`. A GET of the link changes nothing. Same-origin links in the admin are never prefetched (SS-05, AUTH-11, F11).
+6. A6. Rate limits on the browser routes, per client IP (Vercel's `x-real-ip`, else one shared window) and per contact: sign-in links (5 an email, 20 an IP, per 15 minutes), the public `book` command (5 a contact, 10 an IP, per hour) and the simulator (10 numbers an IP an hour). The outbox keeps one sign-in link per owner, and the daily job drops rows older than 7 days (SS-06, AUTH-10, F08).
+7. A7. Signing out bumps the owner's session version, which ends their sessions on every device. Approval codes use their own `APPROVAL_SECRET`. The session and sign-out cookies are Secure in production and on any https request (SS-07, SS-13).
+8. A8. Inbound message ids are kept 30 days. The rate check runs before the id is spent, so a 429 does not burn it (SS-10).
+
+**Approach, U15b (approvals, roles, data):**
+1. B1. Each wrong nonce or one-time code is a miss (`ApprovalChange.miss`) that the server counts per owner number per Perth day in `rate_limits` (`guess:<number>`). The fifth writes one alert to the owners' inbox; after it, nothing stages for that number until midnight and a YES to a staged change drops it (`OwnerCtx.locked`, reply `PAUSED`); reads still answer. A wrong one-time code counts on its approval row (`code_misses`); the third closes it, in one SQL statement so concurrent misses can't slip under. A turn dropped because a newer message overtook it still applies its closing writes (`closingWrites`), so a wrong nonce always ends its approval (SS-02, AUTH-04, F04, F07, SS-12).
+2. B2. Codes are never stored. An inbound answer ("YES 4821 482193", a bare code) is stored with its digits masked (`maskAnswer`); the agent's reply is stored with every "YES dddd" and the turn's live codes masked (`maskReply`). The turn itself reads the message as sent. The unmasked reply goes only to the handset: the TwiML answer, and the simulator's `handset` map, which the widget keeps for the tab. The owner state also leaves a cancel quote's `state.code` off its conversation. A signed-in owner texts only as their own number in the simulator (AUTH-05, F05, F12, SS-14).
+3. B3. A stage that replaces a live one opens with "This replaces the change that was waiting for your YES (<summary>), so that one won't happen." (SS-11).
+4. B4. `find_booking` gives the customer's phone masked (`maskContact`), and `phone` is an untrusted field for the Claude path. The inbox list carries no contacts. Cash and revenue stay in "what's on" (SS-03, F14).
+5. B5. `approvalsRequired`, `refundLimit` and `smsExpenseCap` (`GUARDRAIL_SETTINGS`) are a director's to change; the settings form's unchanged values pass. Lowering `approvalsRequired` and every share transfer become a `DirectorRequest` on the document (`d.requests`, the payout approvals pattern); a second, different director runs `approveRequest`, which checks and applies it, or `declineRequest`. The admin shows each waiting request above the page with Approve and Decline (Withdraw for the one who asked). `captureBond` needs `bondStatus: "held"`, so it runs once, up to the bond (SS-09, F06).
+6. B6. `payDeposit` refuses a lapsed hold and a date since booked or blocked out. `createHold` refuses a second unpaid date for a phone or email on every surface (the agent's own check moved there). The public `book` command needs a valid phone or email, and a refused hold saves nothing, not even a log line (AUTH-08, F02, F10).
+7. B7. `createHold` keeps the email given with the booking as `receiptEmail`; `receiptTo` reads only that (AUTH-06).
+8. B8. A command's key is stored as `cmd:<key>` with a digest of the command, its parsed arguments and its caller (owner id, or client IP for public commands). A replay with another digest gets 422 (AUTH-07, F09).
+9. B9. `normalContact` (lower-case email, local phone form) runs at ingress on the inbound webhooks, the simulator, `book` and checkout; `receive()`, `stateFor()` and the simulator compare with `sameContact`. `book` rejects a phone that isn't one (F03, F14).
+
+Not fixed in U15b: wrong cancel codes from a customer's number are not counted per day (a refund under the limit goes back to the customer's card, and the real customer gets each quote); the email channel still has no outbound adapter, so an emailed reply reaches only the simulator.
+
+**Test scenarios (U15a):**
+- `reset` for a tenant without the demo flag returns 404 and changes nothing, even with a demo caller.
+- With `DEMO_MODE` on and the flag off: the simulator and `/outbox` return 404, the chat read is empty, the owner picker is empty.
+- A demo cookie stops working when `DEMO_MODE` goes off.
+- Codex's repeated-`From` body with a valid signature returns 400 and stores nothing.
+- Each of the five secrets refuses a dev default, a 31-character value and no value in production and with `DATABASE_URL`.
+- A spoofed Host and Origin get 403; the link points at `PUBLIC_BASE_URL`.
+- The link has no query, only a fragment; the confirm POST signs in once.
+- The 6th link for one email and the 21st from one IP in 15 minutes get 429; the 6th booking for one phone and the 11th from one IP in an hour get 429; the 11th new number from one IP gets 429.
+- Signing out on one device ends the owner's cookie on another.
+- A message turned away by the rate limit goes through on the provider's retry, and a replay two days later runs nothing.
+
+**Test scenarios (U15b):**
+- Three wrong one-time codes close the approval; the right code after them pays nothing (AUTH-04).
+- Five wrong codes in a Perth day pause changes by text from that number and write one alert; reads, other owners and the next day carry on.
+- A wrong nonce whose turn a newer message overtook still ends the approval (F07).
+- No view (owner state, chat, outbox, preview) holds a live nonce, one-time code or cancel code; only the handset and the staging owner's header do. The simulator refuses another owner's number (F05).
+- A stage that replaces a live one names it (SS-11).
+- `find_booking` gives the phone masked inside the untrusted marker (SS-03, F14).
+- A non-director can't change a guardrail; lowering approvals and moving shares wait for a second director; a bond is captured only while held (SS-09, F06).
+- A lapsed hold can't be paid, even when nobody took the date; `book` needs a contact and holds one unpaid date per contact; a refused hold saves nothing (F02, AUTH-08, F10).
+- A phone-only booking shows no other customer's email (AUTH-06).
+- A replayed key with other arguments, another IP or another owner gets 422; a command key can't spend the budget alert's key (AUTH-07, F09).
+- A differently cased email reaches the taken-over thread; contacts are stored in one form (F03).
+
+**Verification:** Each U15a and U15b test fails before its fix and passes after. `RUNS=3` simulator owner flows and review attacks, with the rig signing in through the confirm page (U15b: Aaron texts from his own page). Screenshots of `/login/confirm` (U15a) and the waiting-request row (U15b) at 375, 768 and 1440 px. Money: before and after numbers for B5 and B6 from the seed, by script.
 
 ---
 

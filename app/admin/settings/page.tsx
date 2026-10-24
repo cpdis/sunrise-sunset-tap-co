@@ -12,6 +12,9 @@ export default function SettingsPage() {
   const data = useData();
   const update = useApp((s) => s.updateSettings);
   const reset = useApp((s) => s.reset);
+  const runJobs = useApp((s) => s.runJobs);
+  // What the last "Run daily jobs now" ran: null before any run.
+  const [ran, setRan] = useState<string[] | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
   const [engine, setEngine] = useState("");
@@ -22,7 +25,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (data) setForm(toForm(data.settings));
   }, [data?.settings]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { fetch("/api/agent").then((r) => r.json()).then((j) => setEngine(j.engine)).catch(() => {}); }, []);
+  useEffect(() => { fetch("/api/agent/preview").then((r) => r.json()).then((j) => setEngine(j.engine)).catch(() => {}); }, []);
 
   if (!data) return <Loading />;
   const saved0 = toForm(data.settings);
@@ -56,7 +59,7 @@ export default function SettingsPage() {
     { name: "Agent", now: engine === "claude" ? "Claude (ANTHROPIC_API_KEY is set)" : "Rules engine (no API key)", prod: "Claude with tool use, same tools" },
     { name: "SMS and phone", now: "On-site simulator", prod: "Twilio number, voice transcription" },
     { name: "Email", now: "Simulated in the inbox", prod: "Resend inbound and outbound" },
-    { name: "Data and login", now: "Your browser (localStorage)", prod: "Supabase Postgres and email sign-in" },
+    { name: "Data and login", now: "Demo database (PGlite) and simulated sign-in emails", prod: "Hosted Postgres and emailed sign-in links" },
   ];
 
   return (
@@ -105,7 +108,7 @@ export default function SettingsPage() {
           </span>
           <div className="seg" role="group" aria-label="Demo scenario">
             {(Object.keys(SCENARIOS) as Scenario[]).map((k) => (
-              <button key={k} className={cls(data.scenario === k && "on")} aria-pressed={data.scenario === k} onClick={() => { if (data.scenario !== k && confirm(`Switch to the ${SCENARIOS[k].label.toLowerCase()} case? This regenerates the demo data.`)) { reset(k); useApp.getState().ensure(); } }}>
+              <button key={k} className={cls(data.scenario === k && "on")} aria-pressed={data.scenario === k} onClick={() => { if (data.scenario !== k && confirm(`Switch to the ${SCENARIOS[k].label.toLowerCase()} case? This regenerates the demo data for everyone using it.`)) reset(k); }}>
                 {SCENARIOS[k].label}
               </button>
             ))}
@@ -123,8 +126,13 @@ export default function SettingsPage() {
       )}
       <Section title="Demo data">
         <div className="card stack" style={{ gap: 12 }}>
-          <span className="note">Regenerates a fresh simulated year of trading and wipes anything you&apos;ve done in this browser.</span>
-          <button className="btn small danger" style={{ alignSelf: "flex-start" }} onClick={() => { if (confirm("Reset all demo data?")) { reset(); useApp.getState().ensure(); } }}>Reset demo data</button>
+          <span className="note">Regenerates a fresh simulated year of trading and wipes every change made in the demo, for everyone using it.</span>
+          <button className="btn small danger" style={{ alignSelf: "flex-start" }} onClick={() => { if (confirm("Reset all demo data?")) reset(); }}>Reset demo data</button>
+        </div>
+        <div className="card stack" style={{ gap: 12 }}>
+          <span className="note">The server runs the daily jobs every morning: expired holds, balances due, bond holds and closing finished hires. Run them now to move the demo on without waiting.</span>
+          <button className="btn small" style={{ alignSelf: "flex-start" }} onClick={async () => setRan(await runJobs())}>Run daily jobs now</button>
+          {ran && <span className="note" role="status">{ran.length ? ran.join(". ") + "." : "Nothing was due."}</span>}
         </div>
       </Section>
     </div>

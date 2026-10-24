@@ -8,3 +8,5 @@ next-env.d.ts
 .vercel
 review/
 agents/
+# Local PGlite database (lib/server/db/client.ts)
+.data/
