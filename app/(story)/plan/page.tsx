@@ -160,7 +160,7 @@ export default function Plan() {
         <li><strong>Runs.</strong> Any owner can claim a delivery or a collection. Each leg pays {money(s.runnerFee)}, added to that owner&apos;s quarterly payout.</li>
         <li><strong>Lines and gas.</strong> Owners supply CO2 and couplers and clean the lines after each hire. Aaron sets the cleaning standard.</li>
         <li><strong>Calendar.</strong> Paid bookings always beat owner use. Personal use is free, but the user pays fuel and any damage.</li>
-        <li><strong>Inspection.</strong> The runner checks the truck at collection. A clean return releases the bond.</li>
+        <li><strong>Inspection.</strong> The runner checks the truck at collection and taps Returned clean. Nothing else releases the bond.</li>
       </ul>
       <h3>The agent does the desk work</h3>
       <p>Clients text, email, call or use the web form. One AI agent answers all of them from the same knowledge base. There is no web chat.</p>
@@ -169,6 +169,7 @@ export default function Plan() {
         <li>It charges the balance {s.balanceDaysBefore} days out. A failed card retries daily for {BALANCE_RETRIES} days, then goes to an owner. If the balance is still unpaid {RELEASE_UNPAID_DAYS} days out, the date is released.</li>
         <li>When an owner takes over a conversation, the agent still answers questions but does not book or cancel.</li>
         <li>It never promises a text it does not send.</li>
+        <li>Owners can run the business by text too. Every change needs YES and a code sent to their phone, and money also needs a code from their admin, so a faked caller ID gets nowhere.</li>
       </ul>
 
       <h2>Ownership and money</h2>

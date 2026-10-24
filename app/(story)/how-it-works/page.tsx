@@ -65,7 +65,7 @@ export default function HowItWorks() {
       <div className="blk out">
         <div className="panel"><Thread lines={D.chats.book} who="Sam" /></div>
       </div>
-      <p>A hold lasts {s.holdMinutes} minutes. If nobody pays, a job releases the date. One number holds one unpaid date at a time: ask for a second and you get the first link again. An owner&apos;s own-use day gives way only when a deposit is paid, not when someone asks. Then the booking runs itself. Drag the slider to walk Sam&apos;s {life.ref} from the day of the text to the day after the hire. Switch the card to see what happens when it declines.</p>
+      <p>A hold lasts {s.holdMinutes} minutes. If nobody pays, the date is free again the minute the hold lapses. The deposit link carries a private token, so only the person who got the text can open that booking. One number holds one unpaid date at a time: ask for a second and you get the first link again. An owner&apos;s own-use day gives way only when a deposit is paid, not when someone asks. Then the booking runs itself. Drag the slider to walk Sam&apos;s {life.ref} from the day of the text to the day after the hire. Switch the card to see what happens when it declines.</p>
       <div className="blk out">
         <BookingLife life={D.life} />
       </div>
@@ -76,11 +76,11 @@ export default function HowItWorks() {
       <div className="blk out">
         <Sketch cfg={g.agentFocus} />
       </div>
-      <p>The agent is one endpoint, <code>/api/agent</code>. It gets the conversation and a snapshot of the calendar, runs tools, and returns a reply plus a list of actions. The browser applies the actions. The agent never writes data itself.</p>
+      <p>The agent runs on the server. A text arrives at <code>/api/inbound/sms</code> signed the way Twilio signs it, and an unsigned or forged one is refused. The server loads the business&apos;s own data, so nothing the sender claims about the calendar or the customer is trusted. The agent runs its tools and returns a reply plus a list of actions. Then a short, separate write applies the actions and checks the data again, so two texts can&apos;t take the same date. The model never runs inside that write.</p>
       <div className="blk out">
         <Sketch cfg={g.agent} />
       </div>
-      <p>With an API key, the agent is Claude. Without one, a <Note note="Deterministic intent matching. The tests run against it, so it can't drift from Claude without a test failing.">rules engine</Note> runs the same tools. Its prompt is the {D.kbPages} knowledge pages that owners edit in the admin, with prices filled in from settings on every message.</p>
+      <p>With an API key, the agent is Claude. Without one, a <Note note="Deterministic intent matching. The tests run against it, so it can't drift from Claude without a test failing.">rules engine</Note> runs the same tools. Its prompt is the {D.kbPages} knowledge pages that owners edit in the admin, with prices filled in from settings on every message. Customer text reaches the model marked as untrusted, and code, not the model, decides what each tool may do.</p>
       <p>It hands a conversation to an owner when it should not decide alone:</p>
       <ul className="plain">
         <li>the customer asks for a person;</li>
@@ -93,7 +93,7 @@ export default function HowItWorks() {
       <div className="blk out">
         <div className="panel"><Thread lines={[...D.chats.offPolicy, ...D.chats.short]} /></div>
       </div>
-      <p>Yes has to mean yes. Before it cancels or holds, the agent quotes exactly what will happen, and only a clear yes to that quote does it. &ldquo;No&rdquo;, &ldquo;wait&rdquo; or a change of subject drops it, and the next yes needs a fresh quote. {D.chats.cancel.who} cancelling {D.chats.cancel.ref}:</p>
+      <p>Yes has to mean yes. Before it cancels or holds, the agent quotes exactly what will happen, and only a clear yes to that quote does it. &ldquo;No&rdquo;, &ldquo;wait&rdquo; or a change of subject drops it, and the next yes needs a fresh quote. A cancel also needs the 4-digit code from the quote. It goes only to the customer&apos;s real phone, so someone faking their number can&apos;t cancel. {D.chats.cancel.who} cancelling {D.chats.cancel.ref}:</p>
       <div className="blk out">
         <div className="panel"><Thread lines={D.chats.cancel.lines} who={D.chats.cancel.who} /></div>
       </div>
@@ -116,7 +116,7 @@ export default function HowItWorks() {
       <div className="wide">
         <Frame src="/admin/inbox" title="The owners' inbox, demo data" height={760} phoneHeight={660} />
       </div>
-      <p className="small">The admin needs a sign-in. In the demo the email is simulated: pick any owner, open the link, and the inbox opens in the frame.</p>
+      <p className="small">The admin needs a sign-in. Pick an owner and the sign-in link is emailed. In the demo the email is simulated, so open the outbox, open the link and press Sign in. The link works once. Then choose Inbox.</p>
 
       <h2 id="owners">Owners by text</h2>
       <div className="blk out">
@@ -126,14 +126,16 @@ export default function HowItWorks() {
       <div className="blk out">
         <OwnerTiers
           tiers={[
-            { label: "Runs at once", say: "Low stakes: claim a run, log the truck, block a date, reply to a customer, hand back. Done and echoed back.", lines: D.chats.owner.now },
-            { label: "Needs YES", say: "Money, booking rules, knowledge and sending a draft are staged and quoted back. Only a clear YES runs it. NO, or any other text, drops it.", lines: [...D.chats.owner.yes, ...D.chats.owner.setting] },
-            { label: "Guarded", say: "A hand-back is refused while a customer is owed a reply. A draft goes out only after YES, quoted in full. If two conversations share a name, the agent lists both with masked contacts and asks which one. It never guesses.", lines: D.chats.owner.draft },
+            { label: "Answers", say: "Questions run at once: what's on, who has which run, what is owed. Nothing changes.", lines: D.chats.owner.read },
+            { label: "YES + code", say: "Every change is staged and quoted back with a 4-digit code: claim a run, log the truck, block a date, reply to a customer. Only YES with that code runs it. NO, or any other text, drops it.", lines: D.chats.owner.now },
+            { label: "Admin code", say: "Money, settings, knowledge and sending a draft also need the 6-digit code shown in that owner's signed-in admin. A bare yes does nothing.", lines: [...D.chats.owner.yes, ...D.chats.owner.setting] },
+            { label: "Guarded", say: "A hand-back is refused while a customer is owed a reply. A draft goes out only after YES and the code, quoted in full. If two conversations share a name, the agent lists both with masked contacts and asks which one. It never guesses.", lines: D.chats.owner.draft },
             { label: "Admin only", say: `Prices, the deposit, the bond, fees, tax, the reserve, the cancel window, the refund limit and approvals stay in the admin. So do refunds over ${money(s.refundLimit)}, expenses over ${money(s.smsExpenseCap)}, bond captures and share transfers.`, lines: D.chats.owner.admin },
           ]}
         />
       </div>
-      <p>The admin-only list is there for a reason. Over text, one owner could otherwise change a price, or lower the approvals a payout needs and then approve and pay it alone. <Note note="Caller ID can be spoofed. Production needs a second factor before any staged money move. Not built yet." ink="gold">Caller ID</Note> is the only check in the demo.</p>
+      <p>Why two codes? <Note note="A spoofed text arrives from the owner's number, but the reply with the code goes to the owner's real phone." ink="gold">Caller ID can be faked</Note>. The 4-digit code goes only to the real phone, and the 6-digit code is only in the owner&apos;s signed-in admin. Codes are never stored: the saved thread shows &ldquo;YES ••••&rdquo;. Three wrong codes close a change. Five in a day stop changes by text from that number until midnight, and the owners are told.</p>
+      <p>The admin-only list is there for a reason. Over text, one owner could otherwise change a price, or lower the approvals a payout needs and then approve and pay it alone. In the admin, only a director changes the refund limit, the SMS expense limit or the approvals a payout needs. Lowering the approvals needs a second director too.</p>
 
       <h2 id="money">Money</h2>
       <div className="blk out">
@@ -181,23 +183,25 @@ export default function HowItWorks() {
           <table className="tbl">
             <thead><tr><th>In the demo</th><th>In production</th></tr></thead>
             <tbody>
-              <tr><td>Data in this browser&apos;s storage</td><td>Supabase Postgres, owners-only sign-in</td></tr>
+              <tr><td>Postgres in the server (PGlite), one document per business</td><td>Neon Postgres, same schema</td></tr>
+              <tr><td>Sign-in links in the outbox</td><td>Emailed links, owners only</td></tr>
               <tr><td>Simulated checkout</td><td>Stripe Checkout, card saved for the balance and bond</td></tr>
               <tr><td>Mock bank transfer</td><td>A business account with a payments API</td></tr>
-              <tr><td>SMS panel on the site</td><td>A Twilio number, SMS and voice</td></tr>
-              <tr><td>Inbox email</td><td>Resend, inbound and outbound</td></tr>
-              <tr><td>Jobs run in the open tab</td><td>Vercel Cron</td></tr>
+              <tr><td>SMS panel, signed on the server</td><td>A Twilio number, SMS and voice, same signature check</td></tr>
+              <tr><td>Inbox email, signed on the server</td><td>Resend, inbound and outbound</td></tr>
+              <tr><td>Messages wait in the outbox</td><td>Twilio and Resend send what the outbox holds</td></tr>
             </tbody>
           </table>
         </div>
       </div>
+      <p>The real parts already run as they would in production. The data lives on the server and the browser only reads it and sends commands. Every record carries its business&apos;s id, and every read and write filters on it, so a second business could share the system. The jobs run once a day from Vercel Cron. A deploy migrates its own database before the new code goes live, and a failed migration stops the deploy. A preview deploy never touches the live database.</p>
       <p>Next: the <Link href="/plan">business plan</Link>, with what it costs and what we expect to make.</p>
 
       <hr />
       <section className="credits">
         <p className="cr-h">How this was made</p>
         <ul className="cr">
-          <li><b>Code:</b> Next.js 15, React 19, zustand, chrono-node, <a href={REPO}>cpdis/sunrise-sunset-tap-co</a></li>
+          <li><b>Code:</b> Next.js 15, React 19, Drizzle on Postgres (PGlite locally), zustand, chrono-node, <a href={REPO}>cpdis/sunrise-sunset-tap-co</a></li>
           <li><b>Agents:</b> Claude through the Anthropic SDK, with a rules engine for no-key demos</li>
           <li><b>Diagrams:</b> hand-drawn SVG, written for this page (no diagram library). Labels in Shantell Sans</li>
           <li><b>Look:</b> Golden Hour inks on white, after Ben&apos;s Bites&apos; newsletter-pipeline post</li>
