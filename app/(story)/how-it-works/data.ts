@@ -6,12 +6,12 @@ import type { OwnerCtx } from "@/lib/agent/owner-tools";
 import { runRules } from "@/lib/agent/rules";
 import type { ToolCtx } from "@/lib/agent/tools";
 import { BUSINESS, DEFAULT_SETTINGS, SUBURBS } from "@/lib/config";
-import { ACCOUNT_LABEL, cancelBooking, createHold, heldFor, nextFreeDates, payDeposit, runJobs } from "@/lib/domain";
-import { applyOwnerAction, claimRun } from "@/lib/ops";
+import { ACCOUNT_LABEL, cancelBooking, cancelNeedsOwner, createHold, heldFor, nextFreeDates, payDeposit, runJobs } from "@/lib/domain";
+import { applyOwnerAction, claimRun, returnedClean } from "@/lib/ops";
 import { CAPITAL_PER_OWNER, buildSeed } from "@/lib/seed";
 import { ownerSnapshot, snapshot } from "@/lib/snapshot";
 import type { AgentState, Data } from "@/lib/types";
-import { addDays, daysBetween, fmtDate, quarterLabel, todayISO } from "@/lib/util";
+import { addDays, daysBetween, fmtDate, money, quarterLabel, todayISO } from "@/lib/util";
 
 // The same moment the test suite uses, so the transcripts match tests/ and stay stable between deploys.
 export const STORY_NOW = new Date("2026-10-22T12:00:00+08:00");
@@ -25,6 +25,7 @@ export interface Line {
 
 const DID: Record<string, string> = {
   hold: "held the date for 30 min and sent a deposit link",
+  cancel: "cancelled the booking",
   escalate: "flagged the conversation for an owner",
   claim_run: "gave the run to the owner who texted",
   expense: "posted the expense to the ledger",
@@ -100,6 +101,12 @@ function bookingLife(declines: boolean) {
   const days: Day[] = [snap(today, [`Sam texts, the agent holds ${fmtDate(date, { dow: true })}, Sam pays the deposit`])];
   for (let day = addDays(today, 1); day <= addDays(date, 1); day = addDays(day, 1)) {
     const log = runJobs(d, new Date(`${day}T09:00:00+08:00`)).filter((x) => x.includes(b.ref));
+    // The collection run: the owner who brings the truck home checks it, and only that releases the bond.
+    if (day > date && b.bondStatus === "held") {
+      const runner = d.owners.find((o) => o.id === b.collect.ownerId) ?? d.owners[0];
+      returnedClean(d, b.id, runner.id, new Date(`${day}T16:00:00+08:00`));
+      log.push(`${runner.name.split(" ")[0]} brings the truck home and taps Returned clean, which releases the ${money(b.bond)} bond`);
+    }
     days.push(snap(day, log));
   }
   return { ref: b.ref, date, days };
@@ -127,6 +134,22 @@ function payouts(d: Data) {
   }));
 }
 
+// A seeded customer with a paid booking far enough out for a full refund, so a cancel by text is the agent's to do.
+function cancelChat() {
+  const d = buildSeed(STORY_NOW);
+  // Not a Sam, so the page doesn't mix this customer up with Sam Taylor's booking above.
+  const nameOf = (id?: string) => d.customers.find((x) => x.id === id)?.name ?? "";
+  const b = d.bookings.find((x) => x.kind === "paid" && x.state === "confirmed" && !cancelNeedsOwner(d.settings, x, STORY_NOW) && !!nameOf(x.customerId) && !nameOf(x.customerId).startsWith("Sam"))!;
+  const c = d.customers.find((x) => x.id === b.customerId)!;
+  return {
+    ref: b.ref,
+    who: c.name.split(" ")[0],
+    lines: customerChat(d, c.phone, [`I need to cancel ${b.ref}`, "No, don't cancel it", "Actually yes, cancel it", "yes"]),
+    // The same reference asked about from a number that isn't on the booking.
+    stranger: customerChat(buildSeed(STORY_NOW), "0499 000 111", [`What time is ${b.ref}?`]),
+  };
+}
+
 export function storyData() {
   const s = DEFAULT_SETTINGS;
   const d = buildSeed(STORY_NOW);
@@ -143,13 +166,14 @@ export function storyData() {
       book: customerChat(buildSeed(STORY_NOW), "0412 555 019", ["Hi, is the second Saturday in December free?", "8 hours in Fremantle, from 2pm", "Sam Taylor", "Yes please"]),
       offPolicy: customerChat(buildSeed(STORY_NOW), "0412 555 020", ["Can we get a discount for a 3 day festival?"]),
       short: customerChat(buildSeed(STORY_NOW), "0412 555 021", ["Can I book it for next Wednesday?"]),
+      cancel: cancelChat(),
       handover: customerChat(buildSeed(STORY_NOW), "0412 555 022", ["Can I book the 12th of December?", "Do you supply the beer?"], true),
       owner: {
         now: ownerChat(buildSeed(STORY_NOW), "own_colin", ["I'll take the Fremantle delivery"]),
         yes: ownerChat(buildSeed(STORY_NOW), "own_colin", ["approve the payout", "yes"]),
-        setting: ownerChat(buildSeed(STORY_NOW), "own_colin", ["change the deposit to $300", "no"]),
+        setting: ownerChat(buildSeed(STORY_NOW), "own_colin", ["set notice to 10 days", "no"]),
         draft: ownerChat(buildSeed(STORY_NOW), "own_colin", ["hand back Harbour", "send the draft to Harbour"]),
-        admin: ownerChat(buildSeed(STORY_NOW), "own_colin", ["change the refund limit to $1000"]),
+        admin: ownerChat(buildSeed(STORY_NOW), "own_colin", ["change the deposit to $300"]),
       },
     },
   };

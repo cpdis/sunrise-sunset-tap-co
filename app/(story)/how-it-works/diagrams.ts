@@ -83,9 +83,9 @@ export function diagrams(s: Settings, owners: number) {
       { id: "agent", t: "Agent", s: "Claude, or the rules engine", hub: true, at: [0.5, 60], note: "With an API key it is Claude. Without one, a rules engine runs the same tools. Both must change together." },
       { id: "avail", t: "Check the date", at: [0.14, 220], w: 150, note: "Is the date free? If not, the next three free weekend days." },
       { id: "quote", t: "Quote", at: [0.5, 220], note: `Hire price, plus ${money(s.travelFee)} if the suburb is more than ${s.travelThresholdMin} minutes from the CBD.` },
-      { id: "lookup", t: "Look up a booking", at: [0.86, 220], note: "Only bookings on the number or email that sent the message." },
-      { id: "hold", t: "Hold + deposit link", at: [0.14, 370], w: 150, off: [1], note: `Holds the date for ${s.holdMinutes} minutes and texts the checkout link.` },
-      { id: "cancel", t: "Cancel", at: [0.5, 370], off: [1], note: `Applies the refund rule. A refund over ${money(s.refundLimit)} goes to an owner instead.` },
+      { id: "lookup", t: "Look up a booking", at: [0.86, 220], note: "Only bookings on the number or email that sent the message. Anyone else's reference: \"I can't find that for this number.\"" },
+      { id: "hold", t: "Hold + deposit link", at: [0.14, 370], w: 150, off: [1], note: `Holds the date for ${s.holdMinutes} minutes and texts the checkout link. One unpaid hold per number.` },
+      { id: "cancel", t: "Cancel", at: [0.5, 370], off: [1], note: `Quotes the refund first. Only a clear yes to that quote cancels. A refund over ${money(s.refundLimit)} goes to an owner instead.` },
       { id: "esc", t: "Hand to an owner", at: [0.86, 370], w: 150, note: "Flags the conversation with a reason and a draft reply the owner can send as it is." },
     ],
     edges: [
@@ -163,7 +163,7 @@ export function diagrams(s: Settings, owners: number) {
       { id: "base", t: "The truck", s: "Osborne Park or North Perth", hub: true, at: [0.5, 60], w: 150, note: "Kept at Filament Coffee in Osborne Park or at Rhys's place in North Perth." },
       { id: "out", t: "Delivery run", s: `claimed, ${money(s.runnerFee)}`, at: [0.86, 60], note: "Any owner claims it in the admin or by text. Drive, park, connect the kegs, chill and test the taps." },
       { id: "event", t: "The event", s: "the client pours", at: [0.86, 230], note: "Dry hire: the client buys the drinks and keeps the RSA duty. Taps close by 11 pm." },
-      { id: "back", t: "Collection run", s: `claimed, ${money(s.runnerFee)}`, at: [0.5, 230], note: "Inspect the truck, clean the lines, bring it home. A clean return releases the bond." },
+      { id: "back", t: "Collection run", s: `claimed, ${money(s.runnerFee)}`, at: [0.5, 230], note: "Inspect the truck, clean the lines, bring it home, tap Returned clean. Only that releases the bond." },
       { id: "log", t: "Truck log", s: "odometer, CO2, issues", at: [0.14, 230], note: "Logged in the admin or by text. A reading lower than the last one is refused." },
     ],
     edges: [

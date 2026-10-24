@@ -87,6 +87,7 @@ export function BookingLife({ life }: { life: { ok: { ref: string; date: string;
         <span>{when}</span>
         <span className={`s-pill s-${d.state}`}>{STATE[d.state] ?? d.state}</span>
         {d.bond === "held" && <span className="s-pill s-bond">Bond held</span>}
+        {d.bond === "released" && <span className="s-pill s-bond">Bond released</span>}
       </div>
       <div className="life-track">
         <span className="life-fill" aria-hidden="true" style={{ width: `calc((100% - 16px) * ${at / max})` }} />

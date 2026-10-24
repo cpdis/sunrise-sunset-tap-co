@@ -65,12 +65,12 @@ export default function HowItWorks() {
       <div className="blk out">
         <div className="panel"><Thread lines={D.chats.book} who="Sam" /></div>
       </div>
-      <p>A hold lasts {s.holdMinutes} minutes. If nobody pays, a job releases the date. Then the booking runs itself. Drag the slider to walk Sam&apos;s {life.ref} from the day of the text to the day after the hire. Switch the card to see what happens when it declines.</p>
+      <p>A hold lasts {s.holdMinutes} minutes. If nobody pays, a job releases the date. One number holds one unpaid date at a time: ask for a second and you get the first link again. An owner&apos;s own-use day gives way only when a deposit is paid, not when someone asks. Then the booking runs itself. Drag the slider to walk Sam&apos;s {life.ref} from the day of the text to the day after the hire. Switch the card to see what happens when it declines.</p>
       <div className="blk out">
         <BookingLife life={D.life} />
       </div>
       <p>On {payDay ? new Date(payDay.date + "T00:00:00Z").toLocaleDateString("en-AU", { day: "numeric", month: "short", timeZone: "UTC" }) : "the balance day"}, {s.balanceDaysBefore} days out, a job charges the saved card. If the card declines, it tries once a day for {BALANCE_RETRIES} days, then flags an owner. If the balance is still unpaid {RELEASE_UNPAID_DAYS} days out, the date goes back on the calendar and the deposit is kept.</p>
-      <p>Cancellations follow one rule. More than {s.cancelDays} days out, a full refund. {s.cancelDays} days or less, the deposit is kept and the rest comes back.</p>
+      <p>Cancellations follow one rule. More than {s.cancelDays} days out, a full refund. {s.cancelDays} days or less, the deposit is kept and the rest comes back. A refund over {money(s.refundLimit)} waits for an owner, whether the customer asks by text or on their booking page. Until an owner approves, nothing is cancelled.</p>
 
       <h2 id="agent">The agent</h2>
       <div className="blk out">
@@ -93,7 +93,15 @@ export default function HowItWorks() {
       <div className="blk out">
         <div className="panel"><Thread lines={[...D.chats.offPolicy, ...D.chats.short]} /></div>
       </div>
-      <p>After a hand-over it keeps answering questions, but it will not book or cancel. It also never promises a text it does not send. When it says an owner will reply, that promise is tracked until one does.</p>
+      <p>Yes has to mean yes. Before it cancels or holds, the agent quotes exactly what will happen, and only a clear yes to that quote does it. &ldquo;No&rdquo;, &ldquo;wait&rdquo; or a change of subject drops it, and the next yes needs a fresh quote. {D.chats.cancel.who} cancelling {D.chats.cancel.ref}:</p>
+      <div className="blk out">
+        <div className="panel"><Thread lines={D.chats.cancel.lines} who={D.chats.cancel.who} /></div>
+      </div>
+      <p>It only talks about bookings on the number or email that is texting. The same reference from another phone gets one line and no details:</p>
+      <div className="blk out">
+        <div className="panel"><Thread lines={D.chats.cancel.stranger} /></div>
+      </div>
+      <p>After a hand-over it keeps answering questions, but it will not book or cancel. It never promises what it can&apos;t do: it says the owners have the message, not when or how they will reply, and a refund is &ldquo;requested&rdquo;, not on its way. An owner still has to reply, and the inbox keeps that thread at the top until one does.</p>
       <div className="blk out">
         <div className="panel"><Thread lines={D.chats.handover} /></div>
       </div>
@@ -119,13 +127,13 @@ export default function HowItWorks() {
         <OwnerTiers
           tiers={[
             { label: "Runs at once", say: "Low stakes: claim a run, log the truck, block a date, reply to a customer, hand back. Done and echoed back.", lines: D.chats.owner.now },
-            { label: "Needs YES", say: "Money, settings, knowledge and sending a draft are staged. Nothing happens until the next text is YES.", lines: [...D.chats.owner.yes, ...D.chats.owner.setting] },
-            { label: "Guarded", say: "A hand-back is refused while a customer is owed a reply. A draft goes out only after YES, quoted in full.", lines: D.chats.owner.draft },
-            { label: "Admin only", say: `Refunds over ${money(s.refundLimit)}, bond captures, share transfers, and the approvals and refund-limit settings stay in the admin.`, lines: D.chats.owner.admin },
+            { label: "Needs YES", say: "Money, booking rules, knowledge and sending a draft are staged and quoted back. Only a clear YES runs it. NO, or any other text, drops it.", lines: [...D.chats.owner.yes, ...D.chats.owner.setting] },
+            { label: "Guarded", say: "A hand-back is refused while a customer is owed a reply. A draft goes out only after YES, quoted in full. If two conversations share a name, the agent lists both with masked contacts and asks which one. It never guesses.", lines: D.chats.owner.draft },
+            { label: "Admin only", say: `Prices, the deposit, the bond, fees, tax, the reserve, the cancel window, the refund limit and approvals stay in the admin. So do refunds over ${money(s.refundLimit)}, expenses over ${money(s.smsExpenseCap)}, bond captures and share transfers.`, lines: D.chats.owner.admin },
           ]}
         />
       </div>
-      <p>The admin-only list is there for a reason. Over text, one owner could lower the approvals a payout needs, then approve and pay it alone. <Note note="Caller ID can be spoofed. Production needs a second factor before any staged money move. Not built yet." ink="gold">Caller ID</Note> is the only check in the demo.</p>
+      <p>The admin-only list is there for a reason. Over text, one owner could otherwise change a price, or lower the approvals a payout needs and then approve and pay it alone. <Note note="Caller ID can be spoofed. Production needs a second factor before any staged money move. Not built yet." ink="gold">Caller ID</Note> is the only check in the demo.</p>
 
       <h2 id="money">Money</h2>
       <div className="blk out">
@@ -153,6 +161,7 @@ export default function HowItWorks() {
       <div className="blk out">
         <PayoutCalc payouts={D.payouts} approvalsRequired={s.approvalsRequired} />
       </div>
+      <p>The cash test runs again at the moment the payout is paid, not only when it is proposed. If customer money has come in since, the payout waits. Only current directors can approve and pay. Each runner fee is paid once, to the cent.</p>
       <p>The reserve is {s.reserveMonths} months of fixed costs, plus {Math.round(s.maintPerKm * 100)}¢ for every km driven in the last year, plus {money(RESERVE_BUFFER)}. Each owner&apos;s share rounds down to $10. Runner fees go in the same bank transfer.</p>
       <p><strong>GST.</strong> The company does not register until turnover nears {money(GST_THRESHOLD)} a year. Prices exclude GST. The Money page in the admin watches the last 12 months and the next 12, and warns at 80% of the threshold.</p>
 
@@ -161,6 +170,7 @@ export default function HowItWorks() {
         <Sketch cfg={g.truck} />
       </div>
       <p>The physical work is owners&apos; work, and it is paid. Any owner claims a delivery or a collection in the admin, or by text: &ldquo;I&apos;ll take the Fremantle delivery.&rdquo; Owners supply the CO2 and couplers and clean the lines after each hire.</p>
+      <p>The bond hold stays on the customer&apos;s card after the hire. The owner who brings the truck home checks it and taps <strong>Returned clean</strong>. Nothing else releases a bond.</p>
       <p>The calendar has three kinds of day. A paid booking. An owner&apos;s own use, which is free but pays its own fuel and damage, and which a paid booking bumps. A blocked day, for a service or a holiday.</p>
       <p>The truck log keeps the odometer, gas and issues. A reading lower than the last one is refused, and so is a jump too big to be one trip.</p>
 
