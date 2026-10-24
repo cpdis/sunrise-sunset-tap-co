@@ -71,7 +71,8 @@ export const growth: SketchConfig = {
   h: 660,
   mh: 760,
   mw: 100,
-  idle: "Pick a moment under the diagram.",
+  idle: "Press Play, or drag the slider under the diagram.",
+  timeline: true,
   nodes: [
     { id: "cust", t: "Customers", s: "text, email, web", at: [0.14, 60] },
     { id: "agent", t: "Booking agent", s: "Claude or rules", hub: true, at: [0.5, 60], note: "There from the first build: Claude with an API key, a rules engine without one." },
@@ -113,11 +114,11 @@ export const growth: SketchConfig = {
     { f: "payout", t: "pages", from: 5 },
   ],
   steps: [
-    { label: "First build", say: "22 Oct, 10:37. One build of 45 files: a website, a checkout, an agent, a ledger, payouts and the owners' admin. Everything lives in the browser, and the browser runs the jobs." },
-    { label: "#8 Owner agent", say: "22 Oct. An owner texts the business line and gets the admin by SMS. It changes the same data the admin buttons change. 40 tests." },
-    { label: "#10 #11 Queue", say: "23 Oct. The inbox becomes a queue sorted by who owes the next move. Each hand-over brings a drafted reply. The owner agent reads the same queue." },
-    { label: "#19 Phase 1", say: "23 Oct. The red team found 3 critical holes. Phase 1 closes the quick ones in an afternoon. 173 tests." },
-    { label: "#20 Phase 2", say: "24 Oct. The browser stops being the truth. Data moves to Postgres, texts arrive signed, owners sign in with a link, every owner change waits for YES and a code, and Vercel Cron runs the jobs. 360 tests." },
-    { label: "#18 Explainer", say: "24 Oct. The explainer and the plan run the same code, so their numbers can't drift from the product." },
+    { label: "First build", short: "Start", say: "22 Oct, 10:37. One build of 45 files: a website, a checkout, an agent, a ledger, payouts and the owners' admin. Everything lives in the browser, and the browser runs the jobs." },
+    { label: "#8 Owner agent", short: "#8", say: "22 Oct. An owner texts the business line and gets the admin by SMS. It changes the same data the admin buttons change. 40 tests." },
+    { label: "#10 #11 Queue", short: "#10–11", say: "23 Oct. The inbox becomes a queue sorted by who owes the next move. Each hand-over brings a drafted reply. The owner agent reads the same queue." },
+    { label: "#19 Phase 1", short: "#19", say: "23 Oct. The red team found 3 critical holes. Phase 1 closes the quick ones in an afternoon. 173 tests." },
+    { label: "#20 Phase 2", short: "#20", say: "24 Oct. The browser stops being the truth. Data moves to Postgres, texts arrive signed, owners sign in with a link, every owner change waits for YES and a code, and Vercel Cron runs the jobs. 360 tests." },
+    { label: "#18 Explainer", short: "#18", say: "24 Oct. The explainer and the plan run the same code, so their numbers can't drift from the product." },
   ],
 };

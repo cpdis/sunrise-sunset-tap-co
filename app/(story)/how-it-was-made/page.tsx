@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Compare, Gantt, type Img, type Row, Views } from "@/components/story/Made";
 import { Note, Term } from "@/components/story/Marks";
 import { Sketch } from "@/components/story/Sketch";
-import { ASKED, START, bakeoff, diffs, moments, perth, picks, pr, prs, REPO, rules, spend, testsBy, threads } from "./data";
+import { ASKED, START, bakeoff, diffs, moments, perth, picks, pr, prs, REPO, rules, spend, testsBy, threads, counsel } from "./data";
 import { growth, setup } from "./diagrams";
 
 export const metadata: Metadata = {
@@ -58,6 +58,7 @@ export default function HowItWasMade() {
     return { m, n: xs.length, cost: sum(xs, "cost"), out: sum(xs, "output") };
   });
   const usd = (n: number) => `$${n.toFixed(2)}`;
+  const reviews = counsel.reduce((a, c) => a + c.cost, 0);
   const mil = (n: number) => `${(n / 1e6).toFixed(n < 1e7 ? 2 : 0)}M`;
 
   return (
@@ -111,20 +112,20 @@ export default function HowItWasMade() {
           <table className="tbl">
             <thead><tr><th>Tool or model</th><th>What it did here</th></tr></thead>
             <tbody>
-              <tr><td><b>Claude projects</b></td><td>The coordinator, the threads, project memory and the shared files folder. Decision cards and checklists in the Claude app.</td></tr>
-              <tr><td><b>Claude Code on the web</b></td><td>Every thread: reading the repo, writing code, running tests, shooting screenshots with Playwright, opening PRs.</td></tr>
-              <tr><td><b>Claude Opus</b></td><td>The builder in every thread, and the second of the first two reviews. Extra High effort for the hard hardening units, Medium for small ones.</td></tr>
-              <tr><td><b>Claude Fable 5.1</b></td><td>The reviewer: the first design and build review (20 findings), the inbox review (19), the white admin review (26) and the migration review before #20 merged.</td></tr>
-              <tr><td><b>Remote Control</b></td><td>Threads that need a local machine run there: the red team and the auth review.</td></tr>
-              <tr><td><b>/counselors</b></td><td>One prompt to three models from three labs: Fable 5.1, Codex Astra 6 and Gemini 4 Argon (through the Antigravity CLI). They review on their own, then the findings are merged and checked.</td></tr>
-              <tr><td><b>Artifacts</b></td><td>Long results as pages: the reviews, the 428-string copy deck, the business plan with in-place editing, the answer engine research.</td></tr>
-              <tr><td><b>Figma (GPT Image)</b></td><td>The first photoreal stills.</td></tr>
-              <tr><td><b>Fal, by MCP</b></td><td>Every other image and video. GPT Image 2 and Nano Banana 2.1 for stills and edits. Kling v3 Pro, Gemini Omni Flash 1.1 and Seedance 2.5 for video. Topaz Starlight Precise 2.6 to restore the soft loops.</td></tr>
-              <tr><td><b>ffmpeg</b></td><td>Loops: H.264 for browsers, seamless ends, posters.</td></tr>
-              <tr><td><b>Next.js 15, React 19</b></td><td>The site, the admin and these pages. Drizzle on Postgres: PGlite in WASM locally and in tests, Neon (Sydney) in production.</td></tr>
-              <tr><td><b>Anthropic SDK</b></td><td>The two agents, booking and owner, on the Messages API with tools. A rules engine answers when there is no key.</td></tr>
-              <tr><td><b>GitHub, Vercel</b></td><td>PRs, previews, production, Cron for the daily jobs, Web Analytics.</td></tr>
-              <tr><td><b>Fonts</b></td><td>Big Shoulders, Josefin Sans and Instrument Sans on the site. Geist in the admin. Shantell Sans for these diagrams.</td></tr>
+              <tr><td><b><a href="https://support.claude.com/en/articles/9517075-what-are-projects">Claude projects</a></b></td><td>The coordinator, the threads, project memory and the shared files folder. Decision cards and checklists in the Claude app.</td></tr>
+              <tr><td><b><a href="https://code.claude.com/docs/en/claude-code-on-the-web">Claude Code on the web</a></b></td><td>Every thread: reading the repo, writing code, running tests, shooting screenshots with <a href="https://playwright.dev">Playwright</a>, opening PRs.</td></tr>
+              <tr><td><b><a href="https://docs.claude.com/en/docs/about-claude/models/overview">Claude Opus</a></b></td><td>The builder in every thread, and the second of the first two reviews. Extra High effort for the hard hardening units, Medium for small ones.</td></tr>
+              <tr><td><b><a href="https://docs.claude.com/en/docs/about-claude/models/overview">Claude Fable 5.1</a></b></td><td>The reviewer: the first design and build review (20 findings), the inbox review (19), the white admin review (26) and the migration review before #20 merged.</td></tr>
+              <tr><td><b><a href="https://code.claude.com/docs/en/remote-control">Remote Control</a></b></td><td>Threads that need a local machine run there: the red team and the auth review.</td></tr>
+              <tr><td><b>/counselors</b></td><td>One prompt to three models from three labs: Fable 5.1, Codex Astra 6 and Gemini 4 Argon (through the <a href="https://antigravity.google">Antigravity</a> CLI). They review on their own, then the findings are merged and checked.</td></tr>
+              <tr><td><b><a href="https://support.claude.com/en/articles/9487310-what-are-artifacts-and-how-do-i-use-them">Artifacts</a></b></td><td>Long results as pages: the reviews, the 428-string copy deck, the business plan with in-place editing, the answer engine research.</td></tr>
+              <tr><td><b><a href="https://www.figma.com">Figma</a> (GPT Image)</b></td><td>The first photoreal stills.</td></tr>
+              <tr><td><b><a href="https://fal.ai">Fal</a>, by <a href="https://modelcontextprotocol.io">MCP</a></b></td><td>Every other image and video. GPT Image 2 and Nano Banana 2.1 for stills and edits. <a href="https://klingai.com">Kling</a> v3 Pro, Gemini Omni Flash 1.1 and <a href="https://seed.bytedance.com/en/seedance">Seedance</a> 2.5 for video. <a href="https://www.topazlabs.com">Topaz</a> Starlight Precise 2.6 to restore the soft loops.</td></tr>
+              <tr><td><b><a href="https://ffmpeg.org">ffmpeg</a></b></td><td>Loops: H.264 for browsers, seamless ends, posters.</td></tr>
+              <tr><td><b><a href="https://nextjs.org">Next.js</a> 15, <a href="https://react.dev">React</a> 19</b></td><td>The site, the admin and these pages. <a href="https://orm.drizzle.team">Drizzle</a> on Postgres: <a href="https://pglite.dev">PGlite</a> in WASM locally and in tests, <a href="https://neon.com">Neon</a> (Sydney) in production.</td></tr>
+              <tr><td><b><a href="https://github.com/anthropics/anthropic-sdk-typescript">Anthropic SDK</a></b></td><td>The two agents, booking and owner, on the <a href="https://docs.claude.com/en/docs/build-with-claude/working-with-messages">Messages API</a> with tools. A rules engine answers when there is no key.</td></tr>
+              <tr><td><b><a href="https://github.com">GitHub</a>, <a href="https://vercel.com">Vercel</a></b></td><td>PRs, previews, production, <a href="https://vercel.com/docs/cron-jobs">Cron</a> for the daily jobs, Web Analytics.</td></tr>
+              <tr><td><b>Fonts</b></td><td><a href="https://fonts.google.com/specimen/Big+Shoulders">Big Shoulders</a>, <a href="https://fonts.google.com/specimen/Josefin+Sans">Josefin Sans</a> and <a href="https://fonts.google.com/specimen/Instrument+Sans">Instrument Sans</a> on the site. <a href="https://vercel.com/font">Geist</a> in the admin. <a href="https://fonts.google.com/specimen/Shantell+Sans">Shantell Sans</a> for these diagrams.</td></tr>
             </tbody>
           </table>
         </div>
@@ -167,10 +168,10 @@ export default function HowItWasMade() {
           </div>
           <div className="scrollx">
             <table className="tbl">
-              <thead><tr><th>Model</th><th className="num">Sessions</th><th className="num">Cost</th><th className="num">Out</th><th className="num">Per 1M out</th></tr></thead>
+              <thead><tr><th>Model</th><th className="r">Sessions</th><th className="r">Cost</th><th className="r">Out</th><th className="r">Per 1M out</th></tr></thead>
               <tbody>
                 {byModel.map((b) => (
-                  <tr key={b.m}><td><b>{b.m === "opus" ? "Opus" : "Fable"}</b></td><td className="num">{b.n}</td><td className="num">{usd(b.cost)}</td><td className="num">{mil(b.out)}</td><td className="num">${Math.round(b.cost / (b.out / 1e6))}</td></tr>
+                  <tr key={b.m}><td><b>{b.m === "opus" ? "Opus" : "Fable"}</b></td><td className="r num">{b.n}</td><td className="r num">{usd(b.cost)}</td><td className="r num">{mil(b.out)}</td><td className="r num">${Math.round(b.cost / (b.out / 1e6))}</td></tr>
                 ))}
               </tbody>
             </table>
@@ -178,7 +179,20 @@ export default function HowItWasMade() {
         </div>
       </div>
       <p>Fable costs more per token, and a review reads a lot of code to write short findings, so the review threads cost the most for what they wrote. The coordinator ran at Low effort, so all its sessions together cost less than the biggest thread. The biggest threads, the explainer and the business plan, ran for hours and read their history again on every turn.</p>
-      <p className="small">Not counted: the red team on the local Mac, one other thread and one coordinator session with no usage record, and the Codex and Gemini counselors. The figure for this page&apos;s thread stops when the data was taken.</p>
+      <p>The two reviews on the local Mac, the red team and the auth review, used /counselors. Each counselor CLI keeps its own logs, so their tokens are counted separately. Three of the six counselor runs failed the first time (an empty file and two timeouts) and ran again, and the failed tries count too. The two reviews came to about <strong>{usd(reviews)}</strong>, which makes the total about <strong>${Math.round(cost + reviews)}</strong>.</p>
+      <div className="blk out">
+        <div className="panel scrollx">
+          <table className="tbl">
+            <thead><tr><th>Model</th><th>Role</th><th className="r">Read</th><th className="r">Written</th><th className="r">Cost</th></tr></thead>
+            <tbody>
+              {counsel.map((c) => (
+                <tr key={c.model}><td><b>{c.model}</b></td><td>{c.role}</td><td className="r num">{mil(c.input + c.cached + c.cacheWrite)}</td><td className="r num">{mil(c.output)}</td><td className="r num">{usd(c.cost)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p className="small">The review costs are estimates at list prices from the token counts, because no CLI reports a bill. Gemini is at its launch price, with cache reads priced as input. Not counted: one other thread and one coordinator session with no usage record, the rest of the Mac session outside the two reviews, and small setup tests. The figure for this page&apos;s thread stops when the data was taken.</p>
 
       <h2 id="design">How the look changed</h2>
       <p>The look changed five times in two days, each time after a plain note on what was wrong with the last one. Pick a stage, then drag the handle on the before and after pairs.</p>
@@ -293,14 +307,14 @@ export default function HowItWasMade() {
       <h2 id="decisions">Decisions</h2>
       <p>These are the calls Colin made, in the threads and on the cards and artifacts the threads sent. An <span className="tbl"><span className="yours">override</span></span> mark means the pick went against the recommendation. That happened {yours} times. Every other card went with the default, and the rest were decided without being asked.</p>
       <div className="blk out">
-        <div className="panel scrollx">
-          <table className="tbl">
+        <div className="panel">
+          <table className="tbl picks">
             <thead><tr><th>When</th><th>Question</th><th>Pick</th></tr></thead>
             <tbody>
               {picks.map((p, k) => (
                 <tr key={k}>
                   <td className="when">{fmtDay(p.at)} {p.at.slice(11)}</td>
-                  <td>{p.q}</td>
+                  <td className="q">{p.q}</td>
                   <td>
                     {p.pick}
                     {p.rec && <span className="yours">override</span>}
@@ -326,6 +340,49 @@ export default function HowItWasMade() {
         <li><strong>Say what is wrong.</strong> &ldquo;Feels AI generated&rdquo; and &ldquo;too playful&rdquo; each led to a better look within hours.</li>
         <li><strong>Cost first.</strong> After the Fal overrun, an estimate before each batch kept spend to a few dollars a round.</li>
       </ul>
+      <h2 id="inception">The making of the making of</h2>
+      <p>This page is a record of the build, and it is part of the build too. It was made the same way as everything above it: one thread, one pull request and rounds of review. So it is a dream inside a dream.</p>
+      <div className="blk out">
+        <div className="panel dream">
+          <div className="lvl">
+            <span className="tag">Level 1 · The truck</span>
+            <p>A 2018 Suzuki Carry with 8 taps on the back, for hire in Perth.</p>
+            <div className="lvl">
+              <span className="tag">Level 2 · The demo and its explainer</span>
+              <p>The site, the two agents, the admin, and the pages that say how they work.</p>
+              <div className="lvl">
+                <span className="tag">Level 3 · This page</span>
+                <img src="/made/this-page.jpg" alt="The top of this page" width={800} height={450} loading="lazy" />
+                <div className="lvl deep">
+                  <span className="tag">Level 4 · This section</span>
+                  <p>Asked for at 10:18 pm on 24 October, while the third round of this page was being built.</p>
+                  <svg className="top" viewBox="0 0 40 48" aria-hidden="true">
+                    <g className="spin">
+                      <path d="M20 4v8" />
+                      <path d="M8 16c0-2 5.4-4 12-4s12 2 12 4c0 7-5 15-12 26C13 31 8 23 8 16z" />
+                      <path d="M8 16c0 2 5.4 4 12 4s12-2 12-4" />
+                    </g>
+                    <path className="floor" d="M6 45c9 1.5 19 1.5 28 0" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p>The dream was changed from inside it. Each round is a set of notes on the page as it stood, and each one is now on the page:</p>
+      <ul className="day dream-log">
+        <li><time>20:10</time><span>Asked for: the tools, the models, how the design and the features changed, real screenshots, diagrams and a timeline. Outline first.</span></li>
+        <li><time>20:13</time><span>&ldquo;Include the decisions that I picked.&rdquo; That became the Decisions table.</span></li>
+        <li><time>20:40</time><span>Round 1: <a href={pr(21)}>#21</a> opens.</span></li>
+        <li><time>21:26</time><span>Round 2: a name to mention a lot less, and a Gantt chart, because the PR numbers were hidden under the dots.</span></li>
+        <li><time>21:34</time><span>Add the token spend, next to the other costs.</span></li>
+        <li><time>22:16</time><span>Round 3: the screenshots flash, the growth diagram should play by itself, the decisions are cramped, the wipe labels, the counselors&apos; cost and links to the tools.</span></li>
+        <li><time>22:18</time><span>&ldquo;Some sort of inception themed section at the bottom.&rdquo; This one.</span></li>
+      </ul>
+      <p>The levels leak into each other. The timeline has a bar for this page&apos;s thread, and it stops where its data was taken. The token chart counts this thread, and counting it cost tokens. The Decisions table does not list the decisions about this page, because that would be level 5.</p>
+      <p className="small">The top is still spinning.</p>
+
       <p>Back to <Link href="/how-it-works">how the truck runs itself</Link>, or the <Link href="/plan">business plan</Link>.</p>
 
       <hr />

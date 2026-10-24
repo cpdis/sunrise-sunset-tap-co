@@ -48,7 +48,9 @@ export interface SketchConfig {
   nodes: SketchNode[];
   edges: SketchEdge[];
   flows?: { label: string; steps: FlowStep[] }[];
-  steps?: { label: string; say: string }[];
+  steps?: { label: string; say: string; short?: string }[];
+  // Show the steps on a scrubber that plays through by itself once the diagram scrolls into view.
+  timeline?: boolean;
   // This diagram is a zoom on one part: these start lit, the rest dimmed.
   focus?: { nodes: string[]; edges: string[] };
   idle?: string;
@@ -88,6 +90,30 @@ export function Sketch({ cfg }: { cfg: SketchConfig }) {
   const [say, setSay] = useState("");
   const [dots, setDots] = useState<{ k: number; x: number; y: number; tag?: string }[]>([]);
   const [wide, setWide] = useState(false);
+  const holder = useRef<HTMLDivElement>(null);
+  const [auto, setAuto] = useState(false);
+  const last = (cfg.steps?.length ?? 1) - 1;
+
+  // A timeline plays once when it first comes into view, unless the reader asked for less motion.
+  useEffect(() => {
+    const el = holder.current;
+    if (!cfg.timeline || !el || reduced()) return;
+    const io = new IntersectionObserver(([e]) => {
+      if (!e.isIntersecting) return;
+      io.disconnect();
+      setStep(0);
+      setAuto(true);
+    }, { threshold: 0.45 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [cfg.timeline]);
+
+  useEffect(() => {
+    if (!auto) return;
+    if (step >= last) { setAuto(false); return; }
+    const t = setTimeout(() => setStep((s) => s + 1), 3400);
+    return () => clearTimeout(t);
+  }, [auto, step, last]);
   const narrow = W > 0 && W < NARROW;
 
   // follow the table's width, and whether there is room for margin notes beside the diagram
@@ -322,7 +348,7 @@ export function Sketch({ cfg }: { cfg: SketchConfig }) {
   const note = say || stepSay || idle;
 
   return (
-    <div className="sk-holder">
+    <div className="sk-holder" ref={holder}>
       <figure className="sk" aria-label={`Diagram: ${cfg.nodes.filter((n) => !gone(n)).map((n) => n.t).join(", ")}`}>
         <div ref={table} className="sk-table" style={{ height: H }}>
           <svg ref={svg} className="sk-edges" aria-hidden="true">
@@ -420,7 +446,52 @@ export function Sketch({ cfg }: { cfg: SketchConfig }) {
       {litNode && litBox && wide && (
         <MarginNote side={litBox.cx > W / 2 ? "right" : "left"} top={litBox.t} text={litNode.note ?? litNode.t} />
       )}
-      {cfg.steps && (
+      {cfg.steps && cfg.timeline && (
+        <div className="sk-scrub">
+          <button
+            type="button"
+            className="sk-play"
+            disabled={running}
+            onClick={() => {
+              if (auto) return setAuto(false);
+              if (step >= last) setStep(0);
+              setLit(null);
+              setAuto(true);
+            }}
+          >
+            {auto ? (
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z" fill="currentColor" /></svg>
+            ) : (
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l13-7.5z" fill="currentColor" /></svg>
+            )}
+            {auto ? "Pause" : step >= last ? "Replay" : "Play"}
+          </button>
+          <div className="sk-rail" style={{ ["--n" as string]: last }}>
+            <i className="sk-fill" style={{ width: `calc((100% - 18px) * ${Math.max(step, 0) / last})` }} aria-hidden="true" />
+            <input
+              type="range"
+              min={0}
+              max={last}
+              step={1}
+              value={Math.max(step, 0)}
+              disabled={running}
+              aria-label="Move through the pull requests"
+              aria-valuetext={cfg.steps[Math.max(step, 0)].label}
+              onChange={(e) => { setAuto(false); setLit(null); setStep(+e.target.value); }}
+            />
+            <ol aria-hidden="true">
+              {cfg.steps.map((s, i) => (
+                <li key={s.label} className={i <= step ? "on" : ""} style={{ left: `calc(9px + (100% - 18px) * ${i / last})` }}>
+                  <button type="button" tabIndex={-1} onClick={() => { setAuto(false); setLit(null); setStep(i); }}>
+                    {s.short ?? s.label}
+                  </button>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </div>
+      )}
+      {cfg.steps && !cfg.timeline && (
         <div className="pills" role="group" aria-label="Pick a moment">
           <div className="track">
             {cfg.steps.map((s, i) => (

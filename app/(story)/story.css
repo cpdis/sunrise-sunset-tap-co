@@ -409,3 +409,64 @@ html:has(.story) body { background: #fff; }
 .story .spend-key i.opus { background: var(--s-ink); }
 .story .spend-key i.all { background: var(--azure); }
 .story .spend + .spend-key { margin: 6px 0 14px; }
+
+/* ---------- a step diagram as a timeline: play, and a slider with labelled stops ---------- */
+.story .sk-scrub { display: flex; align-items: flex-start; gap: 16px; margin-top: 16px; }
+.story .sk-scrub .sk-play { flex: none; min-width: 92px; justify-content: center; }
+.story .sk-rail { position: relative; flex: 1; min-width: 0; height: 52px; }
+.story .sk-rail::before { content: ""; position: absolute; left: 9px; right: 9px; top: 15px; height: 2px; border-radius: 2px; background: var(--s-hair); }
+.story .sk-fill { position: absolute; left: 9px; top: 15px; height: 2px; border-radius: 2px; background: var(--s-ink); transition: width 400ms var(--ease); }
+.story .sk-rail input { position: absolute; inset: 0 0 auto; width: 100%; height: 32px; margin: 0; background: transparent; appearance: none; -webkit-appearance: none; cursor: pointer; z-index: 2; }
+.story .sk-rail input::-webkit-slider-runnable-track { height: 32px; background: transparent; }
+.story .sk-rail input::-moz-range-track { height: 32px; background: transparent; }
+.story .sk-rail input::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; margin-top: 7px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 0 2px var(--s-ink); transition: transform 150ms var(--ease); }
+.story .sk-rail input::-moz-range-thumb { width: 18px; height: 18px; border: 0; border-radius: 50%; background: var(--gold); box-shadow: 0 0 0 2px var(--s-ink); }
+.story .sk-rail input:active::-webkit-slider-thumb { transform: scale(1.12); }
+.story .sk-rail input:focus-visible { outline: none; }
+.story .sk-rail input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--s-ink), 0 0 0 5px color-mix(in srgb, var(--azure) 40%, transparent); }
+.story .sk-rail ol { position: absolute; inset: 0; margin: 0; padding: 0; list-style: none; }
+.story .sk-rail li { position: absolute; top: 12px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }
+.story .sk-rail li::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #fff; box-shadow: inset 0 0 0 1.5px var(--s-muted); }
+.story .sk-rail li.on::before { background: var(--s-ink); box-shadow: none; }
+.story .sk-rail li:first-child { align-items: flex-start; transform: translateX(-4px); }
+.story .sk-rail li:last-child { align-items: flex-end; transform: translateX(calc(-100% + 4px)); }
+.story .sk-rail li button { margin-top: 8px; padding: 2px 0; font-size: 12px; line-height: 1.2; white-space: nowrap; color: var(--s-muted); position: relative; z-index: 3; }
+.story .sk-rail li.on button { color: var(--s-ink); }
+.story .cmp-l { transition: opacity 200ms var(--ease); }
+.story .cmp-l.hide { opacity: 0; }
+.story .m-stack { display: grid; }
+.story .m-stack > .m-view { grid-area: 1 / 1; opacity: 0; visibility: hidden; transition: opacity 220ms var(--ease), visibility 0s linear 220ms; }
+.story .m-stack > .m-view.on { opacity: 1; visibility: visible; transition: opacity 220ms var(--ease); }
+
+/* ---------- the decisions table: room to read, and a stack of cards on phones ---------- */
+.story .tbl.picks { font-size: 14px; line-height: 1.5; }
+.story .tbl.picks th { padding: 0 20px 10px 0; }
+.story .tbl.picks td { padding: 14px 20px 14px 0; }
+.story .tbl.picks th:last-child, .story .tbl.picks td:last-child { padding-right: 0; }
+.story .tbl.picks td.when { width: 120px; line-height: 21px; }
+.story .tbl.picks td.q { width: 36%; color: var(--s-ink); }
+.story .tbl.picks .rec { margin-top: 4px; font-size: 13px; }
+@media (max-width: 639px) {
+  .story .tbl.picks thead { display: none; }
+  .story .tbl.picks tr { display: block; padding: 14px 0; border-bottom: 1px solid var(--s-sunken); }
+  .story .tbl.picks td { display: block; width: auto; padding: 0; border: 0; }
+  .story .tbl.picks td.when { width: auto; font-size: 11px; line-height: 16px; }
+  .story .tbl.picks td.q { width: auto; margin: 2px 0 4px; font-weight: 600; }
+}
+
+/* ---------- the making of the making of: nested frames, and a top that won't fall ---------- */
+.story .dream .lvl { position: relative; padding: 14px 14px 16px; border-radius: 14px; box-shadow: inset 0 0 0 1.5px var(--s-hair); background: #fff; }
+.story .dream .lvl .lvl { margin-top: 12px; background: var(--s-soft); }
+.story .dream .lvl .lvl .lvl { background: #fff; }
+.story .dream .lvl.deep { background: var(--sand); box-shadow: inset 0 0 0 1.5px var(--s-ink); display: grid; grid-template-columns: minmax(0, 1fr) 44px; gap: 4px 12px; align-items: center; }
+.story .dream .lvl.deep .tag { grid-column: 1 / -1; }
+.story .dream .tag { display: inline-block; font: 400 11px/16px var(--mono); color: var(--s-muted); letter-spacing: .02em; }
+.story .dream p { margin: 4px 0 0; font-size: 14px; }
+.story .dream img { display: block; width: 100%; height: auto; margin-top: 8px; border-radius: 8px; box-shadow: var(--s-ring); }
+.story .dream .top { width: 40px; height: 48px; fill: none; stroke: var(--s-ink); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.story .dream .top .spin { fill: var(--gold); transform-origin: 20px 42px; animation: top-wobble 1.6s ease-in-out infinite; }
+.story .dream .top .spin path:first-child, .story .dream .top .spin path:last-child { fill: none; }
+.story .dream .top .floor { stroke: var(--s-muted); }
+@keyframes top-wobble { 0%, 100% { transform: rotate(-5deg); } 50% { transform: rotate(5deg); } }
+.story .dream-log { margin-top: 8px; }
+@media (max-width: 479px) { .story .dream .lvl { padding: 10px 10px 12px; } }

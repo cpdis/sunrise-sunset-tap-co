@@ -272,3 +272,15 @@ export const spend: Spend[] = [
   { t: "Show how the project was made", model: "opus", cacheRead: 24242664, cacheWrite: 549367, input: 4775, output: 102703, cost: 12.6 },
   { t: "Coordinator (4)", model: "opus", coord: true, cacheRead: 5067929, cacheWrite: 167404, input: 2791, output: 10931, cost: 2.63 },
 ];
+
+// The two /counselors reviews on the local Mac (red team 23 Oct, auth review 24 Oct), from each CLI's own logs.
+// Failed first tries are included because they used tokens. Cost is estimated at list prices: Fable $10 in, $0.25 cache read,
+// $12.50 cache write, $50 out; Opus $4, $0.20, $5, $20; Codex Astra 6 $10 in, $1 cached, $50 out; Gemini 4 Argon $2 in, $10 out
+// at its launch price, with cache reads priced as input because no cached rate is published.
+export interface Counsel { model: string; role: string; runs: number; input: number; cached: number; cacheWrite: number; output: number; cost: number }
+export const counsel: Counsel[] = [
+  { model: "Codex Astra 6", role: "counselor", runs: 3, input: 517857, cached: 7927680, cacheWrite: 0, output: 55836, cost: 15.9 },
+  { model: "Fable 5.1", role: "counselor", runs: 3, input: 422, cached: 1065722, cacheWrite: 560990, output: 147476, cost: 14.66 },
+  { model: "Gemini 4 Argon", role: "counselor", runs: 3, input: 851509, cached: 1990684, cacheWrite: 0, output: 151840, cost: 7.2 },
+  { model: "Opus", role: "ran the reviews", runs: 2, input: 254, cached: 34764814, cacheWrite: 381066, output: 67938, cost: 10.22 },
+];

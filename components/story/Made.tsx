@@ -18,8 +18,8 @@ export function Compare({ a, b, labels = ["Before", "After"] }: { a: Img; b: Img
     <div className="cmp" style={{ aspectRatio: `${b.w} / ${b.h}` }}>
       <img src={b.src} alt={b.alt} loading="lazy" />
       <img src={a.src} alt={a.alt} loading="lazy" className="cmp-a" style={{ clipPath: `inset(0 ${100 - x}% 0 0)` }} />
-      <span className="cmp-l l">{labels[0]}</span>
-      <span className="cmp-l r">{labels[1]}</span>
+      <span className={`cmp-l l${x < 10 ? " hide" : ""}`}>{labels[0]}</span>
+      <span className={`cmp-l r${x > 90 ? " hide" : ""}`}>{labels[1]}</span>
       <i className="cmp-bar" style={{ left: `${x}%` }} aria-hidden="true"><b /></i>
       <input type="range" min={0} max={100} value={x} onChange={(e) => setX(+e.target.value)} aria-label={`Wipe between ${labels[0]} and ${labels[1]}`} />
     </div>
@@ -45,7 +45,6 @@ function Pic({ img }: { img: Img }) {
 
 export function Views({ views }: { views: View[] }) {
   const [i, setI] = useState(0);
-  const v = views[i];
   return (
     <div className="m-views">
       <div className="pills" role="group" aria-label="Pick a stage">
@@ -55,15 +54,22 @@ export function Views({ views }: { views: View[] }) {
           ))}
         </div>
       </div>
-      <div className="m-view">
-        {v.cmp && <Compare {...v.cmp} />}
-        {v.imgs && (
-          <div className="m-grid" style={{ ["--cols" as string]: v.cols ?? v.imgs.length }}>
-            {v.imgs.map((m) => <Pic key={m.src} img={m} />)}
+      {/* Every stage stays mounted in one grid cell, so a switch shows images that are already loaded and the page doesn't jump. */}
+      <div className="m-stack">
+        {views.map((w, k) => (
+          <div key={w.label} className={`m-view${k === i ? " on" : ""}`} aria-hidden={k !== i} inert={k !== i}>
+            {w.cmp && <Compare {...w.cmp} />}
+            {w.imgs && (
+              <div className="m-grid" style={{ ["--cols" as string]: w.cols ?? w.imgs.length }}>
+                {w.imgs.map((m) => <Pic key={m.src} img={m} />)}
+              </div>
+            )}
           </div>
-        )}
+        ))}
       </div>
-      <p className="m-say" aria-live="polite">{v.say}</p>
+      <div className="m-stack" aria-live="polite">
+        {views.map((w, k) => <p key={w.label} className={`m-say m-view${k === i ? " on" : ""}`} aria-hidden={k !== i}>{w.say}</p>)}
+      </div>
     </div>
   );
 }
