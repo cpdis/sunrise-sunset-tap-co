@@ -54,7 +54,7 @@ export function Views({ views }: { views: View[] }) {
           ))}
         </div>
       </div>
-      {/* Every stage stays mounted in one grid cell, so a switch shows images that are already loaded and the page doesn't jump. */}
+      {/* Every stage stays mounted, so a switch shows images that are already loaded. */}
       <div className="m-stack">
         {views.map((w, k) => (
           <div key={w.label} className={`m-view${k === i ? " on" : ""}`} aria-hidden={k !== i} inert={k !== i}>

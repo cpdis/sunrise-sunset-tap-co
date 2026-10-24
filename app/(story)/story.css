@@ -434,9 +434,10 @@ html:has(.story) body { background: #fff; }
 .story .sk-rail li.on button { color: var(--s-ink); }
 .story .cmp-l { transition: opacity 200ms var(--ease); }
 .story .cmp-l.hide { opacity: 0; }
-.story .m-stack { display: grid; }
-.story .m-stack > .m-view { grid-area: 1 / 1; opacity: 0; visibility: hidden; transition: opacity 220ms var(--ease), visibility 0s linear 220ms; }
-.story .m-stack > .m-view.on { opacity: 1; visibility: visible; transition: opacity 220ms var(--ease); }
+/* Every stage stays mounted so its images are loaded, but only the shown one takes up room. */
+.story .m-stack { position: relative; }
+.story .m-stack > .m-view { position: absolute; inset: 0 0 auto; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 220ms var(--ease), visibility 0s linear 220ms; }
+.story .m-stack > .m-view.on { position: relative; opacity: 1; visibility: visible; pointer-events: auto; transition: opacity 220ms var(--ease); }
 
 /* ---------- the decisions table: room to read, and a stack of cards on phones ---------- */
 .story .tbl.picks { font-size: 14px; line-height: 1.5; }
