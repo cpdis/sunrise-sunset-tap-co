@@ -108,7 +108,7 @@ export default function BookingDetail() {
           <div className="card stack">
             <div className="row">
               {b.state === "confirmed" && <button className="btn small" onClick={() => a.chargeBalanceNow(b.id)}>Charge balance now ({money(b.total - b.deposit)})</button>}
-              {b.bondStatus === "held" && <button className="btn small" onClick={() => a.releaseBond(b.id)}>Release bond</button>}
+              {b.bondStatus === "held" && b.date <= todayISO() && <button className="btn small" onClick={() => a.returnedClean(b.id)}>Returned clean, release bond</button>}
               {canCapture && !capturing && <button className="btn small" onClick={() => setCapturing(true)}>Capture from bond…</button>}
               {open && b.date >= todayISO() && !confirmCancel && <button className="btn small" onClick={() => setConfirmCancel(true)}>Cancel booking…</button>}
               {confirmCancel && (

@@ -1,10 +1,11 @@
 // Claude-backed agent. Used when ANTHROPIC_API_KEY is set; otherwise the rules engine answers.
 import Anthropic from "@anthropic-ai/sdk";
-import { BUSINESS } from "../config";
+import { BUSINESS, LATEST_FINISH, defaultStart } from "../config";
 import type { AgentResult, AgentState, Block, Msg } from "../types";
-import { fmtDate, todayISO } from "../util";
+import { fmtDate, fmtTime, todayISO } from "../util";
 import {
   type ToolCtx,
+  cancelAnswer,
   cancelBookingTool,
   checkAvailability,
   escalate,
@@ -41,12 +42,12 @@ const TOOLS: Tool[] = [
   },
   {
     name: "hold_and_send_deposit_link",
-    description: "Hold a free date for the customer and get a deposit payment link to send them. Only call after the customer has agreed to book and you know date, block, suburb and their name.",
+    description: "Hold a free date for the customer and get a deposit payment link to send them. Only call after the customer has agreed to book and you know date, block, suburb and their name. A customer holds one unpaid date at a time: if they already have one, it returns that hold's link instead, so send them that.",
     input_schema: obj(
       {
-        date: { type: "string" },
+        date: { type: "string", description: "YYYY-MM-DD" },
         block: { type: "integer", enum: [4, 8] },
-        start_time: { type: "string", description: "When the taps open, HH:MM 24-hour. Use the customer's time if they gave one, else 14:00 for 4 hours or 12:00 for 8." },
+        start_time: { type: "string", description: `When the taps open, HH:MM 24-hour, finishing by ${fmtTime(`${LATEST_FINISH}:00`)}. Use the customer's time if they gave one, else ${defaultStart(4)} for 4 hours or ${defaultStart(8)} for 8.` },
         suburb: { type: "string" },
         name: { type: "string" },
       },
@@ -56,19 +57,19 @@ const TOOLS: Tool[] = [
   },
   {
     name: "lookup_booking",
-    description: "List the sender's upcoming bookings (matched on the phone number or email they're messaging from).",
+    description: "List the sender's upcoming bookings (matched on the phone number or email they're messaging from). Only these are the sender's; a reference not listed here is one you can't find for this number.",
     input_schema: obj({}, []),
     strict: true,
   },
   {
     name: "cancel_booking",
-    description: "Check the refund for cancelling one of the sender's bookings (confirmed=false), or cancel it after they explicitly confirm (confirmed=true). Refunds over the owner limit are routed to an owner automatically.",
+    description: "Quote the terms for cancelling one of the sender's bookings (confirmed=false). Cancel it (confirmed=true) only when the customer's message right after your quote is a clear yes; otherwise it just quotes again and done is false. A refund over the owner limit goes to the owners instead and nothing is cancelled.",
     input_schema: obj({ booking: { type: "string", description: "Booking id or SST- reference" }, confirmed: { type: "boolean" } }, ["booking", "confirmed"]),
     strict: true,
   },
   {
     name: "escalate_to_owner",
-    description: "Hand the conversation to a human owner. Use for complaints, damage disputes, discounts, multi-day or sponsorship requests, media, legal questions beyond the FAQ, or whenever the customer asks for a person.",
+    description: "Hand the conversation to a human owner. Use for complaints, damage disputes, discounts, multi-day or sponsorship requests, date changes to a booking, media, legal questions beyond the FAQ, or whenever the customer asks for a person. It flags the conversation in the owners' inbox; nobody is texted or called.",
     input_schema: obj(
       {
         reason: { type: "string", description: "One line for the owners: what the customer wants and why you stopped." },
@@ -90,12 +91,15 @@ Rules:
 - Use tools for anything about dates, prices, bookings or cancellations. Never invent availability or prices.
 - To book: confirm date, 4 or 8 hours, suburb and name, state the total, then call hold_and_send_deposit_link and send the link exactly as returned.
 - Never ask for card numbers. Payment only happens through the link.
-- Cancel only after the customer clearly confirms, and tell them the refund first.
+- To cancel: call cancel_booking with confirmed=false, tell the customer the terms and ask them to reply YES. Call it with confirmed=true only when their next message is a clear yes. If done is false, nothing was cancelled, so don't say it was.
+- Say only what tools did. A refund is requested, not sent. Escalating flags the conversation for the owners and nothing else: say the owners have the message, and never promise a text, a call, an email or a time.
+- Moving a booking to another date is an owner's job. Escalate it, and don't hold the new date.
+- Only bookings from lookup_booking are the sender's. For any other reference, say you can't find it for this number, the same way every time.
 - You can't give discounts, change policies or promise anything outside the knowledge base.
 
 Knowledge base:
 ${renderKb(ctx.data.kb, ctx.data.settings)}`;
-  const volatile = `Today is ${fmtDate(todayISO(ctx.now), { dow: true, year: true })} (${todayISO(ctx.now)}), Perth time. Channel: ${ctx.channel}. Sender: ${ctx.contact}${ctx.customerName ? ` (${ctx.customerName})` : ""}.${ctx.handover ? " This conversation has been handed to an owner. Answer general questions, but don't book, cancel or change anything; say an owner will reply here." : ""}`;
+  const volatile = `Today is ${fmtDate(todayISO(ctx.now), { dow: true, year: true })} (${todayISO(ctx.now)}), Perth time. Channel: ${ctx.channel}. Sender: ${ctx.contact}${ctx.customerName ? ` (${ctx.customerName})` : ""}.${ctx.handover ? " This conversation has been handed to an owner. Answer general questions, but don't book, cancel or change anything; say an owner has the conversation." : ""}`;
   return [
     { type: "text", text: stable, cache_control: { type: "ephemeral" } },
     { type: "text", text: volatile },
@@ -123,7 +127,7 @@ function exec(ctx: ToolCtx, name: string, input: Record<string, unknown>): unkno
     case "get_quote":
       return getQuote(ctx, Number(input.block) as Block, String(input.suburb));
     case "hold_and_send_deposit_link":
-      return holdAndLink(ctx, String(input.date), Number(input.block) as Block, String(input.suburb), String(input.name), String(input.start_time));
+      return holdAndLink(ctx, String(input.date), Number(input.block) as Block, String(input.suburb), String(input.name), input.start_time ? String(input.start_time) : undefined);
     case "lookup_booking":
       return lookupBooking(ctx);
     case "cancel_booking":
@@ -178,21 +182,27 @@ export async function toolLoop(opts: {
   return { stop: "too_long" };
 }
 
-export async function runClaude(ctx: ToolCtx, history: Msg[], state: AgentState): Promise<AgentResult> {
+export async function runClaude(ctx: ToolCtx, history: Msg[], prev: AgentState): Promise<AgentResult> {
+  // Like the rules engine, a pending cancel lasts one message: this one confirms it only if it is a clear yes.
+  const last = [...history].reverse().find((m) => m.from === "customer");
+  ctx.confirmCancel = cancelAnswer(prev, last?.body ?? "");
+  const state: AgentState = { ...prev, awaiting: undefined, bookingId: undefined };
   const r = await toolLoop({
     system: system(ctx),
     tools: ctx.handover ? TOOLS.filter((x) => !["hold_and_send_deposit_link", "cancel_booking"].includes(x.name)) : TOOLS,
     messages: toMessages(history),
     exec: (name, input) => exec(ctx, name, input),
   });
-  const done = (reply: string) => ({ reply, actions: ctx.actions, tools: ctx.used, state, engine: "claude" as const });
-  if (r.stop === "refusal") {
-    escalate(ctx, "Agent declined to answer; needs a person");
-    return done("I'll get one of the owners to pick this up.");
-  }
-  if (r.stop === "too_long") {
-    escalate(ctx, "Agent loop ran too long");
-    return done("Let me get one of the owners to confirm that for you.");
+  const done = (reply: string): AgentResult => {
+    // A quote is saved so the customer's next message can confirm it (cancel_booking checks confirmCancel).
+    if (ctx.quotedCancel) Object.assign(state, { awaiting: "confirm_cancel", bookingId: ctx.quotedCancel });
+    return { reply, actions: ctx.actions, tools: ctx.used, state, engine: "claude" };
+  };
+  if (r.stop !== "done") {
+    // The customer never sees what the loop did (a link, a quote), so none of it happens. The owners take over.
+    Object.assign(ctx, { actions: [], used: [], quotedCancel: undefined });
+    escalate(ctx, r.stop === "refusal" ? "Agent declined to answer; needs a person" : "Agent loop ran too long");
+    return done("I've passed this to the owners.");
   }
   return done(r.reply || "Sorry, could you say that again?");
 }

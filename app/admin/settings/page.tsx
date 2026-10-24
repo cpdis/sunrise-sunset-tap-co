@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Loading, Section, useData } from "@/components/ui";
 import { useApp } from "@/lib/store";
-import { SETTING_GROUPS as GROUPS } from "@/lib/config";
+import { SETTING_GROUPS as GROUPS, settingProblem } from "@/lib/config";
 import { SCENARIOS } from "@/lib/seed";
 import type { Scenario, Settings } from "@/lib/types";
 import { cls } from "@/lib/util";
@@ -27,13 +27,25 @@ export default function SettingsPage() {
   if (!data) return <Loading />;
   const saved0 = toForm(data.settings);
   const dirty = GROUPS.some((g) => g.fields.some((f) => (form[f.k] ?? "") !== (saved0[f.k] ?? "")));
+  // The form value in stored units (percentages back to fractions), checked against SETTING_RANGES.
+  const stored = (k: keyof Settings) => {
+    const raw = (form[k] ?? "").trim();
+    const n = raw === "" ? NaN : Number(raw);
+    return pctKeys.has(k) ? n / 100 : n;
+  };
+  const errors = Object.fromEntries(
+    GROUPS.flatMap((g) => g.fields).flatMap((f) => {
+      const why = settingProblem(f.k, stored(f.k));
+      // The tax rate is typed as a percentage, so its range is shown that way too.
+      return why ? [[f.k, pctKeys.has(f.k) ? why.replace(/(\d+(?:\.\d+)?)/g, (x) => `${Math.round(Number(x) * 10000) / 100}%`) : why]] : [];
+    }),
+  ) as Partial<Record<keyof Settings, string>>;
+  const invalid = Object.keys(errors).length > 0;
 
   function save() {
+    if (invalid) return;
     const next: Partial<Settings> = {};
-    for (const g of GROUPS) for (const f of g.fields) {
-      const n = Number(form[f.k]);
-      if (Number.isFinite(n)) next[f.k] = pctKeys.has(f.k) ? n / 100 : n;
-    }
+    for (const g of GROUPS) for (const f of g.fields) next[f.k] = stored(f.k);
     update(next);
     setSaved(true);
   }
@@ -61,9 +73,18 @@ export default function SettingsPage() {
                 <label htmlFor={`set-${f.k}`}>{f.label}</label>
                 <span className="adorn">
                   {f.unit === "$" && <i>$</i>}
-                  <input id={`set-${f.k}`} className="input" inputMode="decimal" value={form[f.k] ?? ""} onChange={(e) => { setForm({ ...form, [f.k]: e.target.value }); setSaved(false); }} />
+                  <input
+                    id={`set-${f.k}`}
+                    className="input"
+                    inputMode="decimal"
+                    value={form[f.k] ?? ""}
+                    aria-invalid={!!errors[f.k]}
+                    aria-describedby={errors[f.k] ? `set-${f.k}-error` : undefined}
+                    onChange={(e) => { setForm({ ...form, [f.k]: e.target.value }); setSaved(false); }}
+                  />
                   {f.unit && f.unit !== "$" && <i>{f.unit === "0–1" ? "%" : f.unit}</i>}
                 </span>
+                {errors[f.k] && <span id={`set-${f.k}-error`} className="field-error">{errors[f.k]}</span>}
               </div>
             ))}
           </div>
@@ -93,10 +114,10 @@ export default function SettingsPage() {
       </Section>
       {dirty && (
         <div className="save-bar" role="region" aria-label="Unsaved changes">
-          <span>You have unsaved changes.</span>
+          <span>{invalid ? "Fix the highlighted settings to save." : "You have unsaved changes."}</span>
           <div className="row">
             <button className="btn small" onClick={() => setForm(saved0)}>Discard</button>
-            <button className="btn small primary" onClick={save}>Save changes</button>
+            <button className="btn small primary" onClick={save} disabled={invalid}>Save changes</button>
           </div>
         </div>
       )}

@@ -9,20 +9,23 @@ import {
   cancelForCustomer,
   changeSetting,
   claimRun,
+  confirmText,
   findBookings,
   handBack,
+  handBackText,
   sendDraft,
   inboxList,
   logTruck,
   payout,
   replyToCustomer,
   resolvePending,
+  sentText,
   whatsOn,
 } from "./owner-tools";
 import { parseDate, parseSuburb } from "./rules";
 
 export const OWNER_HELP =
-  "I can: show what's on, claim a run (\"I'll take the Fremantle delivery\"), log the truck (\"log 115,900 km\"), add an expense (\"$42 CO2 refill\"), approve or pay the payout, reply to a customer (\"tell Sophie: yes, 6am works\"), block a date, change a setting (\"set the deposit to $300\") or add a line to the agent's knowledge (\"add to keg guide: ...\").";
+  "I can: show what's on, claim a run (\"I'll take the Fremantle delivery\"), log the truck (\"log 115,900 km\"), add an expense (\"$42 CO2 refill\"), approve or pay the payout, reply to a customer (\"tell Sophie: yes, 6am works\"), block a date, change a booking rule (\"set notice to 10 days\") or add a line to the agent's knowledge (\"add to keg guide: ...\").";
 
 const ACCOUNTS: [RegExp, Account][] = [
   [/\b(co2|gas bottle|gas refill)\b/, "co2"],
@@ -53,6 +56,7 @@ const SETTING_WORDS: [RegExp, keyof Settings][] = [
   [/\bbalance\b/, "balanceDaysBefore"],
   [/cancel(lation)?|full refund/, "cancelDays"],
   [/refund limit/, "refundLimit"],
+  [/expense (cap|limit)|sms limit/, "smsExpenseCap"],
   [/approvals?/, "approvalsRequired"],
   [/\btax\b/, "taxRate"],
   [/reserve/, "reserveMonths"],
@@ -83,7 +87,7 @@ export function runOwnerRules(ctx: OwnerCtx, text: string, prev: AgentState): Ag
     state.pending = ctx.staged ?? state.pending;
     return { reply, actions: ctx.actions, tools: ctx.used, state, engine: "rules" };
   };
-  const yes = (r: { summary: string }) => out(`To confirm: ${r.summary}. Reply YES to go ahead.`);
+  const yes = (r: { summary: string }) => out(confirmText(r.summary));
   const date = parseDate(text, ctx.now);
   const ref = refOf(t);
 
@@ -96,7 +100,7 @@ export function runOwnerRules(ctx: OwnerCtx, text: string, prev: AgentState): Ag
   const reply = text.match(/^\s*(?:reply to|tell|text|message)\s+(.+?)\s*[:\-–]\s*(.+)$/i);
   if (reply) {
     const r = replyToCustomer(ctx, reply[1], reply[2]);
-    return out(r.ok ? `Sent to ${r.to} by ${r.via} to ${r.contact}. You have that chat now; text "hand back ${r.to.split(" ")[0]}" when you're done.` : r.reason);
+    return out(r.ok ? sentText(r) : r.reason);
   }
   // "send the draft for Harbour", "send Harbour the draft".
   const draft = text.match(/^\s*send\s+(?:the\s+draft\s+(?:for|to)\s+(.+?)|(.+?)\s+the\s+draft)\s*$/i);
@@ -112,7 +116,7 @@ export function runOwnerRules(ctx: OwnerCtx, text: string, prev: AgentState): Ag
   if (back) {
     const raw = (back[1] ?? back[2]).trim();
     const r = handBack(ctx, raw, force);
-    return out(r.ok ? `${r.flagOnly ? `Cleared the flag on ${r.to}; the agent still has it.` : `Handed ${r.to} back to the agent.`}${r.withoutReply ? " Heads up: they were told an owner would reply, and nobody has." : ""}` : r.reason);
+    return out(r.ok ? handBackText(r) : r.reason);
   }
 
   // Knowledge: "add to keg guide: we now carry G-type couplers".
@@ -137,11 +141,11 @@ export function runOwnerRules(ctx: OwnerCtx, text: string, prev: AgentState): Ag
     return r.ok ? yes(r) : out(r.reason);
   }
 
-  // Settings before expenses: "set the deposit to $300" has a dollar amount too.
+  // Settings before expenses: "set the deposit to $300" has a dollar amount too (and is refused as admin only).
   const set = t.match(/\b(?:set|change|make|raise|lower|update|put)\b(.+?)\bto\s*\$?\s*(\d+(?:\.\d+)?)/);
   if (set) {
     const key = SETTING_WORDS.find(([re]) => re.test(set[1]))?.[1];
-    if (!key) return out("Which setting? For example: \"set the deposit to $300\" or \"set notice to 10 days\".");
+    if (!key) return out("Which setting? For example: \"set notice to 10 days\" or \"set holds to 45 minutes\".");
     const r = changeSetting(ctx, { key, value: Number(set[2]) });
     return r.ok ? yes(r) : out(r.reason);
   }

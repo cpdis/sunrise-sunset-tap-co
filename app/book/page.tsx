@@ -59,7 +59,8 @@ export default function Book() {
       date, block, startTime: start, suburb, name: name.trim(), email: email.trim(), phone: phone.trim(),
       eventType, guests: Number(guests) || undefined, notes: notes.trim() || undefined, via: "web", agreed: true,
     });
-    router.push(`/checkout/${id}`);
+    // An empty id means the hold was refused; the date notice above then shows.
+    if (id) router.push(`/checkout/${id}`);
   }
 
   return (

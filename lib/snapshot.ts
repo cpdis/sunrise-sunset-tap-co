@@ -1,22 +1,20 @@
 // What the agents see of the demo data. Plain functions (no store), so the server-rendered explainer can use them too.
 import type { OwnerSnapshot } from "./agent/owner-tools";
 import type { Snapshot } from "./agent/tools";
-import { balance, cashAt, periodTotals, reserveTarget } from "./domain";
+import { balance, cashAt, freeCash, periodTotals, reserveTarget } from "./domain";
 import type { Data } from "./types";
-import { addDays, todayISO } from "./util";
+import { addDays, sameContact, todayISO } from "./util";
 
 // What the agent endpoint sees: availability for every date, but only the sender's own contact details.
 export function snapshot(d: Data, contact?: string): Snapshot {
-  const customers = d.customers.filter((c) => contact && (norm(c.phone) === norm(contact) || norm(c.email) === norm(contact)));
+  const customers = d.customers.filter((c) => sameContact(c.phone, contact) || sameContact(c.email, contact));
   const bookings = d.bookings.map(({ notes, condition, guests, eventType, ...b }) => b) as Data["bookings"];
   return { settings: d.settings, bookings, customers, kb: d.kb, blackouts: d.blackouts, seq: d.seq };
 }
 
-const norm = (x?: string) => (x ?? "").replace(/\s+/g, "").toLowerCase();
-
 // An owner texting (or emailing) the business line from their own number gets the owner agent.
 export function ownerByContact(d: Data, contact: string) {
-  return d.owners.find((o) => norm(o.phone) === norm(contact) || norm(o.email) === norm(contact));
+  return d.owners.find((o) => sameContact(o.phone, contact) || sameContact(o.email, contact));
 }
 
 // What the owner agent sees: everything an owner sees in the admin, with ledger totals in place of the ledger.
@@ -43,6 +41,7 @@ export function ownerSnapshot(d: Data, now = new Date()): OwnerSnapshot {
       profit30: Math.round(t30.profit),
       held: Math.round(balance(d, "deposits")),
       owedRunners: Object.fromEntries(d.owners.map((o) => [o.id, Math.round(balance(d, "owed_runners", undefined, o.id))])),
+      free: freeCash(d, today),
     },
   };
 }

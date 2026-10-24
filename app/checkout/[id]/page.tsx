@@ -33,8 +33,9 @@ export default function Checkout() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
-  const [email, setEmail] = useState<string>();
-  const [name, setName] = useState<string>();
+  // Never prefilled from the customer record: the link can reach someone who isn't that customer.
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [agree, setAgree] = useState(false);
 
   useEffect(() => {
@@ -44,7 +45,6 @@ export default function Checkout() {
 
   if (!data) return <Loading />;
   const b = data.bookings.find((x) => x.id === id);
-  const cust = data.customers.find((c) => c.id === b?.customerId);
   if (!b) return <main className="wrap section"><h1 className="display">Booking not found</h1><Link href="/book">Start again</Link></main>;
   // A balance that kept declining is paid here with a new card.
   const balanceMode = b.state === "confirmed" && !!b.balanceFailedAt;
@@ -64,22 +64,20 @@ export default function Checkout() {
   const left = balanceMode ? Infinity : Math.max(0, Date.parse(b.heldUntil ?? "") - now);
   const mm = Math.floor(left / 60000);
   const ss = String(Math.floor((left % 60000) / 1000)).padStart(2, "0");
-  const emailVal = email ?? cust?.email ?? "";
-  const nameVal = name ?? cust?.name ?? "";
   const needsTerms = !b.agreementSigned && !balanceMode;
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr("");
     const digits = card.replace(/\D/g, "");
-    if (!/\S+@\S+\.\S+/.test(emailVal)) return setErr("Enter an email for your receipt.");
+    if (!/\S+@\S+\.\S+/.test(email)) return setErr("Enter an email for your receipt.");
     if (needsTerms && !agree) return setErr("Please accept the hire terms.");
     if (digits.length < 15) return setErr("Your card number is incomplete.");
     if (digits === "4000000000000002") return setErr("Your card was declined. Try another card.");
     setBusy(true);
     setTimeout(() => {
       if (balanceMode) payBalance(b!.id, `Visa •• ${digits.slice(-4)}`);
-      else payDeposit(b!.id, `Visa •• ${digits.slice(-4)}`, { email: emailVal.trim(), name: nameVal.trim(), agreed: needsTerms ? agree : undefined });
+      else payDeposit(b!.id, `Visa •• ${digits.slice(-4)}`, { email: email.trim(), agreed: needsTerms ? agree : undefined });
       router.push(`/booking/${b!.id}?paid=1`);
     }, 900);
   }
@@ -116,7 +114,7 @@ export default function Checkout() {
         <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Pay with card</h1>
         <div>
           <label style={S.label} htmlFor="co-email">Email</label>
-          <input id="co-email" style={S.input} type="email" autoComplete="email" required value={emailVal} onChange={(e) => setEmail(e.target.value)} />
+          <input id="co-email" style={S.input} type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
         </div>
         <div>
           <label style={S.label}>Card information</label>
@@ -128,7 +126,7 @@ export default function Checkout() {
         </div>
         <div>
           <label style={S.label} htmlFor="co-name">Name on card</label>
-          <input id="co-name" style={S.input} autoComplete="cc-name" value={nameVal} onChange={(e) => setName(e.target.value)} />
+          <input id="co-name" style={S.input} autoComplete="cc-name" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         {needsTerms && (
           <label style={{ display: "flex", gap: 8, fontSize: 13, color: "#1a1f36", lineHeight: 1.5 }}>

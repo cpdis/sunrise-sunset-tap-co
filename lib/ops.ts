@@ -1,8 +1,9 @@
 // Owner operations on a mutable draft of Data. The admin buttons and the owner SMS agent both call these,
 // so an action means the same thing whichever way an owner takes it.
-import { ACCOUNT_LABEL, payDistribution, post } from "./domain";
+import { ADMIN_ONLY_SETTINGS, settingProblem } from "./config";
+import { ACCOUNT_LABEL, cancelBooking, cancelNeedsOwner, pay, payDistribution, post } from "./domain";
 import type { Account, AgentAction, Conversation, Data, KbPage, Settings, TruckLog } from "./types";
-import { uid } from "./util";
+import { money, todayISO, uid } from "./util";
 
 export function log(d: Data, text: string) {
   d.jobs.unshift({ at: new Date().toISOString(), text });
@@ -33,13 +34,37 @@ export function approveDistribution(d: Data, distId: string, ownerId: string) {
   if (dist && director && dist.status === "awaiting" && !dist.approvals.includes(ownerId)) dist.approvals.push(ownerId);
 }
 
-export function payOut(d: Data, distId: string) {
-  payDistribution(d, distId);
-  log(d, `Paid ${distId.replace("dist_", "")} dividends via bank API (simulated)`);
+// Only directors pay. payDistribution refuses too few director approvals or too little free cash; the reason is logged.
+export function payOut(d: Data, distId: string, ownerId: string) {
+  const q = distId.replace("dist_", "");
+  if (!d.owners.find((o) => o.id === ownerId)?.isDirector) return log(d, `Payout ${q} not paid: ${ownerName(d, ownerId)} isn't a director`);
+  try {
+    payDistribution(d, distId);
+    log(d, `Paid ${q} dividends via bank API (simulated)`);
+  } catch (e) {
+    log(d, `Payout ${q} not paid: ${(e as Error).message}`);
+  }
 }
 
-export function updateSettings(d: Data, s: Partial<Settings>) {
-  d.settings = { ...d.settings, ...s };
+// An owner checked the truck back after the hire and found it clean. Nothing else releases a held bond.
+export function returnedClean(d: Data, bookingId: string, ownerId: string, now = new Date()) {
+  const b = d.bookings.find((x) => x.id === bookingId);
+  if (!b || b.bondStatus !== "held" || b.date > todayISO(now)) return;
+  pay(d, b, "bond_release", b.bond, now.toISOString());
+  b.bondStatus = "released";
+  log(d, `${ownerName(d, ownerId)} checked ${b.ref} back clean; released the ${money(b.bond)} bond`);
+}
+
+// Applies only the keys in range (SETTING_RANGES) and returns the ones it dropped, so no surface stores a bad value.
+export function updateSettings(d: Data, s: Partial<Settings>): (keyof Settings)[] {
+  const ok: Partial<Settings> = {};
+  const dropped: (keyof Settings)[] = [];
+  for (const [k, v] of Object.entries(s) as [keyof Settings, number][]) {
+    if (settingProblem(k, v)) dropped.push(k);
+    else ok[k] = v;
+  }
+  d.settings = { ...d.settings, ...ok };
+  return dropped;
 }
 
 export function saveKb(d: Data, page: KbPage) {
@@ -139,6 +164,33 @@ export function ownerReply(d: Data, convId: string, body: string, ownerId: strin
   c.draft = undefined;
 }
 
+// A customer cancelling from their booking page, under the same refund limit as SMS. Over the limit nothing is
+// cancelled: the owners get a flagged conversation for this customer, the same hand-over an SMS cancel makes.
+export function customerCancel(d: Data, bookingId: string, now = new Date()): { refund: number } | { needsOwner: string } | null {
+  const b = d.bookings.find((x) => x.id === bookingId);
+  if (!b) return null;
+  const reason = cancelNeedsOwner(d.settings, b, now);
+  if (!reason) {
+    const pol = cancelBooking(d, bookingId, now);
+    if (pol) log(d, `${b.ref} cancelled on the booking page; refunded $${pol.refund}`);
+    return pol && { refund: pol.refund };
+  }
+  const cust = d.customers.find((x) => x.id === b.customerId);
+  let c = d.conversations.find((x) => x.customerId === b.customerId && !x.ownerId);
+  if (!c) {
+    c = { id: uid("conv"), channel: "web", contact: cust?.phone || cust?.email || "", name: cust?.name ?? b.ref, customerId: b.customerId, agentActive: true, unread: true, state: {}, messages: [] };
+    d.conversations.unshift(c);
+  }
+  if (c.escalated !== reason) {
+    c.messages.push({ id: uid("m"), from: "system", body: `Asked to cancel on the booking page. ${reason}`, at: now.toISOString() });
+    log(d, `Escalated to owners: ${reason}`);
+  }
+  c.escalated = reason;
+  c.agentActive = false;
+  c.unread = true;
+  return { needsOwner: reason };
+}
+
 // Applies what the owner agent decided, as the owner who texted. Each op re-checks its own rules.
 export function applyOwnerAction(d: Data, a: AgentAction, ownerId: string) {
   const who = ownerName(d, ownerId);
@@ -151,6 +203,8 @@ export function applyOwnerAction(d: Data, a: AgentAction, ownerId: string) {
       log(d, `${who} logged ${a.log.type} by SMS${a.log.odometer ? ` at ${a.log.odometer.toLocaleString()} km` : ""}`);
       break;
     case "expense":
+      // The owner tool refuses these too; this keeps the cap whatever produced the action.
+      if (a.amount > (d.settings.smsExpenseCap ?? 0)) break;
       addExpense(d, a.date, a.account, a.amount, a.memo);
       log(d, `${who} added a $${a.amount} ${ACCOUNT_LABEL[a.account]} expense by SMS`);
       break;
@@ -159,16 +213,16 @@ export function applyOwnerAction(d: Data, a: AgentAction, ownerId: string) {
       log(d, `${who} approved the ${a.distId.replace("dist_", "")} payout by SMS`);
       break;
     case "pay_payout":
-      try {
-        payOut(d, a.distId);
-      } catch (e) {
-        log(d, `Payout ${a.distId.replace("dist_", "")} not paid: ${(e as Error).message}`);
-      }
+      payOut(d, a.distId, ownerId);
       break;
-    case "settings":
-      updateSettings(d, a.patch);
-      log(d, `${who} changed ${Object.keys(a.patch).join(", ")} by SMS`);
+    case "settings": {
+      // Admin-only settings never change by SMS (R7), whatever produced the action.
+      const patch = Object.fromEntries(Object.entries(a.patch).filter(([k]) => !ADMIN_ONLY_SETTINGS.includes(k as keyof Settings)));
+      const dropped = updateSettings(d, patch);
+      const changed = Object.keys(patch).filter((k) => !dropped.includes(k as keyof Settings));
+      if (changed.length) log(d, `${who} changed ${changed.join(", ")} by SMS`);
       break;
+    }
     case "kb_append": {
       const p = d.kb.find((x) => x.slug === a.slug);
       if (p) saveKb(d, { ...p, body: `${p.body.trimEnd()}\n- ${a.line}` });

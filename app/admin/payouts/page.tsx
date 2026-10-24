@@ -1,8 +1,9 @@
 "use client";
 
 import { Loading, Section, useData } from "@/components/ui";
+import { directorApprovals, freeCash, payoutRefusal, payoutTotal } from "@/lib/domain";
 import { useApp } from "@/lib/store";
-import { fmtDate, money, quarterLabel } from "@/lib/util";
+import { fmtDate, money, quarterLabel, todayISO } from "@/lib/util";
 
 export default function Payouts() {
   const data = useData();
@@ -13,13 +14,20 @@ export default function Payouts() {
   const s = data.settings;
   const owner = (id: string) => data.owners.find((o) => o.id === id);
   const dists = [...data.distributions].sort((a, b) => b.quarter.localeCompare(a.quarter));
+  const free = freeCash(data, todayISO());
+  const team = { owners: data.owners, settings: s };
+  // Runner fees can carry cents; show them when they do.
+  const cash = (n: number) => money(n, n % 1 !== 0);
 
   // one quarter's numbers, owner split and (while awaiting) the approval controls
   function detail(d: (typeof dists)[number]) {
     const mine = ownerId ? d.approvals.includes(ownerId) : false;
-    const ready = d.approvals.length >= s.approvalsRequired;
-    const total = d.lines.reduce((sum, l) => sum + l.amount + (l.runnerFees ?? 0), 0);
+    const approvals = directorApprovals(team, d);
+    const ready = approvals.length >= s.approvalsRequired;
+    const total = payoutTotal(d);
     const director = !!ownerId && !!owner(ownerId)?.isDirector;
+    // Once approved, the same check payDistribution makes as it pays: is there still the free cash for it?
+    const refused = ready && d.status === "awaiting" ? payoutRefusal(d, team, free) : undefined;
     return (
       <div className="card stack" style={{ gap: 16 }}>
         <div className="grid cols-2">
@@ -43,7 +51,7 @@ export default function Payouts() {
                     <td>{owner(l.ownerId)?.name}{d.status === "awaiting" && <><br /><span className="meta nowrap">{owner(l.ownerId)?.payoutAccount}</span></>}</td>
                     <td className="num" data-label="Shares">{l.shares}</td>
                     <td className="num" data-label="Dividend">{money(l.amount)}</td>
-                    <td className="num" data-label="Runner fees">{money(l.runnerFees ?? 0)}</td>
+                    <td className="num" data-label="Runner fees">{cash(l.runnerFees)}</td>
                     <td className="meta nowrap" data-label="Transfer" title={l.payoutId}>{l.payoutId && d.paidAt ? `Sent ${fmtDate(d.paidAt.slice(0, 10))}` : "—"}</td>
                   </tr>
                 ))}
@@ -54,13 +62,16 @@ export default function Payouts() {
         {d.status === "awaiting" && (
           <div className="row">
             <span className="note">
-              Approved by {d.approvals.length ? d.approvals.map((a) => owner(a)?.name).join(", ") : "nobody yet"}.
+              Approved by {approvals.length ? approvals.map((a) => owner(a)?.name).join(", ") : "nobody yet"}.
             </span>
             {!mine && director && <button className="btn small" onClick={() => approve(d.id)}>Approve</button>}
-            <button className="btn small primary" disabled={!ready || total <= 0} onClick={() => payOut(d.id)}>
-              Pay {money(total)}
-            </button>
+            {director && (
+              <button className="btn small primary" disabled={!ready || !!refused || total <= 0} onClick={() => payOut(d.id)}>
+                Pay {cash(total)}
+              </button>
+            )}
             {mine && !ready && <span className="note">Switch owner (top bar) to add a second approval.</span>}
+            {refused && <span className="note">{refused}</span>}
           </div>
         )}
       </div>
@@ -88,7 +99,7 @@ export default function Payouts() {
         <Section
           key={d.id}
           title={`${quarterLabel(d.quarter)} · ${fmtDate(d.start)} to ${fmtDate(d.end, { year: true })}`}
-          aside={<span className="pill warn">{d.approvals.length} of {s.approvalsRequired} approvals</span>}
+          aside={<span className="pill warn">{directorApprovals(team, d).length} of {s.approvalsRequired} approvals</span>}
         >
           {detail(d)}
         </Section>
